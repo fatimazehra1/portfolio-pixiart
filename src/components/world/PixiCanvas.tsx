@@ -20,12 +20,18 @@ export default function PixiCanvas() {
     const host = hostRef.current;
     if (!host) return;
 
+    // `app` is assigned ONLY after init() resolves. Under React StrictMode the
+    // effect mounts/cleans-up/re-mounts synchronously; if cleanup ran while
+    // init() was still pending it would call destroy() on a half-built app
+    // (throws `_cancelResize is not a function`). Keeping `app` null until ready
+    // means cleanup either destroys a fully-initialized app or defers to the
+    // `cancelled` guard below.
     let app: Application | null = null;
-    let destroyed = false;
+    let cancelled = false;
 
     (async () => {
-      app = new Application();
-      await app.init({
+      const instance = new Application();
+      await instance.init({
         resizeTo: host,
         antialias: false, // pixel art: keep it crisp (DESIGN.md §Art Style)
         // Cap DPR for performance (DESIGN.md §Performance).
@@ -35,11 +41,13 @@ export default function PixiCanvas() {
         preference: "webgl",
       });
 
-      // Guard against React StrictMode double-invoke / fast unmount.
-      if (destroyed || !host) {
-        app.destroy(true);
+      // Effect was cleaned up while we were initializing — tear down and bail.
+      if (cancelled) {
+        instance.destroy(true, { children: true, texture: true });
         return;
       }
+
+      app = instance;
       host.appendChild(app.canvas);
 
       // --- Placeholder scene: a gentle animated ocean band ---
@@ -49,8 +57,8 @@ export default function PixiCanvas() {
       let t = 0;
       app.ticker.add((ticker) => {
         t += ticker.deltaTime * 0.02;
-        const w = app!.screen.width;
-        const h = app!.screen.height;
+        const w = instance.screen.width;
+        const h = instance.screen.height;
         const waterTop = h * 0.6;
 
         ocean.clear();
@@ -71,10 +79,13 @@ export default function PixiCanvas() {
     })();
 
     return () => {
-      destroyed = true;
-      // destroy(true) also removes the canvas from the DOM.
-      app?.destroy(true, { children: true, texture: true });
-      app = null;
+      cancelled = true;
+      // Only destroy once fully initialized. If init() is still pending, the
+      // `cancelled` guard above handles teardown after it resolves.
+      if (app) {
+        app.destroy(true, { children: true, texture: true });
+        app = null;
+      }
     };
   }, [setLoaded]);
 
