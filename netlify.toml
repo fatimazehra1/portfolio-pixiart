@@ -1,0 +1,13 @@
+# Netlify deployment (DESIGN.md §Tech Stack). GitHub → Netlify → CDN, no backend for v1.
+# The official Next.js runtime plugin is auto-installed by Netlify; declared here for clarity.
+
+[build]
+  command = "pnpm build"
+  publish = ".next"
+
+[build.environment]
+  # Match the local toolchain; Netlify enables corepack/pnpm from pnpm-lock.yaml.
+  NODE_VERSION = "22"
+
+[[plugins]]
+  package = "@netlify/plugin-nextjs"
