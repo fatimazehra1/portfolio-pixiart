@@ -1,93 +1,55 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { Application, Graphics } from "pixi.js";
+import { Engine } from "@/engine";
 import { useWorldStore } from "@/stores/worldStore";
 
 /**
- * Mounts the PixiJS world. PixiJS owns everything IN the world (DESIGN.md §Animation):
- * sky, ocean, parallax, weather, character. React owns all UI — never draw UI here.
+ * React mount point for the rendering engine. This is the ONLY bridge between
+ * React and PixiJS: it creates the Engine, appends its canvas, syncs viewport +
+ * ready state to the store, and destroys everything on unmount.
  *
- * This is a minimal, runnable starter scene (sky gradient + animated ocean band)
- * that proves the Next 16 + Pixi v8 integration. Replace the placeholder art with
- * real pixel scenes as buildings are authored.
+ * The engine itself is framework-agnostic — no React or gameplay lives in it.
  */
 export default function PixiCanvas() {
   const hostRef = useRef<HTMLDivElement>(null);
-  const setLoaded = useWorldStore((s) => s.setLoaded);
+  const setReady = useWorldStore((s) => s.setReady);
+  const setViewport = useWorldStore((s) => s.setViewport);
 
   useEffect(() => {
     const host = hostRef.current;
     if (!host) return;
 
-    // `app` is assigned ONLY after init() resolves. Under React StrictMode the
-    // effect mounts/cleans-up/re-mounts synchronously; if cleanup ran while
-    // init() was still pending it would call destroy() on a half-built app
-    // (throws `_cancelResize is not a function`). Keeping `app` null until ready
-    // means cleanup either destroys a fully-initialized app or defers to the
-    // `cancelled` guard below.
-    let app: Application | null = null;
+    // `engine` is assigned only after init() resolves. Under React StrictMode the
+    // effect mounts → cleans up → re-mounts synchronously; keeping it null until
+    // ready means cleanup never tears down a half-initialised Application.
+    let engine: Engine | null = null;
     let cancelled = false;
 
     (async () => {
-      const instance = new Application();
-      await instance.init({
-        resizeTo: host,
-        antialias: false, // pixel art: keep it crisp (DESIGN.md §Art Style)
-        // Cap DPR for performance (DESIGN.md §Performance).
-        resolution: Math.min(window.devicePixelRatio || 1, 2),
-        autoDensity: true,
-        background: "#f4a259", // sunset horizon — placeholder
-        preference: "webgl",
-      });
+      const instance = new Engine({ host, onResize: setViewport });
+      await instance.init();
 
-      // Effect was cleaned up while we were initializing — tear down and bail.
       if (cancelled) {
-        instance.destroy(true, { children: true, texture: true });
+        instance.destroy();
         return;
       }
 
-      app = instance;
-      host.appendChild(app.canvas);
-
-      // --- Placeholder scene: a gentle animated ocean band ---
-      const ocean = new Graphics();
-      app.stage.addChild(ocean);
-
-      let t = 0;
-      app.ticker.add((ticker) => {
-        t += ticker.deltaTime * 0.02;
-        const w = instance.screen.width;
-        const h = instance.screen.height;
-        const waterTop = h * 0.6;
-
-        ocean.clear();
-        ocean.rect(0, waterTop, w, h - waterTop).fill(0x1f6f8b);
-
-        // A few sine-wave foam lines to show the ticker is live.
-        for (let i = 0; i < 3; i++) {
-          const y = waterTop + 12 + i * 18;
-          ocean.moveTo(0, y);
-          for (let x = 0; x <= w; x += 8) {
-            ocean.lineTo(x, y + Math.sin(x * 0.03 + t + i) * 3);
-          }
-          ocean.stroke({ width: 2, color: 0xcfe8ef, alpha: 0.6 });
-        }
-      });
-
-      setLoaded(true);
+      engine = instance;
+      host.appendChild(instance.canvas);
+      setViewport(instance.viewport);
+      setReady(true);
     })();
 
     return () => {
       cancelled = true;
-      // Only destroy once fully initialized. If init() is still pending, the
-      // `cancelled` guard above handles teardown after it resolves.
-      if (app) {
-        app.destroy(true, { children: true, texture: true });
-        app = null;
+      setReady(false);
+      if (engine) {
+        engine.destroy();
+        engine = null;
       }
     };
-  }, [setLoaded]);
+  }, [setReady, setViewport]);
 
   return <div ref={hostRef} className="absolute inset-0 h-full w-full" aria-hidden />;
 }
