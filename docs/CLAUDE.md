@@ -2,7 +2,18 @@
 
 ## Read this first
 
-**Read `DESIGN.md`,`BUILDINGS.md`,`ART_DIRECTION.md`,`TIMELINE.md`,`WORLDs.md` before making any changes. Never introduce styles, interactions,
+Before making any code changes, always read:
+
+- docs/DESIGN.md
+- docs/ART_DIRECTION.md
+- docs/WORLD.md
+- docs/BUILDINGS.md
+- docs/TIMELINE.md
+- docs/TODO.md
+
+These files are the project's single source of truth.
+
+Never introduce styles, interactions,
 or content that violate it.** DESIGN.md is the source of truth for art direction,
 palette, camera, animation, weather meaning, audio, UI, and performance rules.
 If a change genuinely requires breaking a rule, update DESIGN.md first and say why.
@@ -65,3 +76,123 @@ src/
   utils/
 public/assets/    # sky, ocean, buildings, props, npc, boats, particles, weather, audio, fonts
 ```
+
+## Art References
+
+Always use images inside:
+
+art/references/
+
+as the visual source of truth.
+
+Never invent a new art style.
+
+Match:
+- Pixel density
+- Colors
+- Lighting
+- Atmosphere
+- Building proportions
+- Animation style
+
+## Workflow
+
+Build ONE feature at a time.
+
+Never work on multiple systems simultaneously.
+
+Complete the current task before starting another.
+
+Do not refactor unrelated code.
+
+Do not improve other systems unless explicitly asked.
+
+## Pixel Art Rules
+
+Everything must remain pixel-perfect.
+
+No anti-aliasing.
+
+No blurry scaling.
+
+No CSS filters on pixel art.
+
+Preserve crisp edges.
+
+Animations should be subtle and atmospheric.
+
+## Architecture
+
+Each system must be isolated.
+
+Examples:
+
+camera/
+weather/
+ocean/
+sky/
+particles/
+dialogue/
+audio/
+npc/
+
+No giant files.
+
+Keep everything reusable.
+
+## Do Not Guess
+
+If information is missing,
+
+ask before implementing.
+
+Never invent:
+
+- Building layouts
+- Career details
+- Dialogue
+- Art direction
+- Features
+
+Follow the documentation exactly.
+
+## Git Workflow
+
+Work in small feature branches.
+
+Examples:
+
+feature/sky
+feature/ocean
+feature/day-night
+feature/weather
+feature/aptech
+feature/planet01
+
+Complete one feature before starting another.
+
+## Assets
+
+Never generate placeholder assets unless requested.
+
+If an asset is missing:
+
+- Create the system first.
+- Leave a clear TODO.
+- Wait for the final asset before polishing.
+
+Never mix different pixel art styles.
+
+## Performance
+
+Keep 60 FPS as the target.
+
+Lazy load textures.
+
+Destroy unused Pixi objects.
+
+Reuse textures and particle systems.
+
+Avoid unnecessary React re-renders.
+
+Performance is a feature.
