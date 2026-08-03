@@ -55,7 +55,7 @@
 
 - [x] Time system
 - [x] Day/night cycle
-- [ ] Dynamic lighting
+- [x] Dynamic lighting
 
 ---
 

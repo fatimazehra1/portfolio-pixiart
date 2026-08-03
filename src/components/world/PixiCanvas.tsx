@@ -6,6 +6,7 @@ import {
   DayNightManager,
   Engine,
   Ground,
+  LightingManager,
   Ocean,
   SkySystem,
   TimeManager,
@@ -39,6 +40,7 @@ export default function PixiCanvas() {
     let camera: CameraController | null = null;
     let time: TimeManager | null = null;
     let cycle: DayNightManager | null = null;
+    let lighting: LightingManager | null = null;
     let cancelled = false;
 
     const setCamera = useWorldStore.getState().setCamera;
@@ -130,6 +132,12 @@ export default function PixiCanvas() {
       time = new TimeManager({ onChange: setTimeSnapshot });
       cycle = new DayNightManager({ time: time.time, sky, ocean, ground });
 
+      // The global lighting reading. It draws nothing — the sky, sea and land
+      // are already lit by the cycle above, and lighting them again would be
+      // counting the same sun twice. It runs so that the lanterns, windows and
+      // beams still to come have one agreed answer to read.
+      lighting = new LightingManager({ dayNight: cycle });
+
       instance.onUpdate((ticker) => {
         const delta = ticker.deltaMS / 1000;
         // The clock and the camera go first, so the world is drawn at the time
@@ -153,8 +161,10 @@ export default function PixiCanvas() {
     return () => {
       cancelled = true;
       setReady(false);
-      // Drop the cycle before the clock it listens to, and both before the
-      // systems they drive.
+      // Unwind the chain from the far end: lighting listens to the cycle, the
+      // cycle listens to the clock, and both feed the systems below.
+      lighting?.destroy();
+      lighting = null;
       cycle?.destroy();
       cycle = null;
       // Detach the input listeners before anything they drive goes away.

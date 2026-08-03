@@ -12,6 +12,16 @@ export type { TimeListener, TimePhase, TimeSettings, TimeSnapshot } from "./time
 // Day/night cycle (see ./dayNight for the full system).
 export { DayNightSystem, DayNightManager, COLOR_PRESETS, DAY_NIGHT_SETTINGS } from "./dayNight";
 export type { DayNightState, PhasePalettes, PhasePreset } from "./dayNight";
+
+// Lighting (see ./lighting for the full system).
+export {
+  LightingSystem,
+  LightingManager,
+  LIGHT_PRESETS,
+  applyAmbient,
+  localIntensity,
+} from "./lighting";
+export type { LightPreset, LightingState } from "./lighting";
 export { LayerManager, LAYER_ORDER } from "./layers/LayerManager";
 export { AssetLoader } from "./assets/AssetLoader";
 export type { Bounds, EngineOptions, LayerName, Size, Vec2 } from "./types";
