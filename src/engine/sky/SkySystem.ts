@@ -74,8 +74,13 @@ const MOON = { radius: 8, glowRadius: 26, glowAspect: 1, glowLevels: 4 } as cons
 /** Celestial bodies are near enough to infinity that the camera barely shifts them. */
 const CELESTIAL_DEPTH = 0.03;
 
-/** Birds fly in the middle distance, between the midground and foreground bands. */
-const BIRD_DEPTH = 0.22;
+/**
+ * Birds fly in the middle distance, but they parallax far less than the cloud
+ * band they sit between. A flock is a single crossing rather than an endless
+ * field, so it has nothing to wrap against — track the camera too closely and a
+ * pan across a world this wide would simply carry the birds out of the sky.
+ */
+const BIRD_DEPTH = 0.05;
 
 const DEFAULT_PIXEL_HEIGHT = 200;
 const DEFAULT_HORIZON = 0.68;

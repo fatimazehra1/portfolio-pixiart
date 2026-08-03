@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { Engine, Ground, Ocean, SkySystem } from "@/engine";
+import { CameraController, Engine, Ground, Ocean, SkySystem, WORLD_WIDTH } from "@/engine";
 import { useWorldStore } from "@/stores/worldStore";
 
 /**
@@ -27,8 +27,11 @@ export default function PixiCanvas() {
     let sky: SkySystem | null = null;
     let ocean: Ocean | null = null;
     let ground: Ground | null = null;
+    let camera: CameraController | null = null;
     let unsubscribe: (() => void) | null = null;
     let cancelled = false;
+
+    const setCamera = useWorldStore.getState().setCamera;
 
     // DESIGN.md §Animation: calm by default, still when asked. 0 stops the drift
     // and makes time-of-day changes instant without flattening the art.
@@ -42,6 +45,7 @@ export default function PixiCanvas() {
           sky?.resize(size.width, size.height);
           ocean?.resize(size.width, size.height);
           ground?.resize(size.width, size.height);
+          camera?.resize(size.width, size.height);
         },
       });
       await instance.init();
@@ -77,18 +81,43 @@ export default function PixiCanvas() {
       });
       instance.app.stage.addChildAt(ocean.container, 1);
 
-      // The land sits in front of the water, on the same shared pixel grid.
+      // The land sits in front of the water, on the same shared pixel grid, and
+      // is the one system baked at the width of the whole world — it's what the
+      // camera actually travels over, rather than a backdrop it slides against.
       ground = new Ground({
         width,
         height,
+        worldWidth: WORLD_WIDTH,
         timeOfDay: useWorldStore.getState().timeOfDay,
         pixelScale: sky.pixelScale,
         motionScale,
       });
       instance.app.stage.addChildAt(ground.container, 2);
 
+      // The camera owns where the view is; the three systems each decide how
+      // much of that movement to answer. The ground tracks it one to one, the
+      // water and the sky by their own depths, which is where the parallax
+      // comes from. Nothing here knows about input, and the controller knows
+      // nothing about what it is moving over.
+      camera = new CameraController({
+        camera: instance.camera,
+        host,
+        worldWidth: WORLD_WIDTH,
+        onMove: (viewLeft, zoom) => {
+          sky?.setViewOffset(viewLeft);
+          ocean?.setViewOffset(viewLeft);
+          ground?.setViewOffset(viewLeft);
+          setCamera(viewLeft, zoom);
+        },
+      });
+      camera.resize(width, height);
+      camera.snapToStart();
+
       instance.onUpdate((ticker) => {
         const delta = ticker.deltaMS / 1000;
+        // The camera goes first, so the world is drawn at the position it has
+        // this frame rather than the one it had last frame.
+        camera?.update(delta);
         sky?.update(delta);
         ocean?.update(delta);
         ground?.update(delta);
@@ -113,6 +142,9 @@ export default function PixiCanvas() {
       setReady(false);
       unsubscribe?.();
       unsubscribe = null;
+      // Detach the input listeners before anything they drive goes away.
+      camera?.destroy();
+      camera = null;
       // Destroy the world systems first so their generated textures are freed
       // deterministically.
       ground?.destroy();

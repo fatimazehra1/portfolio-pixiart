@@ -15,8 +15,8 @@
 
 - [ ] Responsive canvas
 - [ ] Asset loader
-- [ ] Camera
-- [ ] World boundaries
+- [x] Camera
+- [x] World boundaries
 
 ---
 

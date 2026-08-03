@@ -178,6 +178,16 @@ export interface GroundOptions {
   width: number;
   /** Viewport height in CSS pixels. */
   height: number;
+  /**
+   * Total width of the world in CSS pixels, if it is wider than the viewport.
+   *
+   * The land is the one system that is genuinely world-space rather than a
+   * backdrop — it scrolls one-to-one with the camera, so it has to be baked at
+   * the width of the whole world rather than the width of the screen. The
+   * authored layout is in fractions of this, so the composition stretches to
+   * whatever width it is given. Defaults to the viewport width.
+   */
+  worldWidth?: number;
   /** Starting time of day. Defaults to the sky's own default. */
   timeOfDay?: TimeOfDay;
   /**

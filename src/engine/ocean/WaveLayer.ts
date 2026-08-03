@@ -132,9 +132,16 @@ export class WaveLayer {
   // --- Internal --------------------------------------------------------------
 
   private draw(): void {
+    const period = this.textures.width;
+
+    // Drift and parallax are the same motion as far as the tiles are concerned,
+    // so wrap them together. Exact, because the silhouette genuinely repeats at
+    // this period — without it, panning a world this wide would drag the tiles
+    // clean off the side and leave bare water.
+    const shift = (((this.scroll + this.parallaxOffset) % period) + period) % period;
+
     // Start one tile to the left so the wrap always has material to scroll in.
-    this.tiles.x =
-      Math.round(this.scroll + this.parallaxOffset) - this.textures.width;
+    this.tiles.x = Math.round(shift) - period;
 
     // A single pixel of rise and fall, rounded so it steps on the grid.
     const bob = Math.round(

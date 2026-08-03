@@ -124,10 +124,15 @@ export class CloudLayer {
   /**
    * Shift the layer against camera movement. Depth decides how much: the far
    * band barely reacts, the near band tracks almost one-to-one.
+   *
+   * The offset is folded into each cloud's own wrapped position rather than
+   * shifting the whole container. Sliding the container would drag the entire
+   * cloud field off the side of a world this wide and leave an empty sky
+   * behind it; wrapping per cloud keeps the field endless.
    */
   setParallax(viewX: number): void {
     this.parallaxOffset = -viewX * this.config.depth;
-    this.container.x = Math.round(this.parallaxOffset);
+    this.draw();
   }
 
   destroy(): void {
@@ -192,10 +197,20 @@ export class CloudLayer {
 
   /** Snap to whole sky pixels — sub-pixel positions would blur the pixel grid. */
   private draw(): void {
+    const span = this.recycleSpan;
+    const box = this.config.cloudWidth;
+
     for (const cloud of this.clouds) {
+      let x = cloud.x + this.parallaxOffset;
+
+      // Wrap into [-box, span - box). Both ends of that range are off-screen,
+      // because the track is always at least a screen plus two clouds long — so
+      // a cloud can never be seen jumping from one side to the other.
+      if (span > 0) x = wrap(x + box, span) - box;
+
       // A mirrored container draws to the left of its origin, so shift it back
       // by its own width to keep `x` meaning the same edge either way.
-      cloud.view.x = Math.round(cloud.x) + (cloud.flip === -1 ? cloud.width : 0);
+      cloud.view.x = Math.round(x) + (cloud.flip === -1 ? cloud.width : 0);
       cloud.view.y = cloud.y;
     }
   }

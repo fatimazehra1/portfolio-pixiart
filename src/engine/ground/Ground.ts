@@ -72,6 +72,7 @@ export class Ground {
   private readonly shorelineRatio: number;
   private readonly targetPixelHeight: number;
   private readonly fixedPixelScale: number | undefined;
+  private readonly worldWidth: number | undefined;
   private readonly motionScale: number;
   private readonly seed: number;
 
@@ -102,6 +103,7 @@ export class Ground {
     this.shorelineRatio = shoreline;
     this.targetPixelHeight = Math.max(32, pixelHeight);
     this.fixedPixelScale = pixelScale;
+    this.worldWidth = options.worldWidth;
     this.motionScale = Math.max(0, motionScale);
     this.seed = seed;
 
@@ -230,7 +232,9 @@ export class Ground {
     const viewportPixels = Math.ceil(height / this.pixelScaleValue);
     const topPixels = Math.round(viewportPixels * this.shorelineRatio);
 
-    this.groundWidth = Math.ceil(width / this.pixelScaleValue);
+    // Baked at world width, not screen width — the land is what the camera
+    // actually travels over, so it has to exist past the edges of the view.
+    this.groundWidth = Math.ceil((this.worldWidth ?? width) / this.pixelScaleValue);
     this.groundHeight = Math.max(1, viewportPixels - topPixels);
     this.topYValue = topPixels * this.pixelScaleValue;
 
