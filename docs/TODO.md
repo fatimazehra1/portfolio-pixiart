@@ -22,10 +22,10 @@
 
 ## Phase 2
 
-- [ ] Sky
-- [ ] Clouds
-- [ ] Sun
-- [ ] Moon
+- [x] Sky
+- [x] Clouds
+- [x] Sun
+- [x] Moon
 - [ ] Stars
 
 ---
