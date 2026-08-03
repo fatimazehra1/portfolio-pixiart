@@ -90,6 +90,9 @@ export class Ground {
   private mix = 1;
   private transitionDuration = 0;
 
+  /** Set once something outside is driving the look. See `setBlendedPalette`. */
+  private externallyDriven = false;
+
   constructor(options: GroundOptions) {
     const {
       timeOfDay = DEFAULT_TIME_OF_DAY,
@@ -165,7 +168,23 @@ export class Ground {
    * Move to another time of day, cross-fading over `seconds`. Drive this from
    * the same value as the sky and the sea so the world stays in step.
    */
+  /**
+   * Position the land between two palettes.
+   *
+   * The way an external cycle drives this system, in place of `setTimeOfDay`.
+   * Cheaper than the sky and the sea: the land bakes only white masks and
+   * tints them, so there is nothing to re-bake and this is a pure interpolation
+   * every frame.
+   */
+  setBlendedPalette(from: GroundPalette, to: GroundPalette, blend: number): void {
+    this.externallyDriven = true;
+    this.mix = 1;
+    this.applyPalette(from === to ? from : lerpGroundPalette(from, to, blend));
+  }
+
   setTimeOfDay(timeOfDay: TimeOfDay, seconds = DEFAULT_TRANSITION_SECONDS): void {
+    // Something outside owns the look; a discrete jump would fight it.
+    if (this.externallyDriven) return;
     if (timeOfDay === this.timeOfDayValue) return;
 
     this.timeOfDayValue = timeOfDay;

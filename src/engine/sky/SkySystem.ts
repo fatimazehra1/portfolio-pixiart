@@ -154,6 +154,11 @@ export class SkySystem {
   private mix = 1;
   private transitionDuration = 0;
 
+  /** Set once something outside is driving the look. See `setBlendedPalette`. */
+  private externallyDriven = false;
+  private drivenFrom: SkyPalette | null = null;
+  private drivenTo: SkyPalette | null = null;
+
   constructor(options: SkySystemOptions) {
     const {
       timeOfDay = DEFAULT_TIME_OF_DAY,
@@ -231,7 +236,42 @@ export class SkySystem {
    * Move to another time of day, cross-fading over `seconds`. Passing 0 (or
    * running with `motionScale: 0`) snaps instantly.
    */
+  /**
+   * Position the sky between two palettes.
+   *
+   * The way an external cycle drives this system, in place of `setTimeOfDay`.
+   * Both endpoints arrive on every call, so there is no code path here that
+   * *assigns* a look — only one that places the sky between two of them.
+   *
+   * The gradient is a baked texture, so blending it means baking both ends and
+   * varying the alpha between them rather than re-baking a mixture every frame.
+   * The endpoints are compared by identity: pass the same palette objects and
+   * nothing is baked, so the cost falls to two bakes per phase boundary and a
+   * tint assignment per frame.
+   */
+  setBlendedPalette(from: SkyPalette, to: SkyPalette, blend: number): void {
+    this.externallyDriven = true;
+    // Abandon any cross-fade of our own; the cycle is in charge now.
+    this.mix = 1;
+
+    if (from !== this.drivenFrom || to !== this.drivenTo) {
+      this.drivenFrom = from;
+      this.drivenTo = to;
+
+      this.visibleStops = from.gradient;
+      this.visibleBands = from.bands;
+      this.gradient.set(from.gradient, from.bands);
+      if (to !== from) this.gradient.prepare(to.gradient, to.bands);
+    }
+
+    const crossing = to !== from;
+    this.gradient.setMix(crossing ? blend : 0);
+    this.applyPalette(crossing ? lerpPalette(from, to, blend) : from);
+  }
+
   setTimeOfDay(timeOfDay: TimeOfDay, seconds = DEFAULT_TRANSITION_SECONDS): void {
+    // Something outside owns the look; a discrete jump would fight it.
+    if (this.externallyDriven) return;
     if (timeOfDay === this.timeOfDayValue) return;
 
     this.timeOfDayValue = timeOfDay;

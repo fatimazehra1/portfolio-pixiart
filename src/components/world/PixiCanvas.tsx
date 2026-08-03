@@ -3,6 +3,7 @@
 import { useEffect, useRef } from "react";
 import {
   CameraController,
+  DayNightManager,
   Engine,
   Ground,
   Ocean,
@@ -37,7 +38,7 @@ export default function PixiCanvas() {
     let ground: Ground | null = null;
     let camera: CameraController | null = null;
     let time: TimeManager | null = null;
-    let unsubscribe: (() => void) | null = null;
+    let cycle: DayNightManager | null = null;
     let cancelled = false;
 
     const setCamera = useWorldStore.getState().setCamera;
@@ -123,11 +124,11 @@ export default function PixiCanvas() {
       camera.resize(width, height);
       camera.snapToStart();
 
-      // The world clock. It runs and publishes, but nothing is wired to it
-      // yet — the sky, sea and land still follow `timeOfDay` directly. Giving
-      // the clock the sky means deciding what dawn and dusk look like first,
-      // which is a visual decision rather than a clock one.
+      // The world clock, and the cycle that reads it. The clock is the single
+      // source of truth for *when*; the cycle turns that into *how it looks*
+      // and pushes it into the three systems. Neither can move the other.
       time = new TimeManager({ onChange: setTimeSnapshot });
+      cycle = new DayNightManager({ time: time.time, sky, ocean, ground });
 
       instance.onUpdate((ticker) => {
         const delta = ticker.deltaMS / 1000;
@@ -140,14 +141,9 @@ export default function PixiCanvas() {
         ground?.update(delta);
       });
 
-      // Subscribing directly (rather than via an effect) keeps time-of-day
-      // changes off React's render path entirely.
-      unsubscribe = useWorldStore.subscribe((state, prev) => {
-        if (state.timeOfDay === prev.timeOfDay) return;
-        sky?.setTimeOfDay(state.timeOfDay);
-        ocean?.setTimeOfDay(state.timeOfDay);
-        ground?.setTimeOfDay(state.timeOfDay);
-      });
+      // The store's `timeOfDay` no longer fans out to the three systems: the
+      // day/night cycle owns the look now, and two drivers would fight. The
+      // systems ignore `setTimeOfDay` once the cycle has hold of them anyway.
 
       host.appendChild(instance.canvas);
       setViewport(instance.viewport);
@@ -157,8 +153,10 @@ export default function PixiCanvas() {
     return () => {
       cancelled = true;
       setReady(false);
-      unsubscribe?.();
-      unsubscribe = null;
+      // Drop the cycle before the clock it listens to, and both before the
+      // systems they drive.
+      cycle?.destroy();
+      cycle = null;
       // Detach the input listeners before anything they drive goes away.
       time?.destroy();
       time = null;

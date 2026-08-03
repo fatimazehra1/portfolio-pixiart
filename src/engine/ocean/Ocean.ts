@@ -89,6 +89,11 @@ export class Ocean {
   private mix = 1;
   private transitionDuration = 0;
 
+  /** Set once something outside is driving the look. See `setBlendedPalette`. */
+  private externallyDriven = false;
+  private drivenFrom: OceanPalette | null = null;
+  private drivenTo: OceanPalette | null = null;
+
   constructor(options: OceanOptions) {
     const {
       timeOfDay = DEFAULT_TIME_OF_DAY,
@@ -164,7 +169,34 @@ export class Ocean {
    * running with `motionScale: 0`) snaps instantly. Drive this from the same
    * value as the sky so the two stay in step.
    */
+  /**
+   * Position the water between two palettes.
+   *
+   * The way an external cycle drives this system, in place of `setTimeOfDay`.
+   * The water's body is a baked texture like the sky's gradient, so the two
+   * ends are baked once at a phase boundary and cross-faded by alpha; the wave
+   * tones, foam and shimmer are tints and interpolate per frame.
+   */
+  setBlendedPalette(from: OceanPalette, to: OceanPalette, blend: number): void {
+    this.externallyDriven = true;
+    this.mix = 1;
+
+    if (from !== this.drivenFrom || to !== this.drivenTo) {
+      this.drivenFrom = from;
+      this.drivenTo = to;
+
+      this.reflection.setWater(from.water);
+      if (to !== from) this.reflection.prepareWater(to.water);
+    }
+
+    const crossing = to !== from;
+    this.reflection.setMix(crossing ? blend : 0);
+    this.applyPalette(crossing ? lerpOceanPalette(from, to, blend) : from);
+  }
+
   setTimeOfDay(timeOfDay: TimeOfDay, seconds = DEFAULT_TRANSITION_SECONDS): void {
+    // Something outside owns the look; a discrete jump would fight it.
+    if (this.externallyDriven) return;
     if (timeOfDay === this.timeOfDayValue) return;
 
     this.timeOfDayValue = timeOfDay;

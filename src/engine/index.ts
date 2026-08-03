@@ -8,6 +8,10 @@ export type { CameraControllerOptions, CameraSettings } from "./camera";
 // Time (see ./time for the full system).
 export { TimeSystem, TimeManager, PHASE_SPANS, PHASE_ORDER, TIME_SETTINGS } from "./time";
 export type { TimeListener, TimePhase, TimeSettings, TimeSnapshot } from "./time";
+
+// Day/night cycle (see ./dayNight for the full system).
+export { DayNightSystem, DayNightManager, COLOR_PRESETS, DAY_NIGHT_SETTINGS } from "./dayNight";
+export type { DayNightState, PhasePalettes, PhasePreset } from "./dayNight";
 export { LayerManager, LAYER_ORDER } from "./layers/LayerManager";
 export { AssetLoader } from "./assets/AssetLoader";
 export type { Bounds, EngineOptions, LayerName, Size, Vec2 } from "./types";
