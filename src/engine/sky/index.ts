@@ -11,7 +11,13 @@ export { CloudLayer } from "./CloudLayer";
 export { BirdFlock } from "./BirdFlock";
 export { CelestialBody } from "./CelestialBody";
 export { HorizonHaze } from "./HorizonHaze";
-export { SKY_PRESETS, DEFAULT_TIME_OF_DAY, lerpPalette, lerpColor } from "./palette";
+export {
+  SKY_PRESETS,
+  DEFAULT_TIME_OF_DAY,
+  lerpPalette,
+  lerpColor,
+  sampleGradient,
+} from "./palette";
 export type { CloudShapeTextures, GlowOptions } from "./textures";
 export type {
   BirdTone,

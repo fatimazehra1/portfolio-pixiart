@@ -32,20 +32,20 @@
 
 ## Phase 3
 
-- [ ] Ocean
-- [ ] Waves
-- [ ] Reflections
-- [ ] Foam
+- [x] Ocean
+- [x] Waves
+- [x] Reflections
+- [x] Foam
 
 ---
 
 ## Phase 4
 
-- [ ] Ground
-- [ ] Road
+- [x] Ground
+- [x] Road
 - [ ] Trees
-- [ ] Grass
-- [ ] Rocks
+- [x] Grass
+- [x] Rocks
 - [ ] Benches
 - [ ] Lamps
 

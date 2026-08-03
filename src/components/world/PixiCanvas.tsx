@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { Engine, SkySystem } from "@/engine";
+import { Engine, Ground, Ocean, SkySystem } from "@/engine";
 import { useWorldStore } from "@/stores/worldStore";
 
 /**
@@ -25,6 +25,8 @@ export default function PixiCanvas() {
     // ready means cleanup never tears down a half-initialised Application.
     let engine: Engine | null = null;
     let sky: SkySystem | null = null;
+    let ocean: Ocean | null = null;
+    let ground: Ground | null = null;
     let unsubscribe: (() => void) | null = null;
     let cancelled = false;
 
@@ -38,6 +40,8 @@ export default function PixiCanvas() {
         onResize: (size) => {
           setViewport(size);
           sky?.resize(size.width, size.height);
+          ocean?.resize(size.width, size.height);
+          ground?.resize(size.width, size.height);
         },
       });
       await instance.init();
@@ -60,12 +64,43 @@ export default function PixiCanvas() {
         motionScale,
       });
       instance.app.stage.addChildAt(sky.container, 0);
-      instance.onUpdate((ticker) => sky?.update(ticker.deltaMS / 1000));
+
+      // The ocean shares the sky's pixel scale so both land on one grid — a
+      // mismatch is what would make the horizon seam obvious. It mounts in
+      // front of the sky and behind everything else still to come.
+      ocean = new Ocean({
+        width,
+        height,
+        timeOfDay: useWorldStore.getState().timeOfDay,
+        pixelScale: sky.pixelScale,
+        motionScale,
+      });
+      instance.app.stage.addChildAt(ocean.container, 1);
+
+      // The land sits in front of the water, on the same shared pixel grid.
+      ground = new Ground({
+        width,
+        height,
+        timeOfDay: useWorldStore.getState().timeOfDay,
+        pixelScale: sky.pixelScale,
+        motionScale,
+      });
+      instance.app.stage.addChildAt(ground.container, 2);
+
+      instance.onUpdate((ticker) => {
+        const delta = ticker.deltaMS / 1000;
+        sky?.update(delta);
+        ocean?.update(delta);
+        ground?.update(delta);
+      });
 
       // Subscribing directly (rather than via an effect) keeps time-of-day
       // changes off React's render path entirely.
       unsubscribe = useWorldStore.subscribe((state, prev) => {
-        if (state.timeOfDay !== prev.timeOfDay) sky?.setTimeOfDay(state.timeOfDay);
+        if (state.timeOfDay === prev.timeOfDay) return;
+        sky?.setTimeOfDay(state.timeOfDay);
+        ocean?.setTimeOfDay(state.timeOfDay);
+        ground?.setTimeOfDay(state.timeOfDay);
       });
 
       host.appendChild(instance.canvas);
@@ -78,7 +113,12 @@ export default function PixiCanvas() {
       setReady(false);
       unsubscribe?.();
       unsubscribe = null;
-      // Destroy the sky first so its generated textures are freed deterministically.
+      // Destroy the world systems first so their generated textures are freed
+      // deterministically.
+      ground?.destroy();
+      ground = null;
+      ocean?.destroy();
+      ocean = null;
       sky?.destroy();
       sky = null;
       if (engine) {

@@ -8,3 +8,11 @@ export type { Bounds, EngineOptions, LayerName, Size, Vec2 } from "./types";
 // Sky (see ./sky for the full system).
 export { SkySystem, SKY_PRESETS, DEFAULT_TIME_OF_DAY } from "./sky";
 export type { SkyPalette, SkySystemOptions, TimeOfDay } from "./sky";
+
+// Ocean (see ./ocean for the full system).
+export { Ocean, OCEAN_LAYERS, deriveOceanPalette } from "./ocean";
+export type { OceanModifiers, OceanOptions, OceanPalette } from "./ocean";
+
+// Ground (see ./ground for the full system).
+export { Ground, BUILDING_PLOTS, deriveGroundPalette } from "./ground";
+export type { GroundOptions, GroundPalette, PlotArea } from "./ground";
