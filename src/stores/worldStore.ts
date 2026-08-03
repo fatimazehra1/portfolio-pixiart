@@ -1,6 +1,6 @@
 import { create } from "zustand";
-import { DEFAULT_TIME_OF_DAY, WORLD_WIDTH } from "@/engine";
-import type { Size, TimeOfDay } from "@/engine";
+import { DEFAULT_TIME_OF_DAY, TIME_SETTINGS, WORLD_WIDTH } from "@/engine";
+import type { Size, TimeOfDay, TimePhase, TimeSnapshot } from "@/engine";
 
 /**
  * World store — the React-facing slice of engine state.
@@ -27,11 +27,27 @@ export interface WorldState {
   /** Current CSS-pixel viewport size; updates on resize. */
   viewport: Size;
   /**
-   * The world's time of day. Changing it cross-fades the sky; later systems
-   * (lighting, lanterns, ocean) will read the same value so the whole world
-   * agrees on what time it is.
+   * Which of the four authored looks the world is painted in. Changing it
+   * cross-fades the sky, sea and land together.
+   *
+   * Distinct from the clock below, and currently independent of it: this is the
+   * *look*, the clock is the *time*. Connecting them is a visual decision that
+   * needs somewhere for dawn and dusk to go first — see `PHASE_TO_TIME_OF_DAY`.
    */
   timeOfDay: TimeOfDay;
+
+  /** Normalized time of day from the world clock. 0 is midnight, wraps at 1. */
+  time: number;
+  /** Which of the six phases the clock is in. */
+  timePhase: TimePhase;
+  /** The phase being crossed into. Equal to `timePhase` outside a transition. */
+  timeNextPhase: TimePhase;
+  /** How far that crossing has come, 0–1, already eased. */
+  timeBlend: number;
+  /** Whole in-world days elapsed. */
+  timeDay: number;
+  /** Whether the clock is stopped. */
+  timePaused: boolean;
 
   /** World x at the left edge of the view. 0 is the west end of the world. */
   cameraX: number;
@@ -45,6 +61,8 @@ export interface WorldState {
   setTimeOfDay: (timeOfDay: TimeOfDay) => void;
   setCamera: (cameraX: number, cameraZoom: number) => void;
   setWorldWidth: (worldWidth: number) => void;
+  /** Mirror a clock snapshot into the store. Driven by TimeManager. */
+  setTimeSnapshot: (snapshot: TimeSnapshot) => void;
 }
 
 export const useWorldStore = create<WorldState>((set) => ({
@@ -55,9 +73,25 @@ export const useWorldStore = create<WorldState>((set) => ({
   cameraZoom: 1,
   worldWidth: WORLD_WIDTH,
 
+  time: TIME_SETTINGS.startTime,
+  timePhase: "sunset",
+  timeNextPhase: "sunset",
+  timeBlend: 0,
+  timeDay: 0,
+  timePaused: TIME_SETTINGS.startPaused,
+
   setReady: (isReady) => set({ isReady }),
   setViewport: (viewport) => set({ viewport }),
   setTimeOfDay: (timeOfDay) => set({ timeOfDay }),
   setCamera: (cameraX, cameraZoom) => set({ cameraX, cameraZoom }),
   setWorldWidth: (worldWidth) => set({ worldWidth }),
+  setTimeSnapshot: (snapshot) =>
+    set({
+      time: snapshot.time,
+      timePhase: snapshot.phase,
+      timeNextPhase: snapshot.nextPhase,
+      timeBlend: snapshot.blend,
+      timeDay: snapshot.day,
+      timePaused: snapshot.paused,
+    }),
 }));

@@ -53,7 +53,7 @@
 
 ## Phase 5
 
-- [ ] Time system
+- [x] Time system
 - [ ] Day/night cycle
 - [ ] Dynamic lighting
 

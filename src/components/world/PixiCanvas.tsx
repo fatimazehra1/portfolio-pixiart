@@ -1,7 +1,15 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { CameraController, Engine, Ground, Ocean, SkySystem, WORLD_WIDTH } from "@/engine";
+import {
+  CameraController,
+  Engine,
+  Ground,
+  Ocean,
+  SkySystem,
+  TimeManager,
+  WORLD_WIDTH,
+} from "@/engine";
 import { useWorldStore } from "@/stores/worldStore";
 
 /**
@@ -28,10 +36,12 @@ export default function PixiCanvas() {
     let ocean: Ocean | null = null;
     let ground: Ground | null = null;
     let camera: CameraController | null = null;
+    let time: TimeManager | null = null;
     let unsubscribe: (() => void) | null = null;
     let cancelled = false;
 
     const setCamera = useWorldStore.getState().setCamera;
+    const setTimeSnapshot = useWorldStore.getState().setTimeSnapshot;
 
     // DESIGN.md §Animation: calm by default, still when asked. 0 stops the drift
     // and makes time-of-day changes instant without flattening the art.
@@ -113,10 +123,17 @@ export default function PixiCanvas() {
       camera.resize(width, height);
       camera.snapToStart();
 
+      // The world clock. It runs and publishes, but nothing is wired to it
+      // yet — the sky, sea and land still follow `timeOfDay` directly. Giving
+      // the clock the sky means deciding what dawn and dusk look like first,
+      // which is a visual decision rather than a clock one.
+      time = new TimeManager({ onChange: setTimeSnapshot });
+
       instance.onUpdate((ticker) => {
         const delta = ticker.deltaMS / 1000;
-        // The camera goes first, so the world is drawn at the position it has
-        // this frame rather than the one it had last frame.
+        // The clock and the camera go first, so the world is drawn at the time
+        // and place it has this frame rather than the ones it had last frame.
+        time?.update(delta);
         camera?.update(delta);
         sky?.update(delta);
         ocean?.update(delta);
@@ -143,6 +160,8 @@ export default function PixiCanvas() {
       unsubscribe?.();
       unsubscribe = null;
       // Detach the input listeners before anything they drive goes away.
+      time?.destroy();
+      time = null;
       camera?.destroy();
       camera = null;
       // Destroy the world systems first so their generated textures are freed
