@@ -6,11 +6,20 @@
  * The width of the whole world in CSS pixels.
  *
  * WORLD.md describes one long coastal waterfront running from the dock to the
- * lighthouse, ten locations deep. At this width a 1600px viewport sees a little
- * under a quarter of it at a time, which leaves each building room to be
- * approached and left rather than simply appearing.
+ * lighthouse, ten locations deep, and this is the number that decides whether
+ * that reads as a coast or as a high street.
+ *
+ * Ten plots plus the open shore between them do not fit in less. At 7200 the
+ * gaps between landmarks came out around 170 pixels — you would leave one
+ * building and immediately be standing at the next, which is the opposite of a
+ * journey. At this width each gap is roughly 540, long enough that a chapter
+ * ends before the following one begins, and a 1600px viewport still sees only
+ * about a seventh of the world at a time.
+ *
+ * Everything downstream is placed by *fraction* of this, so it is the one number
+ * that changes the scale of the world without changing its composition.
  */
-export const WORLD_WIDTH = 7200;
+export const WORLD_WIDTH = 10800;
 
 /**
  * The height of the whole world in CSS pixels, or 0 for "as tall as whatever

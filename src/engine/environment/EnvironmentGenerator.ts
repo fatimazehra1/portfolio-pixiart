@@ -9,20 +9,8 @@ import {
 } from "./EnvironmentConfig";
 import type { Prop } from "./Prop";
 import type { GroundBand, PlotArea } from "../ground";
+import { createRandom, range } from "../shared/random";
 
-/** A deterministic little generator. The same seed always grows the same shore. */
-function createRandom(seed: number): () => number {
-  let state = seed >>> 0;
-  return () => {
-    state = (state + 0x6d2b79f5) >>> 0;
-    let t = state;
-    t = Math.imul(t ^ (t >>> 15), t | 1);
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
-
-const range = (rand: () => number, min: number, max: number) => min + rand() * (max - min);
 const clamp01 = (v: number) => (v < 0 ? 0 : v > 1 ? 1 : v);
 
 const TAU = Math.PI * 2;

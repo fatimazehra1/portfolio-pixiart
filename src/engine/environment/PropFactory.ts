@@ -1,6 +1,8 @@
-import { CanvasSource, Texture } from "pixi.js";
+import { Texture } from "pixi.js";
+
 import { PropView, type PropTextures, type ToneTextures } from "./Prop";
 import { FLICKER, PROP_KINDS, type PropKind } from "./EnvironmentConfig";
+import { createRandom, ditherAlpha, maskToTexture as bakeMask, range, rangeInt } from "../shared";
 
 /**
  * The prop workshop: every drawing on this shore, and the pool of sprites that
@@ -28,65 +30,9 @@ import { FLICKER, PROP_KINDS, type PropKind } from "./EnvironmentConfig";
 
 // --- Plumbing ----------------------------------------------------------------
 
-/** A deterministic little generator, so a grown prop grows the same way twice. */
-function createRandom(seed: number): () => number {
-  let state = seed >>> 0;
-  return () => {
-    state = (state + 0x6d2b79f5) >>> 0;
-    let t = state;
-    t = Math.imul(t ^ (t >>> 15), t | 1);
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
-
-const range = (rand: () => number, min: number, max: number) => min + rand() * (max - min);
-const rangeInt = (rand: () => number, min: number, max: number) =>
-  Math.floor(range(rand, min, max + 1));
-const clamp01 = (v: number) => (v < 0 ? 0 : v > 1 ? 1 : v);
-
-const BAYER_8 = [
-  0, 32, 8, 40, 2, 34, 10, 42, 48, 16, 56, 24, 50, 18, 58, 26, 12, 44, 4, 36, 14, 46, 6, 38, 60,
-  28, 52, 20, 62, 30, 54, 22, 3, 35, 11, 43, 1, 33, 9, 41, 51, 19, 59, 27, 49, 17, 57, 25, 15, 47,
-  7, 39, 13, 45, 5, 37, 63, 31, 55, 23, 61, 29, 53, 21,
-];
-
-/** Quantise a smooth falloff to a few levels and dither the steps. */
-function ditherAlpha(value: number, levels: number, x: number, y: number): number {
-  const p = clamp01(value) * (levels - 1);
-  const floor = Math.floor(p);
-  const threshold = (BAYER_8[(y & 7) * 8 + (x & 7)] + 0.5) / 64;
-  const index = Math.min(levels - 1, p - floor > threshold ? floor + 1 : floor);
-  return Math.round((index / (levels - 1)) * 255);
-}
-
-/** White RGB with a per-pixel alpha mask — every shape here is tinted at runtime. */
+/** Bake with the environment's name on any failure. See `@/engine/shared`. */
 function maskToTexture(width: number, height: number, mask: Uint8Array): Texture {
-  const canvas = document.createElement("canvas");
-  canvas.width = width;
-  canvas.height = height;
-
-  const ctx = canvas.getContext("2d");
-  if (!ctx) throw new Error("Environment: 2D canvas context unavailable");
-
-  const image = new ImageData(width, height);
-  for (let i = 0; i < mask.length; i++) {
-    const o = i * 4;
-    image.data[o] = 255;
-    image.data[o + 1] = 255;
-    image.data[o + 2] = 255;
-    image.data[o + 3] = mask[i];
-  }
-  ctx.putImageData(image, 0, 0);
-
-  return new Texture({
-    source: new CanvasSource({
-      resource: canvas,
-      scaleMode: "nearest",
-      antialias: false,
-      autoGenerateMipmaps: false,
-    }),
-  });
+  return bakeMask(width, height, mask, "Environment");
 }
 
 /** Three masks being filled in together. */

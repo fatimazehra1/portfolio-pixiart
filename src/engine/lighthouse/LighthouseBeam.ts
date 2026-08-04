@@ -1,4 +1,5 @@
-import { CanvasSource, Container, Sprite, Texture } from "pixi.js";
+import { Container, Sprite, Texture } from "pixi.js";
+import { ditherAlpha, maskToTexture as bakeMask } from "../shared";
 import { BEAM_SETTINGS, EMISSIVE, type BeamSettings } from "./LighthouseConfig";
 
 const TAU = Math.PI * 2;
@@ -18,55 +19,9 @@ export interface BeamGeometry {
 
 // --- Baking ------------------------------------------------------------------
 
-const BAYER_8 = [
-  0, 32, 8, 40, 2, 34, 10, 42, 48, 16, 56, 24, 50, 18, 58, 26, 12, 44, 4, 36, 14, 46, 6, 38, 60,
-  28, 52, 20, 62, 30, 54, 22, 3, 35, 11, 43, 1, 33, 9, 41, 51, 19, 59, 27, 49, 17, 57, 25, 15, 47,
-  7, 39, 13, 45, 5, 37, 63, 31, 55, 23, 61, 29, 53, 21,
-];
-
-/**
- * Quantise a smooth falloff to a handful of levels and dither the steps.
- *
- * The whole reason the beam looks hand-drawn rather than like a CSS gradient.
- * A light this soft would otherwise be a continuous ramp, and a continuous ramp
- * over a pixel-art sea is the one thing that gives away that it isn't pixel art
- * (CLAUDE.md §Pixel Art Rules).
- */
-function ditherAlpha(value: number, levels: number, x: number, y: number): number {
-  const p = clamp01(value) * (levels - 1);
-  const floor = Math.floor(p);
-  const threshold = (BAYER_8[(y & 7) * 8 + (x & 7)] + 0.5) / 64;
-  const index = Math.min(levels - 1, p - floor > threshold ? floor + 1 : floor);
-  return Math.round((index / (levels - 1)) * 255);
-}
-
-/** White RGB with a per-pixel alpha mask, tinted at runtime. */
+/** Bake with the lighthouse's name on any failure. See `@/engine/shared`. */
 function maskToTexture(width: number, height: number, mask: Uint8Array): Texture {
-  const canvas = document.createElement("canvas");
-  canvas.width = width;
-  canvas.height = height;
-
-  const ctx = canvas.getContext("2d");
-  if (!ctx) throw new Error("Lighthouse: 2D canvas context unavailable");
-
-  const image = new ImageData(width, height);
-  for (let i = 0; i < mask.length; i++) {
-    const o = i * 4;
-    image.data[o] = 255;
-    image.data[o + 1] = 255;
-    image.data[o + 2] = 255;
-    image.data[o + 3] = mask[i];
-  }
-  ctx.putImageData(image, 0, 0);
-
-  return new Texture({
-    source: new CanvasSource({
-      resource: canvas,
-      scaleMode: "nearest",
-      antialias: false,
-      autoGenerateMipmaps: false,
-    }),
-  });
+  return bakeMask(width, height, mask, "Lighthouse");
 }
 
 /**

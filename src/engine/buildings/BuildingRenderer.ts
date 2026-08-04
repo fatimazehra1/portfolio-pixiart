@@ -1,4 +1,5 @@
-import { CanvasSource, Container, Sprite, Texture } from "pixi.js";
+import { Container, Sprite, Texture } from "pixi.js";
+import { maskToTexture as bakeMask } from "../shared";
 import { applyAmbient } from "../lighting";
 import type { LightingState } from "../lighting";
 
@@ -13,35 +14,11 @@ import type { LightingState } from "../lighting";
  * Nothing here knows what a building *is*. It bakes, it tints, it tears down.
  */
 
-// --- Canvas ------------------------------------------------------------------
+// --- Baking ------------------------------------------------------------------
 
-/** White RGB with a per-pixel alpha mask — every shape here is tinted at runtime. */
+/** Bake with the buildings' name on any failure. See `@/engine/shared`. */
 export function maskToTexture(width: number, height: number, mask: Uint8Array): Texture {
-  const canvas = document.createElement("canvas");
-  canvas.width = width;
-  canvas.height = height;
-
-  const ctx = canvas.getContext("2d");
-  if (!ctx) throw new Error("Buildings: 2D canvas context unavailable");
-
-  const image = new ImageData(width, height);
-  for (let i = 0; i < mask.length; i++) {
-    const o = i * 4;
-    image.data[o] = 255;
-    image.data[o + 1] = 255;
-    image.data[o + 2] = 255;
-    image.data[o + 3] = mask[i];
-  }
-  ctx.putImageData(image, 0, 0);
-
-  return new Texture({
-    source: new CanvasSource({
-      resource: canvas,
-      scaleMode: "nearest",
-      antialias: false,
-      autoGenerateMipmaps: false,
-    }),
-  });
+  return bakeMask(width, height, mask, "Buildings");
 }
 
 /**

@@ -5,6 +5,7 @@ import { CloudLayer } from "./CloudLayer";
 import { HorizonHaze } from "./HorizonHaze";
 import { SkyGradient } from "./SkyGradient";
 import { DEFAULT_TIME_OF_DAY, SKY_PRESETS, blendGradientStops, lerpPalette } from "./palette";
+import { DEFAULT_PIXEL_HEIGHT } from "../shared";
 import type {
   CloudLayerConfig,
   GradientStop,
@@ -82,7 +83,7 @@ const CELESTIAL_DEPTH = 0.03;
  */
 const BIRD_DEPTH = 0.05;
 
-const DEFAULT_PIXEL_HEIGHT = 200;
+
 const DEFAULT_HORIZON = 0.68;
 const DEFAULT_SEED = 0x5a1f;
 const DEFAULT_TRANSITION_SECONDS = 2.5;

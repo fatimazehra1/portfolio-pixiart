@@ -24,7 +24,18 @@ import type { GroundBand } from "./GroundConfig";
  * standing between the viewer and a building is exactly what gives a side view
  * its depth (WORLD.md §Background Layers), so props there are welcome.
  *
- * Together these leave roughly three fifths of the shore open.
+ * # All ten, laid out at once
+ * Every location in WORLD.md has ground here, in the order the journey visits
+ * them, and the run was set out as a whole rather than a plot at a time. The
+ * first four were placed one by one as their buildings were built, and by the
+ * fifth there was nothing left but slivers — each new landmark was shaving its
+ * neighbour's ground, which is exactly how a coastline turns into a terrace.
+ *
+ * Every plot is sized to the building that will stand on it plus room to walk
+ * round it, and the gaps between them are all about the same: roughly 540
+ * pixels of open shore, which at any viewport is long enough that you leave one
+ * chapter before you arrive at the next. Those gaps are the reason the world
+ * reads as a coast rather than a street, so they are as deliberate as the plots.
  */
 export interface PlotArea {
   /** Matches the location names in WORLD.md, so buildings can find their ground. */
@@ -35,10 +46,31 @@ export interface PlotArea {
 }
 
 export const BUILDING_PLOTS: readonly PlotArea[] = [
-  { name: "dock", from: 0.03, to: 0.17, note: "Where the player arrives." },
-  { name: "aptech", from: 0.26, to: 0.42, note: "Open campus; wants width." },
-  { name: "cottage", from: 0.53, to: 0.67, note: "Small, set back from the path." },
-  { name: "lighthouse", from: 0.78, to: 0.94, note: "Must dominate the skyline." },
+  { name: "dock", from: 0.025, to: 0.075, note: "Where the player arrives." },
+  { name: "aptech", from: 0.12, to: 0.185, note: "Open campus; wants width." },
+  { name: "cottage", from: 0.235, to: 0.275, note: "Small, set back from the path." },
+  {
+    name: "planet01",
+    from: 0.325,
+    to: 0.375,
+    note: "Tall rather than wide; wants a forecourt and clear sky above it.",
+  },
+  {
+    name: "vaultsys",
+    from: 0.425,
+    to: 0.485,
+    note: "Broad and low; wants width and a formal setting rather than height.",
+  },
+  {
+    name: "naturetech",
+    from: 0.535,
+    to: 0.61,
+    note: "Widest of them all: a building, a crane beside it and a working site.",
+  },
+  { name: "bbit", from: 0.66, to: 0.71, note: "Upright; a spire among the low roofs." },
+  { name: "workshop", from: 0.76, to: 0.8, note: "Small and cluttered." },
+  { name: "ideastent", from: 0.85, to: 0.885, note: "Barely a building at all." },
+  { name: "lighthouse", from: 0.93, to: 0.97, note: "Must dominate the skyline." },
 ];
 
 /** Bands a plot keeps clear. Anything nearer the viewer stays free to plant. */

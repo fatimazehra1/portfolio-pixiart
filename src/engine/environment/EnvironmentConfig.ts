@@ -453,5 +453,5 @@ export const RESERVED_BANDS = PLOT_RESERVED_BANDS;
 export const DEFAULT_PLOTS = BUILDING_PLOTS;
 
 export const DEFAULT_SEED = 0x5eed;
-export const DEFAULT_PIXEL_HEIGHT = 200;
+export { DEFAULT_PIXEL_HEIGHT } from "../shared";
 export const DEFAULT_CULL_MARGIN = 160;

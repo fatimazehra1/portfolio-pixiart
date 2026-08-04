@@ -227,6 +227,6 @@ export interface GroundOptions {
  * so it is the single most consequential number in the file.
  */
 export const DEFAULT_SHORELINE = 0.78;
-export const DEFAULT_PIXEL_HEIGHT = 200;
+export { DEFAULT_PIXEL_HEIGHT } from "../shared";
 export const DEFAULT_SEED = 0x6a17;
 export const DEFAULT_TRANSITION_SECONDS = 2.5;

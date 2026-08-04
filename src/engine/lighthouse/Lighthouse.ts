@@ -1,4 +1,5 @@
-import { CanvasSource, Container, Sprite, Texture } from "pixi.js";
+import { Container, Sprite, Texture } from "pixi.js";
+import { maskToTexture as bakeMask } from "../shared";
 import { LighthouseBeam } from "./LighthouseBeam";
 import {
   BASE_BAND,
@@ -14,6 +15,7 @@ import {
 } from "./LighthouseConfig";
 import { applyAmbient } from "../lighting";
 import type { LightingState } from "../lighting";
+import { createRandom } from "../shared/random";
 
 /**
  * Something that hands out the state of the light and lets you listen to it.
@@ -27,47 +29,11 @@ export interface LightingSource {
   subscribe(listener: (state: LightingState) => void): () => void;
 }
 
-/** A deterministic little generator, so the stone is uneven the same way twice. */
-function createRandom(seed: number): () => number {
-  let state = seed >>> 0;
-  return () => {
-    state = (state + 0x6d2b79f5) >>> 0;
-    let t = state;
-    t = Math.imul(t ^ (t >>> 15), t | 1);
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
-
 const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
 
-/** White RGB with a per-pixel alpha mask — every shape here is tinted at runtime. */
+/** Bake with the lighthouse's name on any failure. See `@/engine/shared`. */
 function maskToTexture(width: number, height: number, mask: Uint8Array): Texture {
-  const canvas = document.createElement("canvas");
-  canvas.width = width;
-  canvas.height = height;
-
-  const ctx = canvas.getContext("2d");
-  if (!ctx) throw new Error("Lighthouse: 2D canvas context unavailable");
-
-  const image = new ImageData(width, height);
-  for (let i = 0; i < mask.length; i++) {
-    const o = i * 4;
-    image.data[o] = 255;
-    image.data[o + 1] = 255;
-    image.data[o + 2] = 255;
-    image.data[o + 3] = mask[i];
-  }
-  ctx.putImageData(image, 0, 0);
-
-  return new Texture({
-    source: new CanvasSource({
-      resource: canvas,
-      scaleMode: "nearest",
-      antialias: false,
-      autoGenerateMipmaps: false,
-    }),
-  });
+  return bakeMask(width, height, mask, "Lighthouse");
 }
 
 /** The layers the tower is built from. Each is a white mask, tinted separately. */

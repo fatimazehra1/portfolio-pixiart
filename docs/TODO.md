@@ -101,9 +101,9 @@
 
 - [x] Aptech Campus
 - [ ] Freelance Cottage
-- [ ] Planet01 Tower
-- [ ] Vaultsys Vault
-- [ ] NatureTech Foundry
+- [x] Planet01 Tower
+- [x] Vaultsys Vault
+- [x] NatureTech Foundry
 - [ ] BBIT Spire
 - [ ] Workshop
 - [ ] Ideas Tent

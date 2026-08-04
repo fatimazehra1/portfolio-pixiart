@@ -346,6 +346,6 @@ export interface OceanOptions {
 
 /** Ocean fills the bottom 30% of the viewport unless told otherwise. */
 export const DEFAULT_COVERAGE = 0.3;
-export const DEFAULT_PIXEL_HEIGHT = 200;
+export { DEFAULT_PIXEL_HEIGHT } from "../shared";
 export const DEFAULT_SEED = 0x0cea;
 export const DEFAULT_TRANSITION_SECONDS = 2.5;

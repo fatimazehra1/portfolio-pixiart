@@ -11,10 +11,13 @@ import {
   Ground,
   Lighthouse,
   LightingManager,
+  NatureTechBuilding,
   Ocean,
+  Planet01Building,
   SkySystem,
   Stars,
   TimeManager,
+  VaultsysBuilding,
   WORLD_WIDTH,
 } from "@/engine";
 import { useWorldStore } from "@/stores/worldStore";
@@ -194,6 +197,9 @@ export default function PixiCanvas() {
         motionScale,
       });
       buildings.add(new AptechBuilding(buildings.context));
+      buildings.add(new Planet01Building(buildings.context));
+      buildings.add(new VaultsysBuilding(buildings.context));
+      buildings.add(new NatureTechBuilding(buildings.context));
       instance.app.stage.addChildAt(buildings.container, 5);
 
       // The camera owns where the view is; the three systems each decide how

@@ -1,4 +1,5 @@
-import { CanvasSource, Texture } from "pixi.js";
+import type { Texture } from "pixi.js";
+import { ditherIndex, maskToTexture as bakeMask, toTexture as bakeTexture } from "../shared";
 import { range, rangeInt } from "./random";
 import { sampleGradient } from "./palette";
 import type { GradientStop } from "./types";
@@ -20,82 +21,29 @@ import type { GradientStop } from "./types";
  * accept textures from outside, so final art drops in without code changes.
  */
 
-// --- Dithering ---------------------------------------------------------------
-
-/** Ordered 8×8 Bayer matrix. Tiles seamlessly; classic pixel-art dither. */
-const BAYER_8 = [
-  0, 32, 8, 40, 2, 34, 10, 42, 48, 16, 56, 24, 50, 18, 58, 26, 12, 44, 4, 36, 14, 46, 6, 38, 60,
-  28, 52, 20, 62, 30, 54, 22, 3, 35, 11, 43, 1, 33, 9, 41, 51, 19, 59, 27, 49, 17, 57, 25, 15, 47,
-  7, 39, 13, 45, 5, 37, 63, 31, 55, 23, 61, 29, 53, 21,
-];
-
-/** Dither threshold in (0, 1) for a pixel. */
-function bayer(x: number, y: number): number {
-  return (BAYER_8[(y & 7) * 8 + (x & 7)] + 0.5) / 64;
-}
-
-const clamp01 = (v: number) => (v < 0 ? 0 : v > 1 ? 1 : v);
+// --- Baking ------------------------------------------------------------------
 
 /**
- * Quantise `v` (0–1) to one of `steps` levels, dithering the remainder against
- * the Bayer threshold so adjacent bands interleave instead of hard-banding.
- * Returns the level index, 0…steps-1.
- */
-function ditherIndex(v: number, steps: number, x: number, y: number): number {
-  const p = clamp01(v) * (steps - 1);
-  const i = Math.floor(p);
-  const frac = p - i;
-  return Math.min(steps - 1, frac > bayer(x, y) ? i + 1 : i);
-}
-
-// --- Canvas plumbing ---------------------------------------------------------
-
-function createCanvas(width: number, height: number): HTMLCanvasElement {
-  const canvas = document.createElement("canvas");
-  canvas.width = width;
-  canvas.height = height;
-  return canvas;
-}
-
-/**
- * Paint RGBA bytes into a nearest-neighbour Pixi texture. `paint` receives the
- * raw buffer to fill; writing it directly avoids allocating a second copy.
+ * Bake with sky's name on any failure.
+ *
+ * Thin aliases over `@/engine/shared` — the implementation is shared by every
+ * system in the engine; only the label on a context-creation failure is local.
  */
 function toTexture(
   width: number,
   height: number,
   paint: (pixels: Uint8ClampedArray) => void
 ): Texture {
-  const canvas = createCanvas(width, height);
-  const ctx = canvas.getContext("2d");
-  if (!ctx) throw new Error("Sky: 2D canvas context unavailable");
-
-  const image = new ImageData(width, height);
-  paint(image.data);
-  ctx.putImageData(image, 0, 0);
-
-  return new Texture({
-    source: new CanvasSource({
-      resource: canvas,
-      scaleMode: "nearest",
-      antialias: false,
-      autoGenerateMipmaps: false,
-    }),
-  });
+  return bakeTexture(width, height, paint, "Sky");
 }
+
+function maskToTexture(width: number, height: number, mask: Uint8Array): Texture {
+  return bakeMask(width, height, mask, "Sky");
+}
+
+const clamp01 = (v: number) => (v < 0 ? 0 : v > 1 ? 1 : v);
 
 /** White RGB with a per-pixel alpha mask — the shape sprites we tint at runtime. */
-function maskToTexture(width: number, height: number, mask: Uint8Array): Texture {
-  return toTexture(width, height, (pixels) => {
-    for (let i = 0; i < mask.length; i++) {
-      const o = i * 4;
-      pixels[o] = 255;
-      pixels[o + 1] = 255;
-      pixels[o + 2] = 255;
-      pixels[o + 3] = mask[i];
-    }
-  });
-}
 
 // --- Sky gradient ------------------------------------------------------------
 

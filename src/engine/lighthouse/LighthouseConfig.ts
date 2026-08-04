@@ -281,5 +281,5 @@ export interface LighthouseOptions {
 }
 
 /** Same rule the sky uses to pick a scale, for when one isn't given. */
-export const DEFAULT_PIXEL_HEIGHT = 200;
+export { DEFAULT_PIXEL_HEIGHT } from "../shared";
 export const DEFAULT_SEED = 0x11c7;

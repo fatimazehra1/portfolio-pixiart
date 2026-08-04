@@ -60,6 +60,9 @@ export {
   BuildingRenderer,
   InteractionZone,
   AptechBuilding,
+  Planet01Building,
+  VaultsysBuilding,
+  NatureTechBuilding,
   INTERACT_KEY,
 } from "./buildings";
 export type {
