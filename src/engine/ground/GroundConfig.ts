@@ -206,6 +206,15 @@ export interface GroundOptions {
    * pixel grid — a mismatch is what makes seams visible.
    */
   pixelScale?: number;
+  /**
+   * Whether the ground plants its own props.
+   *
+   * Defaults to true, so `Ground` on its own is still a complete shore. Set it
+   * false when something else owns the planting — the Environment system grows
+   * the same kinds from a seed, and two systems both filling the verges would
+   * double every rock on the beach.
+   */
+  props?: boolean;
   /** Seed for terrain mottling, cobbles and bush shapes. */
   seed?: number;
   /** Global motion multiplier. 0 for `prefers-reduced-motion: reduce`. */

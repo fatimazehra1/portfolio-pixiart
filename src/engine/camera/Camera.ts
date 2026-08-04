@@ -6,6 +6,27 @@ const clamp = (value: number, min: number, max: number) =>
   Math.min(Math.max(value, min), max);
 
 /**
+ * Anything with a world position the camera can lock onto — a player sprite, a
+ * boat, a plain `{ x, y }`. Read live every frame, so the camera tracks whatever
+ * the object does without anyone having to push updates at it.
+ *
+ * Structural on purpose: a Pixi `Container` already satisfies it.
+ */
+export interface FollowTarget {
+  readonly x: number;
+  readonly y: number;
+}
+
+export interface FollowOptions {
+  /** World-space offset from the target. Lets the subject sit off-centre. */
+  offset?: Partial<Vec2>;
+  /** Override the follow easing rate for this target. */
+  smoothing?: number;
+  /** Cut straight to the target instead of easing in from wherever we were. */
+  immediate?: boolean;
+}
+
+/**
  * A 2D pan + zoom camera (DESIGN.md §Camera: smooth panning, no sudden jumps,
  * slight cinematic easing, zoom only for interactions). Implemented by
  * transforming its own container: whatever the camera "sees" lives inside
@@ -22,6 +43,12 @@ const clamp = (value: number, min: number, max: number) =>
  * motion is identical at 30 FPS and 144 FPS. A plain `pos += (target - pos) *
  * 0.1` per frame would quietly make the camera twice as fast on a 120Hz screen.
  *
+ * # Following
+ * Assign a target with `follow` and the camera takes its heading from that
+ * object every frame instead of from whoever last called `panTo` (WORLD.md
+ * §Camera Rules — the camera follows the player). The easing is unchanged, so a
+ * followed subject is trailed rather than welded to the middle of the screen.
+ *
  * No rotation (2.5D side view).
  */
 export class Camera {
@@ -34,6 +61,8 @@ export class Camera {
   private position: Vec2 = { x: 0, y: 0 };
   /** Where the camera is heading. */
   private target: Vec2 = { x: 0, y: 0 };
+  /** Where `reset` goes back to. */
+  private home: Vec2 = { x: 0, y: 0 };
 
   private zoom = 1;
   private targetZoom = 1;
@@ -42,6 +71,13 @@ export class Camera {
 
   private smoothing = CAMERA_SETTINGS.smoothing;
   private zoomSmoothing = CAMERA_SETTINGS.zoomSmoothing;
+  private followSmoothing = CAMERA_SETTINGS.followSmoothing;
+
+  private followTarget: FollowTarget | null = null;
+  private followOffset: Vec2 = { x: 0, y: 0 };
+  private followRate: number | null = null;
+  /** Set while manual input has temporarily taken the wheel. */
+  private followPaused = false;
 
   constructor(viewport: Size) {
     this.container = new Container();
@@ -68,6 +104,10 @@ export class Camera {
     return { ...this.viewport };
   }
 
+  getBounds(): Bounds | null {
+    return this.bounds ? { ...this.bounds } : null;
+  }
+
   /**
    * The world x-coordinate at the *left* edge of the view.
    *
@@ -78,6 +118,26 @@ export class Camera {
     return this.position.x - this.viewport.width / this.zoom / 2;
   }
 
+  /** The world y-coordinate at the *top* edge of the view. */
+  getViewTop(): number {
+    return this.position.y - this.viewport.height / this.zoom / 2;
+  }
+
+  /**
+   * The world rectangle currently on screen.
+   *
+   * What a system culls against: anything outside this doesn't need drawing,
+   * which is how a 7200px world stays a 60 FPS world.
+   */
+  getVisibleBounds(): Bounds {
+    return {
+      x: this.getViewLeft(),
+      y: this.getViewTop(),
+      width: this.viewport.width / this.zoom,
+      height: this.viewport.height / this.zoom,
+    };
+  }
+
   /** True while the camera is still catching up to its target. */
   isSettled(): boolean {
     return (
@@ -85,6 +145,36 @@ export class Camera {
       Math.abs(this.target.y - this.position.y) < 0.01 &&
       Math.abs(this.targetZoom - this.zoom) < 0.001
     );
+  }
+
+  /** True when a target is assigned *and* actually driving the camera. */
+  isFollowing(): boolean {
+    return this.followTarget !== null && !this.followPaused;
+  }
+
+  // --- Coordinate helpers ----------------------------------------------------
+
+  /**
+   * World space → screen space (CSS pixels from the top-left of the viewport).
+   *
+   * The one correct way to ask "where on screen is this thing?" — for placing
+   * DOM overlays, hit-testing a click, or deciding whether a tooltip fits.
+   * Reading a sprite's `x` and treating it as a screen coordinate is the bug
+   * this exists to prevent, and it only shows up once the camera has moved.
+   */
+  worldToScreen(point: Vec2): Vec2 {
+    return {
+      x: (point.x - this.position.x) * this.zoom + this.viewport.width / 2,
+      y: (point.y - this.position.y) * this.zoom + this.viewport.height / 2,
+    };
+  }
+
+  /** Screen space → world space. The exact inverse of `worldToScreen`. */
+  screenToWorld(point: Vec2): Vec2 {
+    return {
+      x: (point.x - this.viewport.width / 2) / this.zoom + this.position.x,
+      y: (point.y - this.viewport.height / 2) / this.zoom + this.position.y,
+    };
   }
 
   // --- Commands --------------------------------------------------------------
@@ -111,9 +201,15 @@ export class Camera {
   }
 
   /** How hard the camera chases its target. See CameraConfig. */
-  setSmoothing(pan: number, zoom = this.zoomSmoothing): void {
+  setSmoothing(pan: number, zoom = this.zoomSmoothing, follow = this.followSmoothing): void {
     this.smoothing = pan;
     this.zoomSmoothing = zoom;
+    this.followSmoothing = follow;
+  }
+
+  /** Where `reset` returns to. Defaults to the world origin. */
+  setHome(x: number, y = 0): void {
+    this.home = { x, y };
   }
 
   /** Head towards a world point. The camera eases there over the next frames. */
@@ -130,6 +226,51 @@ export class Camera {
   /** Head towards a zoom level. */
   zoomTo(zoom: number): void {
     this.targetZoom = clamp(zoom, this.minZoom, this.maxZoom);
+  }
+
+  /** Multiply the zoom we're heading for. Zoom is geometric: 2× then 2× again. */
+  zoomBy(factor: number): void {
+    this.zoomTo(this.targetZoom * factor);
+  }
+
+  /**
+   * Lock onto a target. The camera reads its position every frame from here on,
+   * and manual `panTo` calls stop having any lasting effect.
+   *
+   * The target is held by reference, so a sprite that moves drags the camera
+   * with it — nothing has to push positions in.
+   */
+  follow(target: FollowTarget, options: FollowOptions = {}): void {
+    this.followTarget = target;
+    this.followOffset = { x: options.offset?.x ?? 0, y: options.offset?.y ?? 0 };
+    this.followRate = options.smoothing ?? null;
+    this.followPaused = false;
+
+    this.aimAtTarget();
+    if (options.immediate) {
+      this.position = { ...this.target };
+      this.apply();
+    }
+  }
+
+  /** Release the target. The camera stays exactly where it is. */
+  unfollow(): void {
+    this.followTarget = null;
+    this.followPaused = false;
+  }
+
+  /**
+   * Stop tracking without forgetting the target — what manual input does, so
+   * that dragging the view around during development doesn't permanently
+   * unhitch the camera from the player.
+   */
+  pauseFollow(): void {
+    if (this.followTarget) this.followPaused = true;
+  }
+
+  /** Pick the target back up. No-op if there isn't one. */
+  resumeFollow(): void {
+    this.followPaused = false;
   }
 
   /**
@@ -155,7 +296,12 @@ export class Camera {
   update(delta: number): void {
     if (delta <= 0) return;
 
-    const pan = 1 - Math.exp(-this.smoothing * delta);
+    // A follow target overwrites the heading every frame; that's the point of
+    // assigning one. Manual input only sticks while following is paused.
+    if (this.isFollowing()) this.aimAtTarget();
+
+    const rate = this.isFollowing() ? (this.followRate ?? this.followSmoothing) : this.smoothing;
+    const pan = 1 - Math.exp(-rate * delta);
     const zoomStep = 1 - Math.exp(-this.zoomSmoothing * delta);
 
     this.position = {
@@ -173,28 +319,25 @@ export class Camera {
     this.apply();
   }
 
-  /** Jump back to the origin at zoom 1. */
+  /**
+   * Ease back to the home position at zoom 1, and pick a paused follow target
+   * back up. Eases rather than cuts — a reset is still a camera move.
+   */
   reset(): void {
     this.targetZoom = 1;
-    this.snapTo(0, 0);
-  }
-
-  // --- Legacy --------------------------------------------------------------
-
-  /**
-   * @deprecated Use `panTo` for movement or `snapTo` for a hard cut. Kept so
-   * existing callers keep their original instant behaviour.
-   */
-  moveTo(x: number, y: number): void {
-    this.snapTo(x, y);
-  }
-
-  /** @deprecated Use `panBy`. */
-  moveBy(dx: number, dy: number): void {
-    this.snapTo(this.position.x + dx, this.position.y + dy);
+    this.resumeFollow();
+    if (this.isFollowing()) this.aimAtTarget();
+    else this.panTo(this.home.x, this.home.y);
   }
 
   // --- Internal --------------------------------------------------------------
+
+  /** Point the heading at the follow target, offset and clamped. */
+  private aimAtTarget(): void {
+    const t = this.followTarget;
+    if (!t) return;
+    this.panTo(t.x + this.followOffset.x, t.y + this.followOffset.y);
+  }
 
   /** Recompute the container transform from position + zoom, respecting bounds. */
   private apply(): void {
@@ -223,11 +366,20 @@ export class Camera {
     if (this.bounds) this.target = this.clampToBounds(this.target);
   }
 
-  /** Keep the visible world rectangle inside `bounds`; centre if bounds are smaller. */
+  /**
+   * Keep the visible world rectangle inside `bounds`; centre if bounds are
+   * smaller than the view.
+   *
+   * Clamped against whichever of the live and target zooms shows *more* world,
+   * so a camera easing through a zoom near the world's edge already sits where
+   * it will still be allowed to sit once the zoom lands. Clamping against the
+   * live zoom alone would let it creep sideways for the whole zoom out.
+   */
   private clampToBounds(pos: Vec2): Vec2 {
     const b = this.bounds!;
-    const halfW = this.viewport.width / this.zoom / 2;
-    const halfH = this.viewport.height / this.zoom / 2;
+    const z = Math.min(this.zoom, this.targetZoom);
+    const halfW = this.viewport.width / z / 2;
+    const halfH = this.viewport.height / z / 2;
 
     const minX = b.x + halfW;
     const maxX = b.x + b.width - halfW;

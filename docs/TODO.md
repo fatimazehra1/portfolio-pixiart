@@ -26,7 +26,7 @@
 - [x] Clouds
 - [x] Sun
 - [x] Moon
-- [ ] Stars
+- [x] Stars
 
 ---
 
@@ -43,11 +43,11 @@
 
 - [x] Ground
 - [x] Road
-- [ ] Trees
+- [x] Trees
 - [x] Grass
 - [x] Rocks
-- [ ] Benches
-- [ ] Lamps
+- [x] Benches
+- [x] Lamps
 
 ---
 
@@ -61,8 +61,8 @@
 
 ## Phase 6
 
-- [ ] Lighthouse
-- [ ] Beam animation
+- [x] Lighthouse
+- [x] Beam animation
 - [ ] Camera focus
 - [ ] Contact interaction
 
@@ -99,7 +99,7 @@
 
 ## Phase 10
 
-- [ ] Aptech Campus
+- [x] Aptech Campus
 - [ ] Freelance Cottage
 - [ ] Planet01 Tower
 - [ ] Vaultsys Vault

@@ -67,7 +67,8 @@ export class Ground {
   private readonly shoreline = new Shoreline();
   private readonly terrain = new TerrainLayer();
   private readonly path = new PathLayer();
-  private readonly props: PropLayer;
+  /** Null when something else owns the planting. See `GroundOptions.props`. */
+  private readonly props: PropLayer | null;
 
   private readonly shorelineRatio: number;
   private readonly targetPixelHeight: number;
@@ -117,14 +118,14 @@ export class Ground {
     this.currentPalette = palette;
 
     this.container.label = "ground";
-    this.props = new PropLayer(seed + 7, BUILDING_PLOTS);
+    this.props = options.props === false ? null : new PropLayer(seed + 7, BUILDING_PLOTS);
 
     this.container.addChild(
       this.shoreline.container,
       this.terrain.container,
-      this.path.container,
-      this.props.container
+      this.path.container
     );
+    if (this.props) this.container.addChild(this.props.container);
 
     this.resize(options.width, options.height);
     this.applyPalette(palette);
@@ -153,9 +154,17 @@ export class Ground {
 
   /** Where the ground is being kept clear, in screen pixels. */
   get plots(): { name: string; from: number; to: number }[] {
-    return this.props
-      .plotRanges(this.groundWidth)
-      .map((plot) => ({
+    // The layout is the answer even when nothing is planting against it, so a
+    // ground with no props of its own can still be asked where it may be built on.
+    const ranges =
+      this.props?.plotRanges(this.groundWidth) ??
+      BUILDING_PLOTS.map((plot) => ({
+        name: plot.name,
+        from: Math.round(plot.from * this.groundWidth),
+        to: Math.round(plot.to * this.groundWidth),
+      }));
+
+    return ranges.map((plot) => ({
         name: plot.name,
         from: plot.from * this.pixelScaleValue,
         to: plot.to * this.pixelScaleValue,
@@ -232,7 +241,7 @@ export class Ground {
     if (drift <= 0) return;
 
     this.shoreline.update(drift);
-    this.props.update(drift);
+    this.props?.update(drift);
   }
 
   /** Feed the ground the camera's horizontal position, in world pixels. */
@@ -275,7 +284,7 @@ export class Ground {
     this.shoreline.resize(w, h, waterEdge, sandEdge, rand);
     this.terrain.resize(w, h, sandEdge, grassEdge, rand);
     this.path.resize(w, h, pathTop, pathBottom, rand);
-    this.props.resize(w, h);
+    this.props?.resize(w, h);
 
     this.applyPalette(this.currentPalette);
   }
@@ -284,7 +293,7 @@ export class Ground {
     this.shoreline.destroy();
     this.terrain.destroy();
     this.path.destroy();
-    this.props.destroy();
+    this.props?.destroy();
     this.container.destroy({ children: true });
   }
 
@@ -295,6 +304,6 @@ export class Ground {
     this.shoreline.setTones(palette);
     this.terrain.setTones(palette);
     this.path.setTones(palette);
-    this.props.setTones(palette);
+    this.props?.setTones(palette);
   }
 }

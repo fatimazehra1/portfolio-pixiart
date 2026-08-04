@@ -2,17 +2,37 @@
 
 import { useEffect, useRef } from "react";
 import {
+  AptechBuilding,
+  BuildingManager,
   CameraController,
   DayNightManager,
   Engine,
+  Environment,
   Ground,
+  Lighthouse,
   LightingManager,
   Ocean,
   SkySystem,
+  Stars,
   TimeManager,
   WORLD_WIDTH,
 } from "@/engine";
 import { useWorldStore } from "@/stores/worldStore";
+
+/**
+ * Where the shore is, for anything that has to stand on it.
+ *
+ * Read off the sea and the land themselves rather than recomputed from the same
+ * constants — two systems agreeing by coincidence is how a building ends up
+ * hovering a pixel above its own beach.
+ */
+function shoreAnchors(ground: Ground, ocean: Ocean) {
+  return {
+    horizonY: ocean.topY,
+    shorelineY: ground.topY,
+    groundHeight: ground.size.height * ground.pixelScale,
+  };
+}
 
 /**
  * React mount point for the rendering engine. This is the ONLY bridge between
@@ -37,10 +57,18 @@ export default function PixiCanvas() {
     let sky: SkySystem | null = null;
     let ocean: Ocean | null = null;
     let ground: Ground | null = null;
+    let environment: Environment | null = null;
+    let unbindEnvironment: (() => void) | null = null;
+    let lighthouse: Lighthouse | null = null;
+    let unbindLighthouse: (() => void) | null = null;
+    let buildings: BuildingManager | null = null;
+    let unbindBuildings: (() => void) | null = null;
     let camera: CameraController | null = null;
     let time: TimeManager | null = null;
     let cycle: DayNightManager | null = null;
     let lighting: LightingManager | null = null;
+    let stars: Stars | null = null;
+    let unbindStars: (() => void) | null = null;
     let cancelled = false;
 
     const setCamera = useWorldStore.getState().setCamera;
@@ -56,8 +84,17 @@ export default function PixiCanvas() {
         onResize: (size) => {
           setViewport(size);
           sky?.resize(size.width, size.height);
+          if (sky && stars) stars.resize(sky.size.width, sky.size.height);
           ocean?.resize(size.width, size.height);
           ground?.resize(size.width, size.height);
+          // After the land, so anything standing on the shore is re-fitted to
+          // where it is now rather than to where it was a moment ago.
+          if (ground && ocean) {
+            const anchors = shoreAnchors(ground, ocean);
+            environment?.resize(size.width, size.height, anchors);
+            lighthouse?.resize(size.width, size.height, anchors);
+            buildings?.resize(size.width, size.height, anchors);
+          }
           camera?.resize(size.width, size.height);
         },
       });
@@ -82,6 +119,13 @@ export default function PixiCanvas() {
       });
       instance.app.stage.addChildAt(sky.container, 0);
 
+      // Stars mount *inside* the sky, in front of the gradient and behind
+      // everything else — so they sit under the clouds and beneath the moon,
+      // and inherit the sky's whole-number scale. The sky is untouched by this.
+      stars = new Stars({ motionScale });
+      stars.mountInto(sky.container);
+      stars.resize(sky.size.width, sky.size.height);
+
       // The ocean shares the sky's pixel scale so both land on one grid — a
       // mismatch is what would make the horizon seam obvious. It mounts in
       // front of the sky and behind everything else still to come.
@@ -104,8 +148,53 @@ export default function PixiCanvas() {
         timeOfDay: useWorldStore.getState().timeOfDay,
         pixelScale: sky.pixelScale,
         motionScale,
+        // The Environment system grows the planting now, from a seed. Leaving
+        // the ground's own hand-placed set on as well would put two rocks on
+        // every rock.
+        props: false,
       });
       instance.app.stage.addChildAt(ground.container, 2);
+
+      // Everything growing on, standing on or washed up on that land. It holds
+      // every prop in the world as data and gives sprites only to the ones on
+      // screen, so the shore can be as full as it likes.
+      environment = new Environment({
+        width,
+        height,
+        worldWidth: WORLD_WIDTH,
+        pixelScale: sky.pixelScale,
+        anchors: shoreAnchors(ground, ocean),
+        motionScale,
+      });
+      instance.app.stage.addChildAt(environment.container, 3);
+
+      // The lighthouse stands on the shore it was given room for, in front of
+      // the land so the tower covers the beach behind it and the beam falls
+      // across the open water. It is the last thing in the world and the one
+      // visible from all of it (WORLD.md §Overview).
+      lighthouse = new Lighthouse({
+        width,
+        height,
+        worldWidth: WORLD_WIDTH,
+        pixelScale: sky.pixelScale,
+        anchors: shoreAnchors(ground, ocean),
+        motionScale,
+      });
+      instance.app.stage.addChildAt(lighthouse.container, 4);
+
+      // The landmarks of the journey. The manager owns the registry, the cull,
+      // the proximity test and the one prompt they share; each building only
+      // knows how to stand and how to look.
+      buildings = new BuildingManager({
+        width,
+        height,
+        worldWidth: WORLD_WIDTH,
+        pixelScale: sky.pixelScale,
+        anchors: shoreAnchors(ground, ocean),
+        motionScale,
+      });
+      buildings.add(new AptechBuilding(buildings.context));
+      instance.app.stage.addChildAt(buildings.container, 5);
 
       // The camera owns where the view is; the three systems each decide how
       // much of that movement to answer. The ground tracks it one to one, the
@@ -120,6 +209,12 @@ export default function PixiCanvas() {
           sky?.setViewOffset(viewLeft);
           ocean?.setViewOffset(viewLeft);
           ground?.setViewOffset(viewLeft);
+          environment?.setViewOffset(viewLeft);
+          lighthouse?.setViewOffset(viewLeft);
+          buildings?.setViewOffset(viewLeft);
+          // Where you are considered to be, until a character exists to be it:
+          // the middle of the view, dropped onto the road.
+          buildings?.setFocus(viewLeft + instance.viewport.width / (2 * zoom));
           setCamera(viewLeft, zoom);
         },
       });
@@ -138,6 +233,24 @@ export default function PixiCanvas() {
       // beams still to come have one agreed answer to read.
       lighting = new LightingManager({ dayNight: cycle });
 
+      // Stars take their cue straight from the clock: they are out or they are
+      // not, which is a question about the hour rather than about colour.
+      unbindStars = stars.bindTime(time.time);
+
+      // The beam is a local light source, so it reads the one number the
+      // lighting system publishes for exactly that — nothing left over at noon,
+      // everything at midnight. The lighthouse never sees the clock.
+      unbindLighthouse = lighthouse.bindLighting(lighting);
+
+      // The same seam for the shore's own lights: the lamps come on when the
+      // ambient stops doing the work, and the planting is lit by the ambient
+      // itself so a bench matches the sand it stands on.
+      unbindEnvironment = environment.bindLighting(lighting);
+
+      // And again for the landmarks: sandstone lit by the ambient, windows and
+      // signs burning on what it leaves over.
+      unbindBuildings = buildings.bindLighting(lighting);
+
       instance.onUpdate((ticker) => {
         const delta = ticker.deltaMS / 1000;
         // The clock and the camera go first, so the world is drawn at the time
@@ -145,8 +258,12 @@ export default function PixiCanvas() {
         time?.update(delta);
         camera?.update(delta);
         sky?.update(delta);
+        stars?.update(delta);
         ocean?.update(delta);
         ground?.update(delta);
+        environment?.update(delta);
+        lighthouse?.update(delta);
+        buildings?.update(delta);
       });
 
       // The store's `timeOfDay` no longer fans out to the three systems: the
@@ -165,8 +282,14 @@ export default function PixiCanvas() {
       // cycle listens to the clock, and both feed the systems below.
       lighting?.destroy();
       lighting = null;
+      unbindStars?.();
+      unbindStars = null;
       cycle?.destroy();
       cycle = null;
+      // Destroyed before the sky it is mounted inside, so its textures are
+      // freed rather than swept up by the parent's teardown.
+      stars?.destroy();
+      stars = null;
       // Detach the input listeners before anything they drive goes away.
       time?.destroy();
       time = null;
@@ -174,6 +297,19 @@ export default function PixiCanvas() {
       camera = null;
       // Destroy the world systems first so their generated textures are freed
       // deterministically.
+      // Detaches the interact listener before anything it could reach goes away.
+      unbindBuildings?.();
+      unbindBuildings = null;
+      buildings?.destroy();
+      buildings = null;
+      unbindLighthouse?.();
+      unbindLighthouse = null;
+      lighthouse?.destroy();
+      lighthouse = null;
+      unbindEnvironment?.();
+      unbindEnvironment = null;
+      environment?.destroy();
+      environment = null;
       ground?.destroy();
       ground = null;
       ocean?.destroy();
