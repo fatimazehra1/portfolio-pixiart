@@ -16,6 +16,15 @@ import type {
 
 const clamp01 = (v: number) => (v < 0 ? 0 : v > 1 ? 1 : v);
 
+/**
+ * How far a climate reaches past its own edge, as a multiple of its width.
+ *
+ * Ties reach to size so scenes and zones use one rule. At the scenes' widths
+ * this lands close to CLIMATE_FALLOFF, which is the cap; at a zone's width it
+ * scales down to something bench-sized.
+ */
+const ZONE_REACH_RATIO = 1.4;
+
 /** The local climate at one point on the shore. */
 export interface SceneState {
   /** The nearest scene. What "where am I" means. */
@@ -35,6 +44,26 @@ export interface SceneState {
 }
 
 export type SceneListener = (state: SceneState) => void;
+
+/**
+ * Anything that has a climate and a place to have it in.
+ *
+ * A scene and a zone are the same shape to everything downstream of here; the
+ * only difference is that one has ground, a plot and possibly a building, and
+ * the other is just weather standing somewhere. Flattening them means the
+ * blending code has one case rather than two, and — more to the point — that a
+ * zone's edges soften by exactly the same rule as a scene's.
+ */
+interface ClimateSource {
+  id: string;
+  worldX: number;
+  width: number;
+  palette: PaletteDelta;
+  weather: readonly WeatherLayerSpec[];
+  camera: SceneCamera;
+  /** The scene this belongs to. A scene points at itself. */
+  scene: ResolvedScene;
+}
 
 export interface SceneDirectorOptions {
   scenes?: readonly ResolvedScene[];
@@ -74,12 +103,50 @@ export class SceneDirector {
   private readonly falloffPower: number;
   private readonly listeners = new Set<SceneListener>();
 
+  /**
+   * Everything with a climate and a position — the scenes, plus every zone
+   * inside them, flattened into one list.
+   *
+   * Zones compete on equal terms with the scenes they sit inside, which is what
+   * makes a warm corner bleed into the dusty room instead of cutting a hole in
+   * it. A zone is narrow and its falloff is proportionally tighter, so it wins
+   * near its own bench and loses a few metres away.
+   */
+  private readonly climates: readonly ClimateSource[];
+
   private current: SceneState | null = null;
 
   constructor(options: SceneDirectorOptions = {}) {
     this.scenes = options.scenes ?? RESOLVED_SCENES;
     this.falloff = options.falloff ?? CLIMATE_FALLOFF;
     this.falloffPower = options.falloffPower ?? CLIMATE_FALLOFF_POWER;
+
+    const climates: ClimateSource[] = [];
+    for (const scene of this.scenes) {
+      climates.push({
+        id: scene.id,
+        worldX: scene.worldX,
+        width: scene.width,
+        palette: scene.palette,
+        weather: scene.weather,
+        camera: scene.camera,
+        scene,
+      });
+
+      for (const zone of scene.zones) {
+        climates.push({
+          id: `${scene.id}/${zone.id}`,
+          worldX: zone.worldX,
+          width: zone.width,
+          palette: zone.palette,
+          weather: zone.weather,
+          // A zone has no opinion about framing. It is weather, not a place.
+          camera: scene.camera,
+          scene,
+        });
+      }
+    }
+    this.climates = climates;
   }
 
   // --- Queries ---------------------------------------------------------------
@@ -93,19 +160,22 @@ export class SceneDirector {
   sample(focusX: number): SceneState {
     const weights = this.weigh(focusX);
 
-    let scene = this.scenes[0];
+    let source = this.climates[0];
     let best = -1;
-    for (const s of this.scenes) {
-      const w = weights.get(s.id) ?? 0;
+    for (const c of this.climates) {
+      const w = weights.get(c.id) ?? 0;
       if (w > best) {
         best = w;
-        scene = s;
+        source = c;
       }
     }
 
     return {
-      scene,
-      presence: this.presenceAt(focusX, scene),
+      // The *scene*, even when a zone won. Standing at the workshop's AI bench
+      // you are still at the workshop — the zone changes the weather over you,
+      // not which chapter you are in.
+      scene: source.scene,
+      presence: this.presenceAt(focusX, source),
       weights,
       palette: this.blendPalette(weights),
       weather: this.blendWeather(weights),
@@ -156,10 +226,10 @@ export class SceneDirector {
     const raw = new Map<string, number>();
     let total = 0;
 
-    for (const scene of this.scenes) {
-      const w = this.presenceAt(focusX, scene);
+    for (const source of this.climates) {
+      const w = this.presenceAt(focusX, source);
       if (w > 0) {
-        raw.set(scene.id, w);
+        raw.set(source.id, w);
         total += w;
       }
     }
@@ -168,13 +238,13 @@ export class SceneDirector {
     // is in reach. Hand the whole climate to the nearest scene rather than
     // returning an empty blend that would grade to neutral and look like a hole.
     if (total <= 0) {
-      let nearest = this.scenes[0];
+      let nearest = this.climates[0];
       let least = Infinity;
-      for (const scene of this.scenes) {
-        const d = Math.abs(focusX - scene.worldX);
+      for (const source of this.climates) {
+        const d = Math.abs(focusX - source.worldX);
         if (d < least) {
           least = d;
-          nearest = scene;
+          nearest = source;
         }
       }
       return new Map([[nearest.id, 1]]);
@@ -184,15 +254,24 @@ export class SceneDirector {
     return raw;
   }
 
-  /** One scene's grip on a point, 0–1, before normalisation. */
-  private presenceAt(focusX: number, scene: ResolvedScene): number {
-    const half = scene.width / 2;
-    const distance = Math.abs(focusX - scene.worldX);
+  /**
+   * One climate's grip on a point, 0–1, before normalisation.
+   *
+   * Full anywhere over its own ground, then falling away over the shore beyond
+   * it. The reach is tied to the width of the thing casting it: a chapter half
+   * a kilometre wide bleeds for hundreds of pixels, a bench-sized zone bleeds
+   * for tens. Without that, a small zone with a scene-sized falloff would
+   * quietly own the whole building it was supposed to be a corner of.
+   */
+  private presenceAt(focusX: number, source: ClimateSource): number {
+    const half = source.width / 2;
+    const distance = Math.abs(focusX - source.worldX);
     if (distance <= half) return 1;
 
+    const reach = Math.min(this.falloff, source.width * ZONE_REACH_RATIO);
     const beyond = distance - half;
-    if (beyond >= this.falloff) return 0;
-    return clamp01(1 - beyond / this.falloff) ** this.falloffPower;
+    if (beyond >= reach) return 0;
+    return clamp01(1 - beyond / reach) ** this.falloffPower;
   }
 
   /**
@@ -214,10 +293,10 @@ export class SceneDirector {
     let tint = NEUTRAL_PALETTE.tint;
     let running = 0;
 
-    for (const scene of this.scenes) {
-      const w = weights.get(scene.id);
+    for (const source of this.climates) {
+      const w = weights.get(source.id);
       if (!w) continue;
-      const p = scene.palette;
+      const p = source.palette;
 
       exposure += p.exposure * w;
       localLight += p.localLight * w;
@@ -234,10 +313,10 @@ export class SceneDirector {
   private blendWeather(weights: ReadonlyMap<string, number>): Map<WeatherKind, number> {
     const out = new Map<WeatherKind, number>();
 
-    for (const scene of this.scenes) {
-      const w = weights.get(scene.id);
+    for (const source of this.climates) {
+      const w = weights.get(source.id);
       if (!w) continue;
-      for (const layer of scene.weather as readonly WeatherLayerSpec[]) {
+      for (const layer of source.weather) {
         out.set(layer.kind, (out.get(layer.kind) ?? 0) + layer.intensity * w);
       }
     }
@@ -250,11 +329,11 @@ export class SceneDirector {
     let offsetX = 0;
     let total = 0;
 
-    for (const scene of this.scenes) {
-      const w = weights.get(scene.id);
+    for (const source of this.climates) {
+      const w = weights.get(source.id);
       if (!w) continue;
-      zoom += scene.camera.zoom * w;
-      offsetX += scene.camera.offsetX * w;
+      zoom += source.camera.zoom * w;
+      offsetX += source.camera.offsetX * w;
       total += w;
     }
 

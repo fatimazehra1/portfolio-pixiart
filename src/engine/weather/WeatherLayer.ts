@@ -115,7 +115,10 @@ export class WeatherLayer {
     this.intensityValue = next;
 
     this.container.visible = next > 0.001;
-    this.veil.alpha = this.profile.veil.alpha * next;
+    // A flashing profile writes its own alpha every frame; setting a steady one
+    // here would make it visible between strikes, which is the one thing
+    // lightning must not be.
+    if (!this.profile.flash) this.veil.alpha = this.profile.veil.alpha * next;
 
     // Sprites beyond the live count are hidden, not destroyed.
     this.live = Math.round(this.particles.length * next);
@@ -176,6 +179,8 @@ export class WeatherLayer {
   update(delta: number, elapsed: number): void {
     if (this.idle) return;
 
+    if (this.profile.flash) this.strike(elapsed);
+
     const step = delta * this.motionScale;
     if (step <= 0) return;
 
@@ -212,6 +217,45 @@ export class WeatherLayer {
   }
 
   // --- Internal --------------------------------------------------------------
+
+  /**
+   * Drive the veil as an intermittent flash rather than a steady wash.
+   *
+   * The strike time comes from the clock rather than from a timer, so a layer
+   * that has been faded out for a minute does not owe a burst of strikes when
+   * it fades back in — it simply joins whatever the sky was already doing.
+   *
+   * Within a strike the alpha is a decaying ramp multiplied by a fast square
+   * beat. The decay is what makes it a flash rather than a pulse; the beat is
+   * what makes it lightning rather than a lamp being switched on.
+   *
+   * Not smoothed by `motionScale`, but silenced by it: under
+   * `prefers-reduced-motion` a flashing sky is exactly the thing not to render.
+   */
+  private strike(elapsed: number): void {
+    const flash = this.profile.flash!;
+
+    if (this.motionScale <= 0) {
+      this.veil.alpha = 0;
+      return;
+    }
+
+    // Where we are in the current cycle, 0–1.
+    const cycle = (elapsed % flash.period) / flash.period;
+    const window = flash.duration / flash.period;
+
+    if (cycle > window) {
+      this.veil.alpha = 0;
+      return;
+    }
+
+    const t = cycle / window;
+    const decay = (1 - t) ** 2;
+    // Odd beats land bright, even beats dark — a stutter, not a fade.
+    const beat = Math.floor(t * flash.beats * 2) % 2 === 0 ? 1 : 0.25;
+
+    this.veil.alpha = flash.peak * decay * beat * this.intensityValue;
+  }
 
   /** Decide the population and lay it out. Called on resize only. */
   private rebuild(): void {

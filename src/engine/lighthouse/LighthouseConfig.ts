@@ -280,6 +280,15 @@ export interface LighthouseOptions {
   seed?: number;
 }
 
+/**
+ * The floor under the tower's local light, at any hour and under any climate.
+ *
+ * Low enough that noon still reads as noon — the beam is a pale suggestion
+ * across the water rather than a night beam pasted onto daylight — and high
+ * enough that the lamp is unmistakably *on*. See `Lighthouse.applyLighting`.
+ */
+export const MIN_LOCAL_LIGHT = 0.34;
+
 /** Same rule the sky uses to pick a scale, for when one isn't given. */
 export { DEFAULT_PIXEL_HEIGHT } from "../shared";
 export const DEFAULT_SEED = 0x11c7;

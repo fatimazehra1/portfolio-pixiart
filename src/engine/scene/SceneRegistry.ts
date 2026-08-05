@@ -1,5 +1,11 @@
 import { DEFAULT_SCENE_CAMERA, NEUTRAL_PALETTE, STATUS_CLIMATE } from "./StatusClimate";
-import type { PaletteDelta, ResolvedScene, SceneConfig } from "./SceneTypes";
+import type {
+  PaletteDelta,
+  ResolvedScene,
+  ResolvedZone,
+  SceneConfig,
+  SceneZone,
+} from "./SceneTypes";
 
 /**
  * The waterfront, as a list of places.
@@ -40,11 +46,11 @@ export const SCENES: readonly SceneConfig[] = [
   },
   {
     id: "cottage",
-    name: "The Cottage",
+    name: "The Freelance Cottage",
     worldX: 2754,
     width: 432,
-    status: "active",
-    note: "Home. Small, lit, and lived in.",
+    status: "past",
+    note: "Where the freelance years happened. Finished, and behind you.",
   },
   {
     id: "planet01",
@@ -96,11 +102,11 @@ export const SCENES: readonly SceneConfig[] = [
   },
   {
     id: "bbit",
-    name: "BBIT",
+    name: "BBIT Spire",
     worldX: 7398,
     width: 540,
-    status: "past",
-    note: "The degree. Upright; a spire among the low roofs.",
+    status: "active",
+    note: "Still studying, still building. Upright; a spire among the low roofs.",
   },
   {
     id: "workshop",
@@ -108,16 +114,44 @@ export const SCENES: readonly SceneConfig[] = [
     worldX: 8424,
     width: 432,
     status: "dormant",
-    note: "Side projects. Small and cluttered; the lights are off more often than on.",
+    zones: [
+      {
+        id: "workshop-ai",
+        // Off-centre, and small. A corner of a room, not a wing of it — if it
+        // sat in the middle at half the building's width it would simply be a
+        // scene with a different status, and the dust around it would read as a
+        // border rather than as the room it is a corner of.
+        worldX: 8530,
+        width: 96,
+        status: "active",
+        reason:
+          "The AI corner: the one bench in a dormant workshop that is still occupied. Warm and lit, bleeding into the dust around it.",
+        palette: { localLight: 1.5, exposure: 1.12 },
+        weather: [{ kind: "clear", intensity: 1 }],
+      },
+    ],
+    note: "Side projects. Mostly quiet, with one bench still in use.",
   },
   {
     id: "ideastent",
     name: "The Ideas Tent",
     worldX: 9369,
     width: 378,
-    status: "abandoned",
+    status: "active",
+    overrides: {
+      // Ideas striking, not neglect. The lightning is the whole reading: this
+      // place is *not* abandoned, it is where things arrive unannounced, and a
+      // flash is the only weather that means arrival. Layered over the active
+      // climate rather than replacing it, so between strikes the air is clear
+      // and lit like everywhere else that is still being worked in.
+      weather: [
+        { kind: "clear", intensity: 1 },
+        { kind: "lightning", intensity: 0.65 },
+      ],
+      reason: "Ideas striking, not neglect: intermittent flashes over the active climate.",
+    },
     planting: { scale: 1.35 },
-    note: "Things that were started and not finished. The shore is taking it back.",
+    note: "Where things arrive unannounced. Overgrown because it is left open, not because it is left.",
   },
   {
     id: "lighthouse",
@@ -126,6 +160,15 @@ export const SCENES: readonly SceneConfig[] = [
     width: 432,
     status: "active",
     rendererId: "lighthouse",
+    overrides: {
+      // Always lit, whatever the hour and whatever the status. A lighthouse
+      // that goes out is not a lighthouse — it is the fixed point the whole
+      // coast is navigated by (WORLD.md §Overview), and the one thing that
+      // should look the same from every other chapter. The floor is enforced in
+      // `Lighthouse.applyLighting`; this is the palette half of the same fact.
+      palette: { localLight: 1.6, exposure: 1.08 },
+      reason: "Always lit: the fixed point the coast is read against, at every hour and under every status.",
+    },
     note: "The end of the journey, and the one thing visible from all of it.",
   },
 ];
@@ -194,6 +237,25 @@ export function resolveScene(scene: SceneConfig): ResolvedScene {
     camera: { ...DEFAULT_SCENE_CAMERA, ...scene.camera },
     planting: scene.planting ?? {},
     overridden: Boolean(scene.overrides),
+    zones: (scene.zones ?? []).map(resolveZone),
+  };
+}
+
+/** A zone's status, resolved into a climate, exactly as a scene's is. */
+function resolveZone(zone: SceneZone): ResolvedZone {
+  const climate = STATUS_CLIMATE[zone.status] ?? {
+    weather: [],
+    palette: NEUTRAL_PALETTE,
+  };
+
+  return {
+    id: zone.id,
+    worldX: zone.worldX,
+    width: zone.width,
+    status: zone.status,
+    reason: zone.reason,
+    weather: zone.weather ?? climate.weather,
+    palette: mergePalette(climate.palette, zone.palette),
   };
 }
 

@@ -31,7 +31,14 @@ export type SceneStatus =
   | "abandoned";
 
 /** Which particle behaviour a weather layer runs. See `weather/WeatherProfiles`. */
-export type WeatherKind = "clear" | "haze" | "fog" | "drizzle" | "dust" | "embers";
+export type WeatherKind =
+  | "clear"
+  | "haze"
+  | "fog"
+  | "drizzle"
+  | "dust"
+  | "embers"
+  | "lightning";
 
 /** One weather effect over a scene, and how strongly it runs. */
 export interface WeatherLayerSpec {
@@ -83,6 +90,28 @@ export interface ScenePlanting {
   density?: Partial<Record<PropKind, number>>;
   /** Overall multiplier applied on top, for a quick "greener"/"barer" dial. */
   scale?: number;
+}
+
+/**
+ * A pocket of different weather inside a scene. See `SceneConfig.zones`.
+ *
+ * Carries a `status` like a scene does, so the same table decides what it looks
+ * like — a warm corner in a dormant room is `active`, and it is active in
+ * exactly the way an active building is. The language stays one language.
+ */
+export interface SceneZone {
+  id: string;
+  /** Centre line, in absolute world pixels — same units as `SceneConfig.worldX`. */
+  worldX: number;
+  /** How wide the pocket is, in world pixels. Small; it is a corner, not a place. */
+  width: number;
+  status: SceneStatus;
+  /** Why this pocket differs from the room around it. Required. */
+  reason: string;
+  /** Merged over the status' palette delta, field by field. */
+  palette?: Partial<PaletteDelta>;
+  /** Replaces the status' weather stack outright. */
+  weather?: readonly WeatherLayerSpec[];
 }
 
 /**
@@ -144,6 +173,21 @@ export interface SceneConfig {
   /** What grows here. Falls back to the open shore's own planting. */
   planting?: ScenePlanting;
 
+  /**
+   * Places inside this scene that do not share its climate.
+   *
+   * A scene is usually one mood, but not always: a dormant workshop can still
+   * have one corner with the lights on and somebody in it. A zone is a small
+   * scene nested in a larger one — same falloff, same blending, so the warm
+   * corner bleeds into the dusty room around it rather than sitting in it as a
+   * rectangle.
+   *
+   * They are deliberately not full scenes: no renderer, no plots, no ground of
+   * their own. A zone says only "the weather is different *here*", which is the
+   * one thing it is for.
+   */
+  zones?: readonly SceneZone[];
+
   /** A note to the next person reading the layout. Never rendered. */
   note?: string;
 }
@@ -162,4 +206,24 @@ export interface ResolvedScene {
   planting: ScenePlanting;
   /** True when `overrides` supplied any of the above. */
   overridden: boolean;
+  /**
+   * Pockets of different climate inside this scene, resolved.
+   *
+   * Flattened into the director's weighting alongside the scenes themselves, so
+   * a zone competes for influence on equal terms and its edges blend the same
+   * way. They are listed here rather than in the top-level scene list because
+   * they are not places you can go — only weather you can stand in.
+   */
+  zones: readonly ResolvedZone[];
+}
+
+/** A zone with its status resolved into a climate. */
+export interface ResolvedZone {
+  id: string;
+  worldX: number;
+  width: number;
+  status: SceneStatus;
+  reason: string;
+  weather: readonly WeatherLayerSpec[];
+  palette: PaletteDelta;
 }

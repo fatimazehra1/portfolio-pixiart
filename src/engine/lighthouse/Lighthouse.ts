@@ -8,6 +8,7 @@ import {
   EMISSIVE,
   MATERIALS,
   TOWER,
+  MIN_LOCAL_LIGHT,
   lighthouseWorldX,
   type LighthouseOptions,
   type MaterialName,
@@ -216,7 +217,17 @@ export class Lighthouse {
     this.lighting = state;
     this.applyTint();
 
-    const local = state.localLightMultiplier;
+    // Always lit. A lighthouse that goes out is not a lighthouse — it is the
+    // fixed point the whole coast is read against (WORLD.md §Overview), the one
+    // thing that should look the same from every other chapter, and the object
+    // whose entire purpose is to be on when nothing else is.
+    //
+    // So the local-light multiplier gets a floor here rather than a scene
+    // override doing the work: an override is a statement about a *place*, and
+    // this is a fact about the building. Above the floor it still answers the
+    // hour normally, so the lamp is merely present at noon and blazing at
+    // midnight — which is what a real one looks like.
+    const local = Math.max(MIN_LOCAL_LIGHT, state.localLightMultiplier);
     this.beam.setActivation(local);
 
     const window = this.sprites.get("window");

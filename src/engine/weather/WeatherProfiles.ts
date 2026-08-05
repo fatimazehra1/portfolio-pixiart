@@ -65,6 +65,33 @@ export interface WeatherProfile {
    * and only look brighter at night because everything around them is darker.
    */
   emissive: boolean;
+
+  /**
+   * Turns the veil into an intermittent flash instead of a steady wash.
+   *
+   * The one behaviour a particle field cannot express, and the reason it is a
+   * property rather than a second class: lightning is a veil whose alpha is a
+   * function of time rather than a constant. Everything else about it — colour,
+   * band, how it blends between scenes — is already what a veil does.
+   *
+   * Omit for steady weather.
+   */
+  flash?: {
+    /** Average seconds between strikes. */
+    period: number;
+    /** How long one strike lasts, in seconds. Short; a flash is not a fade. */
+    duration: number;
+    /** Peak veil alpha at the top of a strike. */
+    peak: number;
+    /**
+     * How many flickers within one strike.
+     *
+     * A single clean ramp reads as a light being switched on. Real lightning
+     * stutters, and two or three beats inside the same strike is the whole
+     * difference between a flash and a lamp.
+     */
+    beats: number;
+  };
 }
 
 /**
@@ -163,6 +190,28 @@ export const WEATHER_PROFILES: Record<WeatherKind, WeatherProfile> = {
     veil: { color: 0xffb45c, alpha: 0 },
     emissive: true,
   },
+
+  /**
+   * Ideas striking. Not a storm — no rain, no cloud, no threat.
+   *
+   * A wide silent flash over otherwise clear air, and nothing between strikes.
+   * The whole point is the gap: something arrives, the sky lights up, and then
+   * it is an ordinary afternoon again until the next one.
+   */
+  lightning: {
+    density: 0,
+    size: [1, 1],
+    streak: 1,
+    color: 0xffffff,
+    alpha: [0, 0],
+    vx: [0, 0],
+    vy: [0, 0],
+    sway: { amount: [0, 0], rate: [0, 0] },
+    band: [0, 0.7],
+    veil: { color: 0xdfe4ff, alpha: 1 },
+    emissive: true,
+    flash: { period: 6.5, duration: 0.42, peak: 0.5, beats: 3 },
+  },
 };
 
 /** Draw order, back to front. Washes first, sparks last. */
@@ -173,6 +222,7 @@ export const WEATHER_ORDER: readonly WeatherKind[] = [
   "drizzle",
   "dust",
   "embers",
+  "lightning",
 ];
 
 /**
