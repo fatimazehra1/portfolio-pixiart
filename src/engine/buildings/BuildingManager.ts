@@ -217,12 +217,16 @@ export class BuildingManager {
     this.focusY = y;
   }
 
-  /** Feed the buildings the camera's horizontal position, in world CSS pixels. */
+  /**
+   * Feed the buildings the camera's horizontal position, in world CSS pixels.
+   *
+   * What to cull, not where to stand. The landmarks live in world space inside
+   * the camera's `structures` layer, so the camera moves them by exactly what
+   * it moves the beach they stand on — which is the only way a building and its
+   * own ground can be guaranteed never to disagree.
+   */
   setViewOffset(x: number): void {
     this.viewOffset = x;
-    // Rounded to the shared pixel grid, exactly as the ground rounds it, so a
-    // building and the beach it stands on move as one thing.
-    this.container.x = -Math.round(x / this.pixelScaleValue) * this.pixelScaleValue;
   }
 
   /** Re-fit to a new viewport, in CSS pixels. */

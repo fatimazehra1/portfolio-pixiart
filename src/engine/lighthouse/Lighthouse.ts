@@ -95,11 +95,10 @@ const LAYER_MATERIAL: Record<TowerLayer, MaterialName> = {
  * multiplier, which is nothing at noon and everything at midnight.
  *
  * # Where it stands
- * In world space, on the plot the ground already reserves for it, scrolling
- * one-to-one with the land under the camera. It rounds its own scroll offset to
- * the shared pixel grid exactly as the ground does, which is what keeps the base
- * of the tower welded to the beach instead of shimmering against it as the
- * camera moves.
+ * In world space, on the plot the ground already reserves for it. It is mounted
+ * inside the camera and never moves itself, so the tower and the beach are
+ * carried by one transform on one pixel grid — which is what keeps the base of
+ * the tower welded to the sand instead of shimmering against it.
  *
  * # Usage
  * ```ts
@@ -109,10 +108,9 @@ const LAYER_MATERIAL: Record<TowerLayer, MaterialName> = {
  *   pixelScale: sky.pixelScale,
  *   anchors: { horizonY: ocean.topY, shorelineY: ground.topY, groundHeight },
  * });
- * app.stage.addChildAt(lighthouse.container, 3);   // in front of the land
+ * engine.layer("structures").addChild(lighthouse.container);
  * const off = lighthouse.bindLighting(lightingManager);
  * app.ticker.add((t) => lighthouse.update(t.deltaMS / 1000));
- * lighthouse.setViewOffset(viewLeft);
  * ```
  *
  * Owns the tower and its beam. No interaction, no dialogue, no sound.
@@ -140,7 +138,6 @@ export class Lighthouse {
 
   private pixelScaleValue = 1;
   private anchors: ShoreAnchors;
-  private viewOffset = 0;
 
   private lighting: LightingState | null = null;
   private unsubscribe: (() => void) | null = null;
@@ -231,13 +228,11 @@ export class Lighthouse {
     if (lamp) lamp.alpha = lerp(0.25, 1, local);
   }
 
-  /** Feed the lighthouse the camera's horizontal position, in world pixels. */
-  setViewOffset(x: number): void {
-    this.viewOffset = x;
-    // Rounded to the shared pixel grid, exactly as the ground rounds it, so the
-    // tower and the beach it stands on move as one thing.
-    this.container.x = -Math.round(x / this.pixelScaleValue) * this.pixelScaleValue;
-  }
+  /* The tower has no `setViewOffset`. It stands in world space inside the
+   * camera's `structures` layer, at one fixed spot on the shore, and it is
+   * never culled — the whole point of a lighthouse is that it is visible from
+   * everywhere (WORLD.md §Overview). There is nothing left for it to say about
+   * where the view is. */
 
   /** Re-fit to a new viewport, in CSS pixels. */
   resize(width: number, height: number, anchors: ShoreAnchors = this.anchors): void {
@@ -266,8 +261,6 @@ export class Lighthouse {
       horizonY: anchors.horizonY / this.pixelScaleValue,
       shorelineY: anchors.shorelineY / this.pixelScaleValue,
     });
-
-    this.setViewOffset(this.viewOffset);
   }
 
   /**

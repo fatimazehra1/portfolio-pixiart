@@ -212,6 +212,10 @@ export default function PixiCanvas() {
       buildings.add(new Planet01Building(buildings.context));
       buildings.add(new VaultsysBuilding(buildings.context));
       buildings.add(new NatureTechBuilding(buildings.context));
+      // The tower and the landmarks share a layer: they are the same kind of
+      // thing — something built, standing on the shore, sorted by how far down
+      // the land it stands.
+      instance.layer("structures").addChild(lighthouse.container, buildings.container);
 
       // Draw order, stated once, back to front. The camera container is itself
       // one entry in the list: everything migrated into the layer stack renders
@@ -221,9 +225,7 @@ export default function PixiCanvas() {
       stage.removeChildren();
       stage.addChild(sky.container);
       stage.addChild(ocean.container);
-      stage.addChild(instance.camera.container); // → terrain, props
-      stage.addChild(lighthouse.container);
-      stage.addChild(buildings.container);
+      stage.addChild(instance.camera.container); // → terrain, props, structures
 
       // The camera owns where the view is; the three systems each decide how
       // much of that movement to answer. The ground tracks it one to one, the
@@ -240,7 +242,6 @@ export default function PixiCanvas() {
           sky?.setViewOffset(viewLeft);
           ocean?.setViewOffset(viewLeft);
           environment?.setViewOffset(viewLeft);
-          lighthouse?.setViewOffset(viewLeft);
           buildings?.setViewOffset(viewLeft);
           // Where you are considered to be, until a character exists to be it:
           // the middle of the view, dropped onto the road.
