@@ -6,6 +6,7 @@ import { Ocean } from "../ocean";
 import { Ground } from "../ground";
 import { Environment } from "../environment";
 import { Foreground } from "../foreground";
+import { Atmosphere } from "../atmosphere";
 import { Lighthouse } from "../lighthouse";
 import {
   AptechBuilding,
@@ -97,6 +98,7 @@ export class World {
   readonly ground: Ground;
   readonly environment: Environment;
   readonly foreground: Foreground;
+  readonly atmosphere: Atmosphere;
   readonly lighthouse: Lighthouse;
   readonly buildings: BuildingManager;
   readonly weather: WeatherSystem;
@@ -175,6 +177,12 @@ export class World {
       plantingAt: (x, kind) => this.plantingAt(x, kind),
     });
     engine.layer("props").addChild(this.environment.container);
+
+    // Regional colour over the land, under the town. The cheap stand-in for
+    // per-region grading — see `Atmosphere` for why it is a stand-in and why
+    // that is the right call here.
+    this.atmosphere = new Atmosphere({ height, pixelScale, shorelineY: this.ground.topY });
+    engine.layer("atmosphere").addChild(this.atmosphere.container);
 
     this.lighthouse = new Lighthouse({
       width,
@@ -276,7 +284,9 @@ export class World {
       this.buildings.bindLighting(this.grade),
       this.foreground.bindLighting(this.grade),
       this.weather.bindLighting(this.grade),
-      this.weather.bindScenes(this.scenes)
+      this.weather.bindScenes(this.scenes),
+      this.atmosphere.bindLighting(this.grade),
+      this.atmosphere.bindScenes(this.scenes)
     );
 
     // Per-scene framing. The zoom follows wherever you are, blended across the
@@ -365,6 +375,7 @@ export class World {
     this.buildings.resize(width, height, anchors);
     this.foreground.resize(width, height);
     this.weather.resize(width, height);
+    this.atmosphere.resize(height, this.ground.topY);
 
     this.camera.resize(width, height);
     this.lockHorizon();
@@ -393,6 +404,7 @@ export class World {
 
     this.weather.destroy();
     this.foreground.destroy();
+    this.atmosphere.destroy();
     this.buildings.destroy();
     this.lighthouse.destroy();
     this.environment.destroy();

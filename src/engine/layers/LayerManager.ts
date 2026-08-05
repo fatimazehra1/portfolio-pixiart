@@ -32,6 +32,11 @@ export const LAYER_STACK: readonly LayerSpec[] = [
   { name: "backdrop", parallax: 0 },
   { name: "terrain", parallax: 1 },
   { name: "props", parallax: 1 },
+  // Above the land and its planting, below the town. Colour that belongs to a
+  // stretch of coast rather than to any object on it — so it must reach the
+  // ground and the grass, and must not wash over the buildings, which carry
+  // their own light.
+  { name: "atmosphere", parallax: 1 },
   { name: "structures", parallax: 1 },
   // Weather is in the *air*, not at a place. Rain pinned to world coordinates
   // slides past the window as you pan, which reads as falling debris rather

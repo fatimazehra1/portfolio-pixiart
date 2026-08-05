@@ -19,8 +19,17 @@ interface Particle {
 
 export interface WeatherLayerOptions {
   profile: WeatherProfile;
-  /** White 1×1, shared by every layer. */
+  /** White 1×1, shared by every layer. For particles. */
   texture: Texture;
+  /**
+   * A vertical feather, shared by every layer. For veils.
+   *
+   * A veil is a wash of colour occupying a band of the view, and a band drawn
+   * as a plain rectangle has a hard edge along its top — a horizontal line
+   * ruled across the sky, which is exactly what fog must not have. This fades
+   * it in over the first part of its band instead.
+   */
+  veilTexture: Texture;
   seed: number;
   motionScale?: number;
 }
@@ -81,7 +90,7 @@ export class WeatherLayer {
     this.container.eventMode = "none";
     this.field.eventMode = "none";
 
-    this.veil = new Sprite(this.texture);
+    this.veil = new Sprite(options.veilTexture);
     this.veil.eventMode = "none";
     this.veil.tint = this.profile.veil.color;
     this.veil.alpha = 0;

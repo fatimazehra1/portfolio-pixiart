@@ -28,6 +28,11 @@ export interface WeatherSystemOptions {
 
 export const DEFAULT_SEED = 0x77ea;
 
+/** Height of the baked veil feather, in texture pixels. */
+const VEIL_FEATHER = 256;
+/** How much of a band the feather takes to reach full strength, 0-1. */
+const VEIL_RAMP = 0.34;
+
 const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
 
 /**
@@ -57,6 +62,7 @@ export class WeatherSystem {
 
   private readonly layers = new Map<WeatherKind, WeatherLayer>();
   private readonly texture: Texture;
+  private readonly veilTexture: Texture;
   private readonly fixedPixelScale: number | undefined;
 
   /** What the scene is asking for, by kind. */
@@ -91,10 +97,36 @@ export class WeatherSystem {
       "Weather"
     );
 
+    // A vertical feather for the veils: transparent at the top of a band,
+    // reaching full strength a third of the way down. Tall enough that
+    // stretching it across a band does not step, for the same reason the
+    // atmosphere ramp is wide — every texture here samples nearest.
+    this.veilTexture = toTexture(
+      1,
+      VEIL_FEATHER,
+      (pixels) => {
+        for (let y = 0; y < VEIL_FEATHER; y += 1) {
+          const t = y / (VEIL_FEATHER - 1);
+          // Smoothstep in, then hold. Fog thickens downward and does not thin
+          // out again at the bottom of the frame — there is more of it between
+          // you and the ground than between you and the horizon.
+          const ramp = t < VEIL_RAMP ? t / VEIL_RAMP : 1;
+          const eased = ramp * ramp * (3 - 2 * ramp);
+          const o = y * 4;
+          pixels[o] = 255;
+          pixels[o + 1] = 255;
+          pixels[o + 2] = 255;
+          pixels[o + 3] = Math.round(eased * 255);
+        }
+      },
+      "Weather"
+    );
+
     WEATHER_ORDER.forEach((kind, index) => {
       const layer = new WeatherLayer({
         profile: { ...WEATHER_PROFILES[kind], ...options.profiles?.[kind] },
         texture: this.texture,
+        veilTexture: this.veilTexture,
         // Offset per kind, so fog and dust don't sit on identical lattices.
         seed: seed + index * 0x9e37,
         motionScale: options.motionScale,
@@ -206,6 +238,7 @@ export class WeatherSystem {
     for (const layer of this.layers.values()) layer.destroy();
     this.layers.clear();
     this.texture.destroy(true);
+    this.veilTexture.destroy(true);
     this.container.destroy({ children: true });
   }
 }

@@ -72,6 +72,10 @@ export type { WeatherProfile } from "./weather";
 export { Foreground, SILHOUETTES, FOREGROUND_PARALLAX } from "./foreground";
 export type { ForegroundOptions, SilhouetteKind } from "./foreground";
 
+// Regional colour.
+export { Atmosphere } from "./atmosphere";
+export type { AtmosphereOptions } from "./atmosphere";
+
 // The assembled world.
 export { World } from "./world";
 export type { WorldOptions } from "./world";

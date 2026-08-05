@@ -32,6 +32,8 @@ export type LayerName =
   | "terrain"
   /** Everything growing on or washed up on the land. */
   | "props"
+  /** Per-scene colour, laid over the land and under the town. */
+  | "atmosphere"
   /** Buildings and the lighthouse — what the town is made of. */
   | "structures"
   /** Local weather. Between the town and the viewer. */
