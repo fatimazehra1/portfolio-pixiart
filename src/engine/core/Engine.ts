@@ -11,11 +11,12 @@ import type { EngineOptions, LayerName, Size } from "../types";
  * camera, the render layers and the asset loader, and it handles resize + cleanup.
  *
  * Scene graph:
- *   stage → camera.container → world → { background, midground, foreground }
+ *   stage → camera.container → world → { backdrop … foreground }
  *
- * The camera transforms `camera.container`; the world holds the layers that future
- * systems draw into. Live camera state stays here (not in React) so panning never
- * triggers re-renders — only viewport size / ready flags are surfaced to the store.
+ * The camera transforms `camera.container`; the world holds the parallax layers
+ * that the drawing systems mount into. Live camera state stays here (not in
+ * React) so panning never triggers re-renders — only viewport size / ready flags
+ * are surfaced to the store.
  */
 export class Engine {
   readonly app: Application;
@@ -112,6 +113,11 @@ export class Engine {
   /** The mount point for a render layer's content. */
   layer(name: LayerName): Container {
     return this.layers.get(name);
+  }
+
+  /** The layer stack, for driving parallax. See `LayerManager.setView`. */
+  get stack(): LayerManager {
+    return this.layers;
   }
 
   /**

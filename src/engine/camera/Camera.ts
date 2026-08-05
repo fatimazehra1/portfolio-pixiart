@@ -66,6 +66,13 @@ export class Camera {
 
   private zoom = 1;
   private targetZoom = 1;
+  /**
+   * The zoom actually rendered, quantised so one art pixel covers a whole
+   * number of screen pixels. The easing runs on `zoom`; this is where it lands.
+   */
+  private renderZoom = 1;
+  /** One art pixel, in world units — the shared `pixelScale`. */
+  private pixelSize = 1;
   private minZoom = CAMERA_SETTINGS.minZoom;
   private maxZoom = CAMERA_SETTINGS.maxZoom;
 
@@ -96,8 +103,20 @@ export class Camera {
     return { ...this.target };
   }
 
+  /**
+   * The zoom on screen. Quantised — see `setPixelSize`.
+   *
+   * Deliberately the *rendered* value rather than the one the easing is
+   * carrying, so anything culling or hit-testing against it agrees with what
+   * the viewer is actually looking at.
+   */
   getZoom(): number {
-    return this.zoom;
+    return this.renderZoom;
+  }
+
+  /** Screen pixels per art pixel at the current zoom. Always a whole number. */
+  getPixelStep(): number {
+    return Math.max(1, Math.round(this.pixelSize * this.zoom));
   }
 
   getViewport(): Size {
@@ -115,12 +134,12 @@ export class Camera {
    * world and grows eastward, so a layer can offset itself by it directly.
    */
   getViewLeft(): number {
-    return this.position.x - this.viewport.width / this.zoom / 2;
+    return this.position.x - this.viewport.width / this.renderZoom / 2;
   }
 
   /** The world y-coordinate at the *top* edge of the view. */
   getViewTop(): number {
-    return this.position.y - this.viewport.height / this.zoom / 2;
+    return this.position.y - this.viewport.height / this.renderZoom / 2;
   }
 
   /**
@@ -133,8 +152,8 @@ export class Camera {
     return {
       x: this.getViewLeft(),
       y: this.getViewTop(),
-      width: this.viewport.width / this.zoom,
-      height: this.viewport.height / this.zoom,
+      width: this.viewport.width / this.renderZoom,
+      height: this.viewport.height / this.renderZoom,
     };
   }
 
@@ -164,20 +183,36 @@ export class Camera {
    */
   worldToScreen(point: Vec2): Vec2 {
     return {
-      x: (point.x - this.position.x) * this.zoom + this.viewport.width / 2,
-      y: (point.y - this.position.y) * this.zoom + this.viewport.height / 2,
+      x: (point.x - this.position.x) * this.renderZoom + this.viewport.width / 2,
+      y: (point.y - this.position.y) * this.renderZoom + this.viewport.height / 2,
     };
   }
 
   /** Screen space → world space. The exact inverse of `worldToScreen`. */
   screenToWorld(point: Vec2): Vec2 {
     return {
-      x: (point.x - this.viewport.width / 2) / this.zoom + this.position.x,
-      y: (point.y - this.viewport.height / 2) / this.zoom + this.position.y,
+      x: (point.x - this.viewport.width / 2) / this.renderZoom + this.position.x,
+      y: (point.y - this.viewport.height / 2) / this.renderZoom + this.position.y,
     };
   }
 
   // --- Commands --------------------------------------------------------------
+
+  /**
+   * Tell the camera how big one art pixel is, in world units — pass the shared
+   * `pixelScale`. Everything the camera renders is snapped to that grid.
+   *
+   * Without this the camera is a plain float transform, and the moment world
+   * content is mounted inside it every sprite in the world starts landing on
+   * fractional screen coordinates. Set it before the first frame, and again
+   * whenever the scale changes (the viewport got tall enough for a bigger one).
+   */
+  setPixelSize(size: number): void {
+    const next = Math.max(1, Math.round(size));
+    if (next === this.pixelSize) return;
+    this.pixelSize = next;
+    this.apply();
+  }
 
   /** Update the visible area (call on resize). Re-clamps and re-applies. */
   setViewport(size: Size): void {
@@ -339,7 +374,23 @@ export class Camera {
     this.panTo(t.x + this.followOffset.x, t.y + this.followOffset.y);
   }
 
-  /** Recompute the container transform from position + zoom, respecting bounds. */
+  /**
+   * Recompute the container transform from position + zoom, respecting bounds,
+   * and land the whole thing on the art's pixel grid.
+   *
+   * Two quantisations, and the art falls apart without either:
+   *
+   *  - **Scale.** One art pixel has to cover a whole number of screen pixels,
+   *    so the zoom is rounded to the nearest multiple of `1 / pixelSize`. At a
+   *    pixel scale of 5 that is a zoom step of 0.2 — fine enough to frame a
+   *    scene with, and the alternative is a tower whose windows are 3.4 pixels
+   *    wide and resample differently every frame.
+   *  - **Translation.** The offset is snapped to whole art pixels, so the world
+   *    scrolls one art pixel at a time rather than sliding continuously
+   *    underneath a grid that stays put. This is the rounding the ground, the
+   *    props and the buildings each used to do for themselves; doing it once
+   *    here is what lets them stop.
+   */
   private apply(): void {
     this.zoom = clamp(this.zoom, this.minZoom, this.maxZoom);
 
@@ -347,11 +398,15 @@ export class Camera {
       this.position = this.clampToBounds(this.position);
     }
 
-    const z = this.zoom;
+    // Screen pixels per art pixel — whole, so the grid survives the zoom.
+    const step = Math.max(1, Math.round(this.pixelSize * this.zoom));
+    const z = step / this.pixelSize;
+    this.renderZoom = z;
+
     this.container.scale.set(z);
     this.container.position.set(
-      this.viewport.width / 2 - this.position.x * z,
-      this.viewport.height / 2 - this.position.y * z
+      Math.round((this.viewport.width / 2 - this.position.x * z) / step) * step,
+      Math.round((this.viewport.height / 2 - this.position.y * z) / step) * step
     );
   }
 

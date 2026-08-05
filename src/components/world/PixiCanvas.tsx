@@ -87,6 +87,12 @@ export default function PixiCanvas() {
         onResize: (size) => {
           setViewport(size);
           sky?.resize(size.width, size.height);
+          // A taller viewport can earn a bigger whole-number scale, and the
+          // camera's grid is that scale — re-read it before anything is placed.
+          if (sky) {
+            instance.camera.setPixelSize(sky.pixelScale);
+            instance.stack.setView(instance.camera.getViewLeft(), sky.pixelScale);
+          }
           if (sky && stars) stars.resize(sky.size.width, sky.size.height);
           ocean?.resize(size.width, size.height);
           ground?.resize(size.width, size.height);
@@ -120,7 +126,10 @@ export default function PixiCanvas() {
         timeOfDay: useWorldStore.getState().timeOfDay,
         motionScale,
       });
-      instance.app.stage.addChildAt(sky.container, 0);
+      // The camera renders on a whole-number pixel grid, and this is the number
+      // that grid is made of. Set before anything mounts inside it.
+      instance.camera.setPixelSize(sky.pixelScale);
+      instance.stack.setView(0, sky.pixelScale);
 
       // Stars mount *inside* the sky, in front of the gradient and behind
       // everything else — so they sit under the clouds and beneath the moon,
@@ -139,7 +148,6 @@ export default function PixiCanvas() {
         pixelScale: sky.pixelScale,
         motionScale,
       });
-      instance.app.stage.addChildAt(ocean.container, 1);
 
       // The land sits in front of the water, on the same shared pixel grid, and
       // is the one system baked at the width of the whole world — it's what the
@@ -156,7 +164,9 @@ export default function PixiCanvas() {
         // every rock.
         props: false,
       });
-      instance.app.stage.addChildAt(ground.container, 2);
+      // First system to live inside the camera transform. It no longer offsets
+      // itself — the `terrain` layer is world space, so the camera carries it.
+      instance.layer("terrain").addChild(ground.container);
 
       // Everything growing on, standing on or washed up on that land. It holds
       // every prop in the world as data and gives sprites only to the ones on
@@ -169,7 +179,6 @@ export default function PixiCanvas() {
         anchors: shoreAnchors(ground, ocean),
         motionScale,
       });
-      instance.app.stage.addChildAt(environment.container, 3);
 
       // The lighthouse stands on the shore it was given room for, in front of
       // the land so the tower covers the beach behind it and the beam falls
@@ -183,7 +192,6 @@ export default function PixiCanvas() {
         anchors: shoreAnchors(ground, ocean),
         motionScale,
       });
-      instance.app.stage.addChildAt(lighthouse.container, 4);
 
       // The landmarks of the journey. The manager owns the registry, the cull,
       // the proximity test and the one prompt they share; each building only
@@ -200,7 +208,19 @@ export default function PixiCanvas() {
       buildings.add(new Planet01Building(buildings.context));
       buildings.add(new VaultsysBuilding(buildings.context));
       buildings.add(new NatureTechBuilding(buildings.context));
-      instance.app.stage.addChildAt(buildings.container, 5);
+
+      // Draw order, stated once, back to front. The camera container is itself
+      // one entry in the list: everything migrated into the layer stack renders
+      // at the position it holds here. Systems still standing outside it are
+      // ordered around it until they move in.
+      const stage = instance.app.stage;
+      stage.removeChildren();
+      stage.addChild(sky.container);
+      stage.addChild(ocean.container);
+      stage.addChild(instance.camera.container); // → terrain
+      stage.addChild(environment.container);
+      stage.addChild(lighthouse.container);
+      stage.addChild(buildings.container);
 
       // The camera owns where the view is; the three systems each decide how
       // much of that movement to answer. The ground tracks it one to one, the
@@ -212,9 +232,10 @@ export default function PixiCanvas() {
         host,
         worldWidth: WORLD_WIDTH,
         onMove: (viewLeft, zoom) => {
+          // The layer stack moves everything mounted inside the camera.
+          instance.stack.setView(viewLeft);
           sky?.setViewOffset(viewLeft);
           ocean?.setViewOffset(viewLeft);
-          ground?.setViewOffset(viewLeft);
           environment?.setViewOffset(viewLeft);
           lighthouse?.setViewOffset(viewLeft);
           buildings?.setViewOffset(viewLeft);
@@ -257,8 +278,9 @@ export default function PixiCanvas() {
       // signs burning on what it leaves over.
       unbindBuildings = buildings.bindLighting(lighting);
 
-      instance.onUpdate((ticker) => {
-        const delta = ticker.deltaMS / 1000;
+      // One frame of the world, so the harness below can drive it by hand at a
+      // fixed step instead of at whatever rate a background tab feels like.
+      const step = (delta: number) => {
         // The clock and the camera go first, so the world is drawn at the time
         // and place it has this frame rather than the ones it had last frame.
         time?.update(delta);
@@ -270,7 +292,53 @@ export default function PixiCanvas() {
         environment?.update(delta);
         lighthouse?.update(delta);
         buildings?.update(delta);
-      });
+      };
+
+      instance.onUpdate((ticker) => step(ticker.deltaMS / 1000));
+
+      // TEMP(step2-verify): removed before step 2 is finished. Drives the world
+      // from a deterministic state so a frame can be fingerprinted and compared
+      // across a refactor, and so sub-pixel drift can be measured *during*
+      // movement rather than only at rest.
+      (window as unknown as Record<string, unknown>).__wf = {
+        cam: instance.camera,
+        ground: () => ground,
+        async frame(worldX: number, phase: string, frames = 90) {
+          time!.time.setPaused(true);
+          time!.time.setPhase(phase as never);
+          camera!.snapToStart();
+          instance.camera.snapTo(worldX + instance.viewport.width / 2, 0);
+          for (let i = 0; i < frames; i += 1) step(1 / 60);
+          instance.app.render();
+          const url = String(
+            instance.app.renderer.extract.canvas(instance.app.stage).toDataURL!()
+          );
+          const bytes = new TextEncoder().encode(url);
+          const digest = await crypto.subtle.digest("SHA-256", bytes);
+          return Array.from(new Uint8Array(digest))
+            .slice(0, 8)
+            .map((b) => b.toString(16).padStart(2, "0"))
+            .join("");
+        },
+        /**
+         * Pan across `worldX` a pixel at a time and record where the terrain
+         * actually landed on screen. Every sample has to be a whole multiple of
+         * the pixel scale; anything else is the shimmer we are looking for.
+         */
+        drift(from: number, to: number, samples = 240) {
+          time!.time.setPaused(true);
+          const seen: number[] = [];
+          for (let i = 0; i < samples; i += 1) {
+            const x = from + ((to - from) * i) / (samples - 1);
+            instance.camera.snapTo(x + instance.viewport.width / 2, 0);
+            const c = instance.camera.container;
+            seen.push(c.x + ground!.container.x * c.scale.x);
+          }
+          const scale = instance.camera.getPixelStep();
+          const offGrid = seen.filter((v) => Math.abs(v / scale - Math.round(v / scale)) > 1e-9);
+          return { scale, samples: seen.length, offGrid: offGrid.length, worst: offGrid[0] ?? null };
+        },
+      };
 
       // The store's `timeOfDay` no longer fans out to the three systems: the
       // day/night cycle owns the look now, and two drivers would fight. The

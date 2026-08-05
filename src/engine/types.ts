@@ -19,11 +19,25 @@ export interface Bounds {
 }
 
 /**
- * Render layers, back-to-front. Everything drawn in the world goes into one of
- * these three containers (see WORLD.md §Background Layers). Parallax, sky, ocean,
- * buildings, etc. are future systems that will populate these — not created here.
+ * Render layers, back-to-front (WORLD.md §Background Layers).
+ *
+ * One name per *depth*, not per system — what decides which layer something
+ * belongs in is how fast it should slide past, not who drew it. The stack and
+ * the parallax factor attached to each name live in `layers/LayerManager`.
  */
-export type LayerName = "background" | "midground" | "foreground";
+export type LayerName =
+  /** Screen-locked backdrops: the sea. Behind everything, moves least. */
+  | "backdrop"
+  /** The land itself. The one layer the camera travels over one-to-one. */
+  | "terrain"
+  /** Everything growing on or washed up on the land. */
+  | "props"
+  /** Buildings and the lighthouse — what the town is made of. */
+  | "structures"
+  /** Local weather. Between the town and the viewer. */
+  | "weather"
+  /** Silhouettes nearer than the town, moving faster than it. */
+  | "foreground";
 
 export interface EngineOptions {
   /** DOM element the canvas fills and resizes to. */
