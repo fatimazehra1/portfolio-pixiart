@@ -432,6 +432,15 @@ export interface EnvironmentOptions {
   plots?: readonly PlotArea[];
   /** Per-kind overrides, for density experiments. */
   kinds?: Partial<Record<PropKind, Partial<KindConfig>>>;
+  /**
+   * How thickly a place wants a kind to grow, as a multiplier at a world x.
+   *
+   * This is how a scene gets a bare working site or an overgrown one that the
+   * shore is taking back, without the environment knowing what a scene is. It
+   * is handed a function and asks it a question; who answers is not its
+   * business. `x` is in world CSS pixels.
+   */
+  plantingAt?: (x: number, kind: PropKind) => number;
   /** Global motion multiplier. 0 for `prefers-reduced-motion: reduce`. */
   motionScale?: number;
   /**

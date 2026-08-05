@@ -24,6 +24,16 @@ export interface GenerateOptions {
   plots: readonly PlotArea[];
   /** The planting scheme. Defaults to the shore's own. */
   kinds?: Record<PropKind, KindConfig>;
+  /**
+   * How thickly a scene wants this kind to grow, as a multiplier at a point.
+   *
+   * The seam per-scene planting plugs into. `x` is in world pixels, on the same
+   * grid as `worldWidth`. Return 1 to leave the shore alone — and note that
+   * returning 1 everywhere reproduces the generator's behaviour exactly, so a
+   * world that declares no planting is bit-for-bit the world that existed
+   * before scenes did.
+   */
+  plantingAt?: (x: number, kind: PropKind) => number;
 }
 
 /**
@@ -135,7 +145,14 @@ export function generate(options: GenerateOptions): Prop[] {
       // at 0 everything is accepted and the kind is spread evenly, at 1 it only
       // appears where the field is already strong.
       const density = field(here) ** 1.6;
-      const chance = 1 - config.clustering + config.clustering * density;
+      // The scene this stretch belongs to gets the last word, as a multiplier
+      // on the chance rather than a rule of its own. Above 1 it overgrows, at 0
+      // it is bare, and everywhere no scene has an opinion it is exactly 1 —
+      // so a world with no scene planting generates precisely what it did
+      // before this hook existed.
+      const local = options.plantingAt?.(here, kind) ?? 1;
+      if (local <= 0) continue;
+      const chance = (1 - config.clustering + config.clustering * density) * local;
       if (rand() >= chance) continue;
 
       if (here - lastX < config.minGap) continue;

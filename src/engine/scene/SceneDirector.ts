@@ -1,0 +1,264 @@
+import { RESOLVED_SCENES } from "./SceneRegistry";
+import {
+  CLIMATE_FALLOFF,
+  CLIMATE_FALLOFF_POWER,
+  DEFAULT_SCENE_CAMERA,
+  NEUTRAL_PALETTE,
+} from "./StatusClimate";
+import { lerpColor } from "../sky";
+import type {
+  PaletteDelta,
+  ResolvedScene,
+  SceneCamera,
+  WeatherKind,
+  WeatherLayerSpec,
+} from "./SceneTypes";
+
+const clamp01 = (v: number) => (v < 0 ? 0 : v > 1 ? 1 : v);
+
+/** The local climate at one point on the shore. */
+export interface SceneState {
+  /** The nearest scene. What "where am I" means. */
+  scene: ResolvedScene;
+  /** How wholly inside it we are, 0–1. Falls towards 0 in the gaps between. */
+  presence: number;
+  /** Every scene's share of the local climate, by id. Sums to 1. */
+  weights: ReadonlyMap<string, number>;
+  /** The palette shift here, blended across everything in reach. */
+  palette: PaletteDelta;
+  /** Weather here, by kind, already blended. Absent kinds are at zero. */
+  weather: ReadonlyMap<WeatherKind, number>;
+  /** How the camera should sit here. */
+  camera: SceneCamera;
+  /** The focus point this was computed for, in world pixels. */
+  focusX: number;
+}
+
+export type SceneListener = (state: SceneState) => void;
+
+export interface SceneDirectorOptions {
+  scenes?: readonly ResolvedScene[];
+  /** How far a scene's climate reaches past its own ground, in world pixels. */
+  falloff?: number;
+  falloffPower?: number;
+}
+
+/**
+ * Works out what the weather is where you are standing.
+ *
+ * # Why it takes the focus point as an argument
+ * It never reads the camera. The thing the climate should follow is *the
+ * subject* — today that is the middle of the view because there is nobody in
+ * the world yet, and tomorrow it is a character sprite walking along the path.
+ * Baking today's stand-in into the API would mean rewriting every caller the
+ * day the character arrives, and worse, would quietly make "where the camera
+ * is looking" and "where you are" the same thing forever. They are not: a
+ * camera panning ahead of a walking figure should not drag the fog with it.
+ *
+ * # The blending rule
+ * Every scene within reach contributes, weighted by how near the focus is to
+ * it, and the weights are normalised so they always sum to one. That means:
+ *
+ *  - Standing in the middle of a scene, you get that scene's climate almost
+ *    undiluted.
+ *  - Walking between two, you get a genuine mixture — the light sours over the
+ *    length of the walk rather than switching at a boundary.
+ *  - Out past the last scene, you get the nearest one rather than nothing,
+ *    because "no climate" is not a look, it is an absence of one.
+ *
+ * Nothing here draws, and nothing here can move the camera or the clock.
+ */
+export class SceneDirector {
+  private readonly scenes: readonly ResolvedScene[];
+  private readonly falloff: number;
+  private readonly falloffPower: number;
+  private readonly listeners = new Set<SceneListener>();
+
+  private current: SceneState | null = null;
+
+  constructor(options: SceneDirectorOptions = {}) {
+    this.scenes = options.scenes ?? RESOLVED_SCENES;
+    this.falloff = options.falloff ?? CLIMATE_FALLOFF;
+    this.falloffPower = options.falloffPower ?? CLIMATE_FALLOFF_POWER;
+  }
+
+  // --- Queries ---------------------------------------------------------------
+
+  /** The climate as last computed, or null before the first `focusOn`. */
+  get state(): SceneState | null {
+    return this.current;
+  }
+
+  /** Compute the climate at a point without publishing it. */
+  sample(focusX: number): SceneState {
+    const weights = this.weigh(focusX);
+
+    let scene = this.scenes[0];
+    let best = -1;
+    for (const s of this.scenes) {
+      const w = weights.get(s.id) ?? 0;
+      if (w > best) {
+        best = w;
+        scene = s;
+      }
+    }
+
+    return {
+      scene,
+      presence: this.presenceAt(focusX, scene),
+      weights,
+      palette: this.blendPalette(weights),
+      weather: this.blendWeather(weights),
+      camera: this.blendCamera(weights),
+      focusX,
+    };
+  }
+
+  // --- Commands --------------------------------------------------------------
+
+  /**
+   * Move the subject. Publishes to every listener.
+   *
+   * @param focusX where *you* are, in world pixels — not where the camera is.
+   */
+  focusOn(focusX: number): SceneState {
+    const state = this.sample(focusX);
+    this.current = state;
+    for (const listener of this.listeners) listener(state);
+    return state;
+  }
+
+  /** Listen for changes. Called immediately if there is already a state. */
+  subscribe(listener: SceneListener): () => void {
+    this.listeners.add(listener);
+    if (this.current) listener(this.current);
+    return () => {
+      this.listeners.delete(listener);
+    };
+  }
+
+  destroy(): void {
+    this.listeners.clear();
+    this.current = null;
+  }
+
+  // --- Internal --------------------------------------------------------------
+
+  /**
+   * How much of each scene is felt at a point, normalised to sum to 1.
+   *
+   * A scene counts fully anywhere over its own ground and then falls away over
+   * `falloff` pixels of open shore. The normalisation is what guarantees the
+   * blend is always a real mixture of real climates and never a fade to
+   * nothing — every point on the coast has weather.
+   */
+  private weigh(focusX: number): Map<string, number> {
+    const raw = new Map<string, number>();
+    let total = 0;
+
+    for (const scene of this.scenes) {
+      const w = this.presenceAt(focusX, scene);
+      if (w > 0) {
+        raw.set(scene.id, w);
+        total += w;
+      }
+    }
+
+    // Past both ends of the world, or in a gap wider than two falloffs, nothing
+    // is in reach. Hand the whole climate to the nearest scene rather than
+    // returning an empty blend that would grade to neutral and look like a hole.
+    if (total <= 0) {
+      let nearest = this.scenes[0];
+      let least = Infinity;
+      for (const scene of this.scenes) {
+        const d = Math.abs(focusX - scene.worldX);
+        if (d < least) {
+          least = d;
+          nearest = scene;
+        }
+      }
+      return new Map([[nearest.id, 1]]);
+    }
+
+    for (const [id, w] of raw) raw.set(id, w / total);
+    return raw;
+  }
+
+  /** One scene's grip on a point, 0–1, before normalisation. */
+  private presenceAt(focusX: number, scene: ResolvedScene): number {
+    const half = scene.width / 2;
+    const distance = Math.abs(focusX - scene.worldX);
+    if (distance <= half) return 1;
+
+    const beyond = distance - half;
+    if (beyond >= this.falloff) return 0;
+    return clamp01(1 - beyond / this.falloff) ** this.falloffPower;
+  }
+
+  /**
+   * The weighted average of every scene's palette delta.
+   *
+   * The scalars are a plain weighted sum, which works because the weights are
+   * normalised. The tint cannot be — averaging colours by summing weighted
+   * channels is how you get mud out of two perfectly good hues — so it is
+   * folded in one scene at a time against a *running* share. Mixing a colour
+   * into an accumulator by `w / (total so far)` gives the same answer as a
+   * simultaneous average, and does it without ever holding an unnormalised
+   * intermediate.
+   */
+  private blendPalette(weights: ReadonlyMap<string, number>): PaletteDelta {
+    let exposure = 0;
+    let localLight = 0;
+    let tintStrength = 0;
+    let desaturation = 0;
+    let tint = NEUTRAL_PALETTE.tint;
+    let running = 0;
+
+    for (const scene of this.scenes) {
+      const w = weights.get(scene.id);
+      if (!w) continue;
+      const p = scene.palette;
+
+      exposure += p.exposure * w;
+      localLight += p.localLight * w;
+      tintStrength += p.tintStrength * w;
+      desaturation += p.desaturation * w;
+
+      running += w;
+      tint = lerpColor(tint, p.tint, w / running);
+    }
+
+    return { exposure, tint, tintStrength, desaturation, localLight };
+  }
+
+  private blendWeather(weights: ReadonlyMap<string, number>): Map<WeatherKind, number> {
+    const out = new Map<WeatherKind, number>();
+
+    for (const scene of this.scenes) {
+      const w = weights.get(scene.id);
+      if (!w) continue;
+      for (const layer of scene.weather as readonly WeatherLayerSpec[]) {
+        out.set(layer.kind, (out.get(layer.kind) ?? 0) + layer.intensity * w);
+      }
+    }
+
+    return out;
+  }
+
+  private blendCamera(weights: ReadonlyMap<string, number>): SceneCamera {
+    let zoom = 0;
+    let offsetX = 0;
+    let total = 0;
+
+    for (const scene of this.scenes) {
+      const w = weights.get(scene.id);
+      if (!w) continue;
+      zoom += scene.camera.zoom * w;
+      offsetX += scene.camera.offsetX * w;
+      total += w;
+    }
+
+    if (total <= 0) return { ...DEFAULT_SCENE_CAMERA };
+    return { zoom, offsetX };
+  }
+}

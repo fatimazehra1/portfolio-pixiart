@@ -33,7 +33,11 @@ export const LAYER_STACK: readonly LayerSpec[] = [
   { name: "terrain", parallax: 1 },
   { name: "props", parallax: 1 },
   { name: "structures", parallax: 1 },
-  { name: "weather", parallax: 1 },
+  // Weather is in the *air*, not at a place. Rain pinned to world coordinates
+  // slides past the window as you pan, which reads as falling debris rather
+  // than as weather — so the field holds still against the camera and the
+  // scene director varies its intensity instead of its position.
+  { name: "weather", parallax: 0 },
   // Nearer than the town, so it overtakes it as the camera pans.
   { name: "foreground", parallax: 1.35 },
 ] as const;

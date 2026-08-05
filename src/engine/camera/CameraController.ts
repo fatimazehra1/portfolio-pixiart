@@ -156,6 +156,24 @@ export class CameraController {
     this.resize(viewport.width, viewport.height);
   }
 
+  /**
+   * Head towards a world point, easing. What per-scene framing uses.
+   *
+   * Goes through the controller rather than the camera so that a programmatic
+   * move counts as taking the wheel, exactly as a held key does — otherwise
+   * framing a scene while following a subject would fight the subject for a
+   * frame and lose.
+   */
+  panTo(x: number, y?: number): void {
+    this.takeManualControl();
+    this.camera.panTo(x, y);
+  }
+
+  /** Head towards a zoom level, easing. See `Camera.zoomTo`. */
+  zoomTo(zoom: number): void {
+    this.camera.zoomTo(zoom);
+  }
+
   /** Lock the camera onto something. See `Camera.follow`. */
   follow(target: FollowTarget, options?: FollowOptions): void {
     this.camera.follow(target, options);

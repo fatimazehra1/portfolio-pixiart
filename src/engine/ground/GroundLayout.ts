@@ -1,3 +1,4 @@
+import { SCENES, worldWidthFor } from "../scene/SceneRegistry";
 import type { GroundBand } from "./GroundConfig";
 
 /**
@@ -45,33 +46,28 @@ export interface PlotArea {
   note: string;
 }
 
-export const BUILDING_PLOTS: readonly PlotArea[] = [
-  { name: "dock", from: 0.025, to: 0.075, note: "Where the player arrives." },
-  { name: "aptech", from: 0.12, to: 0.185, note: "Open campus; wants width." },
-  { name: "cottage", from: 0.235, to: 0.275, note: "Small, set back from the path." },
-  {
-    name: "planet01",
-    from: 0.325,
-    to: 0.375,
-    note: "Tall rather than wide; wants a forecourt and clear sky above it.",
-  },
-  {
-    name: "vaultsys",
-    from: 0.425,
-    to: 0.485,
-    note: "Broad and low; wants width and a formal setting rather than height.",
-  },
-  {
-    name: "naturetech",
-    from: 0.535,
-    to: 0.61,
-    note: "Widest of them all: a building, a crane beside it and a working site.",
-  },
-  { name: "bbit", from: 0.66, to: 0.71, note: "Upright; a spire among the low roofs." },
-  { name: "workshop", from: 0.76, to: 0.8, note: "Small and cluttered." },
-  { name: "ideastent", from: 0.85, to: 0.885, note: "Barely a building at all." },
-  { name: "lighthouse", from: 0.93, to: 0.97, note: "Must dominate the skyline." },
-];
+/**
+ * Where the ground is kept clear, derived from the scene registry.
+ *
+ * This list used to be authored here, in fractions of the world's width, and it
+ * was the second place the world's composition was written down — the scenes
+ * said where the chapters are and this said where their ground is, and keeping
+ * two lists of the same ten places in step is a job nobody was doing. Now the
+ * scenes are the only statement of it, and the plots fall out.
+ *
+ * Still fractions, because everything reading a plot expects fractions and the
+ * conversion has exactly one correct place to happen. The *scenes* are in
+ * absolute pixels; the division below is the whole of the difference.
+ */
+export const BUILDING_PLOTS: readonly PlotArea[] = (() => {
+  const width = worldWidthFor(SCENES);
+  return SCENES.map((scene) => ({
+    name: scene.id,
+    from: (scene.worldX - scene.width / 2) / width,
+    to: (scene.worldX + scene.width / 2) / width,
+    note: scene.note ?? "",
+  }));
+})();
 
 /** Bands a plot keeps clear. Anything nearer the viewer stays free to plant. */
 export const PLOT_RESERVED_BANDS: readonly GroundBand[] = ["wetSand", "sand", "backVerge"];

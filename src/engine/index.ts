@@ -37,7 +37,44 @@ export {
   localIntensity,
 } from "./lighting";
 export type { LightPreset, LightingState } from "./lighting";
-export { LayerManager, LAYER_ORDER } from "./layers/LayerManager";
+export { LayerManager, LAYER_ORDER, LAYER_STACK } from "./layers/LayerManager";
+export type { LayerSpec } from "./layers/LayerManager";
+
+// Scenes — the single source of truth for the world's composition.
+export {
+  SCENES,
+  RESOLVED_SCENES,
+  SceneDirector,
+  STATUS_CLIMATE,
+  NEUTRAL_PALETTE,
+  sceneById,
+  scenePlots,
+  worldWidthFor,
+} from "./scene";
+export type {
+  PaletteDelta,
+  ResolvedScene,
+  SceneConfig,
+  SceneState,
+  SceneStatus,
+  WeatherKind,
+  WeatherLayerSpec,
+} from "./scene";
+
+// Local grade — where the global hour meets the local climate.
+export { GradeManager, gradeLighting, gradeColor, desaturate } from "./grade";
+
+// Weather — one emitter, N profiles.
+export { WeatherSystem, WEATHER_PROFILES } from "./weather";
+export type { WeatherProfile } from "./weather";
+
+// The near foreground.
+export { Foreground, SILHOUETTES, FOREGROUND_PARALLAX } from "./foreground";
+export type { ForegroundOptions, SilhouetteKind } from "./foreground";
+
+// The assembled world.
+export { World } from "./world";
+export type { WorldOptions } from "./world";
 export { AssetLoader } from "./assets/AssetLoader";
 export type { Bounds, EngineOptions, LayerName, Size, Vec2 } from "./types";
 

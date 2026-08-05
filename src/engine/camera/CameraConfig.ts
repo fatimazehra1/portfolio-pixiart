@@ -1,25 +1,26 @@
+import { worldWidthFor } from "../scene/SceneRegistry";
+
 /**
  * Camera tuning — the single place to edit how the world is explored.
  */
 
 /**
- * The width of the whole world in CSS pixels.
+ * The width of the whole world in CSS pixels, derived from the scenes in it.
  *
  * WORLD.md describes one long coastal waterfront running from the dock to the
  * lighthouse, ten locations deep, and this is the number that decides whether
- * that reads as a coast or as a high street.
+ * that reads as a coast or as a high street. At 7200 the gaps between landmarks
+ * came out around 170 pixels — you would leave one building and immediately be
+ * standing at the next, which is the opposite of a journey. At the width the
+ * ten current scenes produce, each gap is roughly 540.
  *
- * Ten plots plus the open shore between them do not fit in less. At 7200 the
- * gaps between landmarks came out around 170 pixels — you would leave one
- * building and immediately be standing at the next, which is the opposite of a
- * journey. At this width each gap is roughly 540, long enough that a chapter
- * ends before the following one begins, and a 1600px viewport still sees only
- * about a seventh of the world at a time.
- *
- * Everything downstream is placed by *fraction* of this, so it is the one number
- * that changes the scale of the world without changing its composition.
+ * Derived rather than declared, and that is the important part: it used to be a
+ * constant that every position in the world was expressed as a fraction of, so
+ * changing it moved every building at once and adding an eleventh chapter meant
+ * re-composing the ten already placed. Now the scenes state where they are in
+ * absolute pixels and the coast is however long it needs to be to hold them.
  */
-export const WORLD_WIDTH = 10800;
+export const WORLD_WIDTH = worldWidthFor();
 
 /**
  * The height of the whole world in CSS pixels, or 0 for "as tall as whatever

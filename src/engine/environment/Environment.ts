@@ -117,6 +117,8 @@ export class Environment {
   private readonly cullMargin: number;
   private readonly fixedPixelScale: number | undefined;
   private readonly worldWidthCss: number | undefined;
+  /** Per-scene planting density, in world CSS pixels. See `EnvironmentOptions`. */
+  private readonly plantingAt: ((x: number, kind: PropKind) => number) | undefined;
 
   /** Every prop in the world, sorted west to east. */
   private props: Prop[] = [];
@@ -147,6 +149,7 @@ export class Environment {
     this.cullMargin = options.cullMargin ?? DEFAULT_CULL_MARGIN;
     this.fixedPixelScale = options.pixelScale;
     this.worldWidthCss = options.worldWidth;
+    this.plantingAt = options.plantingAt;
     this.anchors = options.anchors;
 
     this.scheme = mergeScheme(options.kinds);
@@ -295,6 +298,12 @@ export class Environment {
         seed: this.seed,
         plots: this.plots,
         kinds: this.scheme,
+        // The generator works in art pixels and the scenes are laid out in CSS
+        // world pixels, so the conversion happens here — at the one boundary
+        // between the two — rather than inside either of them.
+        plantingAt: this.plantingAt
+          ? (x, kind) => this.plantingAt!(x * scale, kind)
+          : undefined,
       });
       this.views = new Array<PropView | null>(this.props.length).fill(null);
     }

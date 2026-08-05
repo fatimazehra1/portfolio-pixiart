@@ -30,6 +30,16 @@ export class Engine {
   private readonly opts: EngineOptions;
   private resizeObserver: ResizeObserver | null = null;
   private started = false;
+  /**
+   * Set after construction, when the thing that wants resizes could not exist
+   * before the engine did. Takes precedence over `opts.onResize`.
+   *
+   * The World is built *from* an initialised engine — it needs the viewport and
+   * the camera to exist first — so it cannot be passed in as a constructor
+   * option. Rather than make every system nullable to accommodate that ordering,
+   * the handler arrives a moment later.
+   */
+  private onResize: ((size: Size) => void) | null = null;
 
   constructor(opts: EngineOptions) {
     this.opts = opts;
@@ -132,6 +142,11 @@ export class Engine {
     this.layers.setView(this.cameraRef.getView());
   }
 
+  /** Who to tell about resizes. See the field for why this arrives late. */
+  setResizeHandler(handler: ((size: Size) => void) | null): void {
+    this.onResize = handler;
+  }
+
   /**
    * Subscribe to the frame loop. The callback receives Pixi's Ticker; drive motion
    * by `ticker.deltaTime` so it's frame-rate independent. Returns an unsubscribe fn.
@@ -146,6 +161,7 @@ export class Engine {
   private handleResize = (): void => {
     const size = this.viewport;
     this.cameraRef.setViewport(size);
-    this.opts.onResize?.(size);
+    if (this.onResize) this.onResize(size);
+    else this.opts.onResize?.(size);
   };
 }
