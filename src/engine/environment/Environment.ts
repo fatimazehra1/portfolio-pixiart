@@ -254,12 +254,16 @@ export class Environment {
     }
   }
 
-  /** Feed the environment the camera's horizontal position, in world CSS pixels. */
+  /**
+   * Feed the environment the camera's horizontal position, in world CSS pixels.
+   *
+   * Tells it what to *cull*, not where to stand. The planting lives in world
+   * space inside the camera's `props` layer, so the camera moves it — and moves
+   * it by exactly what it moves the beach it grows out of, which is the point.
+   * A system that also offset itself here would travel twice.
+   */
   setViewOffset(x: number): void {
     this.viewOffset = x;
-    // Rounded to the shared pixel grid, exactly as the ground rounds it, so the
-    // planting and the beach it grows out of move as one thing.
-    this.container.x = -Math.round(x / this.pixelScaleValue) * this.pixelScaleValue;
     this.updateWindow();
   }
 

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import type { Container } from "pixi.js"; // TEMP(step2-verify)
 import {
   AptechBuilding,
   BuildingManager,
@@ -179,6 +180,9 @@ export default function PixiCanvas() {
         anchors: shoreAnchors(ground, ocean),
         motionScale,
       });
+      // World space, in front of the land it grows out of. It still hears about
+      // the view — that's what decides which props are worth a sprite.
+      instance.layer("props").addChild(environment.container);
 
       // The lighthouse stands on the shore it was given room for, in front of
       // the land so the tower covers the beach behind it and the beam falls
@@ -217,8 +221,7 @@ export default function PixiCanvas() {
       stage.removeChildren();
       stage.addChild(sky.container);
       stage.addChild(ocean.container);
-      stage.addChild(instance.camera.container); // → terrain
-      stage.addChild(environment.container);
+      stage.addChild(instance.camera.container); // → terrain, props
       stage.addChild(lighthouse.container);
       stage.addChild(buildings.container);
 
@@ -327,16 +330,34 @@ export default function PixiCanvas() {
          */
         drift(from: number, to: number, samples = 240) {
           time!.time.setPaused(true);
-          const seen: number[] = [];
+          const tracked: Record<string, Container> = {
+            ground: ground!.container,
+            environment: environment!.container,
+            lighthouse: lighthouse!.container,
+            buildings: buildings!.container,
+          };
+          const seen: Record<string, number[]> = {};
+          for (const k of Object.keys(tracked)) seen[k] = [];
+
           for (let i = 0; i < samples; i += 1) {
             const x = from + ((to - from) * i) / (samples - 1);
             instance.camera.snapTo(x + instance.viewport.width / 2, 0);
-            const c = instance.camera.container;
-            seen.push(c.x + ground!.container.x * c.scale.x);
+            camera!.update(1 / 60);
+            // Where each system actually landed on screen, however it got there.
+            for (const [k, c] of Object.entries(tracked)) {
+              seen[k].push(c.getGlobalPosition().x);
+            }
           }
+
           const scale = instance.camera.getPixelStep();
-          const offGrid = seen.filter((v) => Math.abs(v / scale - Math.round(v / scale)) > 1e-9);
-          return { scale, samples: seen.length, offGrid: offGrid.length, worst: offGrid[0] ?? null };
+          const report: Record<string, unknown> = { scale, samples };
+          for (const [k, values] of Object.entries(seen)) {
+            const off = values.filter(
+              (v) => Math.abs(v / scale - Math.round(v / scale)) > 1e-9
+            );
+            report[k] = { offGrid: off.length, worst: off[0] ?? null };
+          }
+          return report;
         },
       };
 
