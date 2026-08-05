@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import type { Container } from "pixi.js"; // TEMP(step2-verify)
 import {
   AptechBuilding,
   BuildingManager,
@@ -92,7 +91,7 @@ export default function PixiCanvas() {
           // camera's grid is that scale — re-read it before anything is placed.
           if (sky) {
             instance.camera.setPixelSize(sky.pixelScale);
-            instance.stack.setView(instance.camera.getViewLeft(), sky.pixelScale);
+            instance.syncLayers();
           }
           if (sky && stars) stars.resize(sky.size.width, sky.size.height);
           ocean?.resize(size.width, size.height);
@@ -130,7 +129,7 @@ export default function PixiCanvas() {
       // The camera renders on a whole-number pixel grid, and this is the number
       // that grid is made of. Set before anything mounts inside it.
       instance.camera.setPixelSize(sky.pixelScale);
-      instance.stack.setView(0, sky.pixelScale);
+      instance.syncLayers();
 
       // Stars mount *inside* the sky, in front of the gradient and behind
       // everything else — so they sit under the clouds and beneath the moon,
@@ -140,8 +139,13 @@ export default function PixiCanvas() {
       stars.resize(sky.size.width, sky.size.height);
 
       // The ocean shares the sky's pixel scale so both land on one grid — a
-      // mismatch is what would make the horizon seam obvious. It mounts in
-      // front of the sky and behind everything else still to come.
+      // mismatch is what would make the horizon seam obvious.
+      //
+      // It goes into `backdrop`, at parallax 0: inside the camera, but holding
+      // still against it. The sea is baked at viewport width and is a backdrop
+      // in the same sense the sky is, so it doesn't travel; putting it in the
+      // stack anyway means there is one place that decides depth, rather than a
+      // stack for the things that move and a stage for the things that don't.
       ocean = new Ocean({
         width,
         height,
@@ -149,6 +153,7 @@ export default function PixiCanvas() {
         pixelScale: sky.pixelScale,
         motionScale,
       });
+      instance.layer("backdrop").addChild(ocean.container);
 
       // The land sits in front of the water, on the same shared pixel grid, and
       // is the one system baked at the width of the whole world — it's what the
@@ -217,28 +222,30 @@ export default function PixiCanvas() {
       // the land it stands.
       instance.layer("structures").addChild(lighthouse.container, buildings.container);
 
-      // Draw order, stated once, back to front. The camera container is itself
-      // one entry in the list: everything migrated into the layer stack renders
-      // at the position it holds here. Systems still standing outside it are
-      // ordered around it until they move in.
+      // The whole stage, back to front, in two lines.
+      //
+      // Everything that is *in the world* is now inside the camera, and the
+      // order between those things is the layer stack's business rather than
+      // this file's — which is why the six hardcoded child indices that used to
+      // live here are gone. Only the sky is left outside, because it is not a
+      // place: it is what you see when you look away from the town, and a sky
+      // that slid off screen as you walked would be a painted backdrop on
+      // wheels.
       const stage = instance.app.stage;
       stage.removeChildren();
       stage.addChild(sky.container);
-      stage.addChild(ocean.container);
-      stage.addChild(instance.camera.container); // → terrain, props, structures
+      stage.addChild(instance.camera.container);
 
-      // The camera owns where the view is; the three systems each decide how
-      // much of that movement to answer. The ground tracks it one to one, the
-      // water and the sky by their own depths, which is where the parallax
-      // comes from. Nothing here knows about input, and the controller knows
+      // The camera owns where the view is. The layer stack decides how much of
+      // that movement each depth answers, so the only thing left to fan out
+      // here is the sky's own parallax and the two systems that cull against
+      // the view. Nothing here knows about input, and the controller knows
       // nothing about what it is moving over.
       camera = new CameraController({
         camera: instance.camera,
         host,
         worldWidth: WORLD_WIDTH,
         onMove: (viewLeft, zoom) => {
-          // The layer stack moves everything mounted inside the camera.
-          instance.stack.setView(viewLeft);
           sky?.setViewOffset(viewLeft);
           ocean?.setViewOffset(viewLeft);
           environment?.setViewOffset(viewLeft);
@@ -282,13 +289,18 @@ export default function PixiCanvas() {
       // signs burning on what it leaves over.
       unbindBuildings = buildings.bindLighting(lighting);
 
-      // One frame of the world, so the harness below can drive it by hand at a
-      // fixed step instead of at whatever rate a background tab feels like.
-      const step = (delta: number) => {
+      instance.onUpdate((ticker) => {
+        const delta = ticker.deltaMS / 1000;
         // The clock and the camera go first, so the world is drawn at the time
         // and place it has this frame rather than the ones it had last frame.
         time?.update(delta);
         camera?.update(delta);
+        // Straight off the camera, every frame, rather than from `onMove`.
+        // A parallax layer holds its place by *cancelling* part of the camera's
+        // transform, so the two have to be written in the same breath — a
+        // publish threshold that skips a report is a threshold that leaves the
+        // sea a pixel behind the view it is supposed to be nailed to.
+        instance.syncLayers();
         sky?.update(delta);
         stars?.update(delta);
         ocean?.update(delta);
@@ -296,71 +308,7 @@ export default function PixiCanvas() {
         environment?.update(delta);
         lighthouse?.update(delta);
         buildings?.update(delta);
-      };
-
-      instance.onUpdate((ticker) => step(ticker.deltaMS / 1000));
-
-      // TEMP(step2-verify): removed before step 2 is finished. Drives the world
-      // from a deterministic state so a frame can be fingerprinted and compared
-      // across a refactor, and so sub-pixel drift can be measured *during*
-      // movement rather than only at rest.
-      (window as unknown as Record<string, unknown>).__wf = {
-        cam: instance.camera,
-        ground: () => ground,
-        async frame(worldX: number, phase: string, frames = 90) {
-          time!.time.setPaused(true);
-          time!.time.setPhase(phase as never);
-          camera!.snapToStart();
-          instance.camera.snapTo(worldX + instance.viewport.width / 2, 0);
-          for (let i = 0; i < frames; i += 1) step(1 / 60);
-          instance.app.render();
-          const url = String(
-            instance.app.renderer.extract.canvas(instance.app.stage).toDataURL!()
-          );
-          const bytes = new TextEncoder().encode(url);
-          const digest = await crypto.subtle.digest("SHA-256", bytes);
-          return Array.from(new Uint8Array(digest))
-            .slice(0, 8)
-            .map((b) => b.toString(16).padStart(2, "0"))
-            .join("");
-        },
-        /**
-         * Pan across `worldX` a pixel at a time and record where the terrain
-         * actually landed on screen. Every sample has to be a whole multiple of
-         * the pixel scale; anything else is the shimmer we are looking for.
-         */
-        drift(from: number, to: number, samples = 240) {
-          time!.time.setPaused(true);
-          const tracked: Record<string, Container> = {
-            ground: ground!.container,
-            environment: environment!.container,
-            lighthouse: lighthouse!.container,
-            buildings: buildings!.container,
-          };
-          const seen: Record<string, number[]> = {};
-          for (const k of Object.keys(tracked)) seen[k] = [];
-
-          for (let i = 0; i < samples; i += 1) {
-            const x = from + ((to - from) * i) / (samples - 1);
-            instance.camera.snapTo(x + instance.viewport.width / 2, 0);
-            camera!.update(1 / 60);
-            // Where each system actually landed on screen, however it got there.
-            for (const [k, c] of Object.entries(tracked)) {
-              seen[k].push(c.getGlobalPosition().x);
-            }
-          }
-
-          const scale = instance.camera.getPixelStep();
-          const report: Record<string, unknown> = { scale, samples };
-          for (const [k, values] of Object.entries(seen)) {
-            const off = values.filter(
-              (v) => Math.abs(v / scale - Math.round(v / scale)) > 1e-9
-            );
-            report[k] = { offGrid: off.length, worst: off[0] ?? null };
-          }
-          return report;
-        },
-      };
+      });
 
       // The store's `timeOfDay` no longer fans out to the three systems: the
       // day/night cycle owns the look now, and two drivers would fight. The

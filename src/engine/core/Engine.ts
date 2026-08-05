@@ -121,6 +121,18 @@ export class Engine {
   }
 
   /**
+   * Re-place the parallax layers against the camera's current transform.
+   *
+   * Call every frame, straight after the camera has moved and before anything
+   * is drawn. It reads the transform the camera *applied*, not the one it
+   * intended, which is what keeps a backdrop from disagreeing with the view by
+   * a pixel — so it has to run after `camera.update`, not alongside it.
+   */
+  syncLayers(): void {
+    this.layers.setView(this.cameraRef.getView());
+  }
+
+  /**
    * Subscribe to the frame loop. The callback receives Pixi's Ticker; drive motion
    * by `ticker.deltaTime` so it's frame-rate independent. Returns an unsubscribe fn.
    */

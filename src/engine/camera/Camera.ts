@@ -17,6 +17,18 @@ export interface FollowTarget {
   readonly y: number;
 }
 
+/** The camera's transform as applied, for anything positioning itself against it. */
+export interface CameraView {
+  /** World x at the left edge of the view. */
+  viewLeft: number;
+  /** The snapped screen translation actually written to the container. */
+  screenX: number;
+  /** The rendered (quantised) zoom. */
+  zoom: number;
+  /** Screen pixels per art pixel. Always a whole number. */
+  step: number;
+}
+
 export interface FollowOptions {
   /** World-space offset from the target. Lets the subject sit off-centre. */
   offset?: Partial<Vec2>;
@@ -117,6 +129,25 @@ export class Camera {
   /** Screen pixels per art pixel at the current zoom. Always a whole number. */
   getPixelStep(): number {
     return Math.max(1, Math.round(this.pixelSize * this.zoom));
+  }
+
+  /**
+   * Everything a parallax layer needs to place itself *against this camera*.
+   *
+   * `screenX` is the transform actually applied, after snapping — not the ideal
+   * one. That distinction is the whole reason this exists: a layer that wants to
+   * hold still has to cancel the translation the camera really used, and a layer
+   * that recomputes the ideal value and rounds it a second time will disagree
+   * with the camera by a whole pixel whenever the two roundings fall either side
+   * of a boundary. Which is a layer that shimmers.
+   */
+  getView(): CameraView {
+    return {
+      viewLeft: this.getViewLeft(),
+      screenX: this.container.x,
+      zoom: this.renderZoom,
+      step: this.getPixelStep(),
+    };
   }
 
   getViewport(): Size {

@@ -1,4 +1,5 @@
 import { Container } from "pixi.js";
+import type { CameraView } from "../camera/Camera";
 import type { LayerName } from "../types";
 
 /** One depth in the stack: where it draws, and how fast it slides past. */
@@ -25,8 +26,9 @@ export interface LayerSpec {
  * property of *where something is*, not something each system re-decides.
  */
 export const LAYER_STACK: readonly LayerSpec[] = [
-  // The sea is baked at viewport width and stays put; its waves do their own
-  // parallax internally, against a container that never moves.
+  // The sea. Baked at viewport width, so it cannot travel — it holds still
+  // against the camera and does its parallax internally instead, per wave.
+  // Parallax 0 is what pins it there.
   { name: "backdrop", parallax: 0 },
   { name: "terrain", parallax: 1 },
   { name: "props", parallax: 1 },
@@ -57,8 +59,6 @@ export class LayerManager {
   private readonly layers: Record<LayerName, Container>;
   private readonly specs: readonly LayerSpec[];
 
-  private viewLeft = 0;
-  private pixelSize = 1;
 
   /** @param parent the world container the layers are mounted into. */
   constructor(parent: Container, specs: readonly LayerSpec[] = LAYER_STACK) {
@@ -80,19 +80,29 @@ export class LayerManager {
   }
 
   /**
-   * Tell the stack where the view is.
+   * Place every layer against the camera's *applied* transform.
    *
-   * @param viewLeft world x at the left edge of the view.
-   * @param pixelSize one art pixel, in world pixels — the shared `pixelScale`.
+   * Each layer works out the screen offset it wants — `parallax · travel`,
+   * snapped once to the art grid — and then asks for whatever local x turns the
+   * camera's actual translation into that. So the rounding happens exactly once
+   * per layer, and the camera's own rounding is cancelled rather than
+   * approximated.
+   *
+   * Rounding twice is the trap here, and it does not announce itself: a layer
+   * that snapped `viewLeft` on its own would agree with the camera almost
+   * everywhere and disagree by one whole art pixel wherever the two roundings
+   * fell either side of a boundary — a backdrop that is supposed to be nailed to
+   * the viewport, flicking back and forth by a pixel as you pan.
+   *
+   * Layers at parallax 1 fall out of this as exactly 0, which is the arithmetic
+   * saying what it should: world space is what the camera already does.
    */
-  setView(viewLeft: number, pixelSize = this.pixelSize): void {
-    this.viewLeft = viewLeft;
-    this.pixelSize = Math.max(1, Math.round(pixelSize));
-
+  setView(view: CameraView): void {
     for (const spec of this.specs) {
-      if (spec.parallax === 1) continue; // world space: the camera already did it
-      const offset = this.viewLeft * (1 - spec.parallax);
-      this.layers[spec.name].x = Math.round(offset / this.pixelSize) * this.pixelSize;
+      // Where this layer wants to sit on screen, snapped to whole art pixels.
+      const wanted = Math.round((-spec.parallax * view.viewLeft * view.zoom) / view.step) * view.step;
+      // The local x that gets it there, given where the camera actually put us.
+      this.layers[spec.name].x = (wanted - view.screenX) / view.zoom;
     }
   }
 
