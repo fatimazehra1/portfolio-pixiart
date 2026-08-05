@@ -3,7 +3,7 @@ import { CameraController } from "../camera";
 import { SkySystem } from "../sky";
 import { Stars } from "../stars";
 import { Ocean } from "../ocean";
-import { Ground } from "../ground";
+import { Ground, PROP_BASELINES } from "../ground";
 import { Environment } from "../environment";
 import { Foreground } from "../foreground";
 import { Atmosphere } from "../atmosphere";
@@ -253,11 +253,7 @@ export class World {
         options.onCamera?.(viewLeft, zoom);
       },
     });
-    // Zoom pivots on the horizon, not the middle of the screen. This is the one
-    // line that keeps the sea and the sky together at every zoom — see
-    // `Camera.setAnchorY`. Set before the first snap, so frame one is already
-    // framed the way every frame after it will be.
-    engine.camera.setAnchorY(this.ocean.topY);
+    engine.camera.setAnchorY(this.zoomAnchor());
 
     this.camera.resize(width, height);
     this.camera.snapToStart();
@@ -364,8 +360,8 @@ export class World {
     this.stars.resize(this.sky.size.width, this.sky.size.height);
     this.ocean.resize(width, height);
     this.ground.resize(width, height);
-    // The horizon has moved, so the pivot has too.
-    this.engine.camera.setAnchorY(this.ocean.topY);
+    // The shore has moved, so the pivot has too.
+    this.engine.camera.setAnchorY(this.zoomAnchor());
 
     // After the land, so anything standing on the shore is re-fitted to where
     // it is now rather than to where it was a moment ago.
@@ -428,6 +424,9 @@ export class World {
     // in the same breath.
     this.engine.syncLayers();
     this.lockHorizon();
+    // The prompt needs the transform to stay inside the frame at close zooms.
+    const view = this.engine.camera.getView();
+    this.buildings.setCameraView(view.screenY, view.zoom);
     // Then the grade, so everything lit this frame is lit for where we now are.
     this.grade.update(delta);
 
@@ -440,6 +439,26 @@ export class World {
     this.buildings.update(delta);
     this.weather.update(delta);
     this.foreground.update(delta);
+  }
+
+  /**
+   * The world y that zoom pivots on: the ground the town stands on.
+   *
+   * The obvious choice is the horizon, and it is the wrong one. Everything
+   * below the pivot grows *downward* as you zoom, so pivoting on the horizon
+   * pushes the shore off the bottom of the frame — at 2x the foot of a building
+   * sat 70 pixels below the viewport and you were looking at a wall with no
+   * ground under it. Pivoting on the band the buildings stand on keeps their
+   * feet where they are and lets the sky compress instead, which is the right
+   * way round: there is nothing in the sky that has to stay put.
+   *
+   * The sea and the sky still hold together, because the sky is not relying on
+   * this — `lockHorizon` moves it by however much the sea moved, whatever the
+   * pivot happens to be. The two mechanisms are independent on purpose.
+   */
+  private zoomAnchor(): number {
+    const anchors = this.shoreAnchors();
+    return anchors.shorelineY + anchors.groundHeight * PROP_BASELINES.backVerge;
   }
 
   /**

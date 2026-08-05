@@ -67,6 +67,10 @@ export const SCENES: readonly SceneConfig[] = [
       weather: [{ kind: "haze", intensity: 0.12 }],
       reason: "Skyline landmark: haze at the status default would soften the silhouette the composition depends on.",
     },
+    // 504 world pixels of tower. At the default 2x it fills 137% of the frame
+    // and loses its rooftop classroom off the top — which is the one part of
+    // the building that says what it was for. Seen whole at 1x it fills 68%.
+    camera: { zoom: 1 },
     note: "Four floors of projects and a rooftop classroom.",
   },
   {
@@ -76,7 +80,6 @@ export const SCENES: readonly SceneConfig[] = [
     width: 648,
     status: "past",
     rendererId: "vaultsys",
-    camera: { zoom: 1 },
     note: "Disciplined, quiet, and deliberately the least animated place on the shore.",
   },
   {
@@ -97,6 +100,10 @@ export const SCENES: readonly SceneConfig[] = [
       ],
       reason: "Active construction: dust and welding sparks are the work, not weather. Layered over the active climate rather than replacing it.",
     },
+    // Same reason as Planet01: 456 pixels tall, and at 2x the crane and the
+    // unfinished top floors go off the top of the frame. Those floors *are* the
+    // building's argument.
+    camera: { zoom: 1 },
     planting: { scale: 0.55 },
     note: "Current company. Half office, half construction site.",
   },

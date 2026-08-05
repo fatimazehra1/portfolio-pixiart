@@ -89,6 +89,9 @@ export class BuildingManager {
   private anchors: BuildingAnchors;
 
   private viewOffset = 0;
+  /** The camera transform, for keeping the prompt on screen. See setCameraView. */
+  private viewScreenY = 0;
+  private viewZoom = 1;
   /** Where the player is considered to be, in world CSS pixels. */
   private focusX = 0;
   private focusY = 0;
@@ -286,7 +289,7 @@ export class BuildingManager {
 
     if (nearest) {
       const anchor = nearest.promptAnchor;
-      this.prompt.show(nearest.zone, anchor.x, anchor.y - PROMPT.lift);
+      this.prompt.show(nearest.zone, anchor.x, this.promptY(anchor.y - PROMPT.lift));
       this.activeBuilding = nearest;
       this.active = nearest.zone;
       // A building far enough off screen to be culled cannot be offering
@@ -313,7 +316,42 @@ export class BuildingManager {
     this.container.destroy({ children: true });
   }
 
+  /**
+   * Tell the manager how the camera is transforming it.
+   *
+   * Only the prompt needs this, and only so it can stay on screen. A tall
+   * building at a close zoom puts its own roof above the top of the viewport,
+   * and a prompt anchored to that roof goes with it — you end up standing in
+   * front of a landmark being offered something you cannot read.
+   */
+  setCameraView(screenY: number, zoom: number): void {
+    this.viewScreenY = screenY;
+    this.viewZoom = zoom > 0 ? zoom : 1;
+  }
+
   // --- Internal --------------------------------------------------------------
+
+  /**
+   * Keep the prompt inside the frame, in the manager's own pixel grid.
+   *
+   * Pushed down rather than clamped to the very edge, so it still reads as
+   * floating above something rather than stuck to the ceiling. Below the
+   * threshold nothing happens at all — an ordinary building's prompt sits where
+   * the building puts it, which is what it should do.
+   */
+  private promptY(wanted: number): number {
+    const scale = this.pixelScaleValue * this.viewZoom;
+    if (scale <= 0) return wanted;
+
+    // The panel hangs *above* its anchor, so the anchor has to sit at least a
+    // panel-height below the top of the frame. Height is already in this
+    // container's own pixels, so it carries over unscaled; only the screen-space
+    // margin has to be converted back through the transform.
+    const margin = PROMPT.lift * this.pixelScaleValue;
+    const lowest = this.prompt.height + (margin - this.viewScreenY) / scale;
+
+    return Math.max(wanted, Math.round(lowest));
+  }
 
   private attach(): void {
     if (this.attached) return;

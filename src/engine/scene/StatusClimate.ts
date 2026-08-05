@@ -103,9 +103,29 @@ export const STATUS_CLIMATE: Record<SceneStatus, StatusClimate> = {
   },
 };
 
-/** How the camera sits over a scene that doesn't ask for anything particular. */
+/**
+ * How the camera sits over a scene that doesn't ask for anything particular.
+ *
+ * # Why exactly 2
+ * The camera quantises zoom so that one art pixel covers a whole number of
+ * screen pixels (`Camera.setPixelSize`), which means only some values survive:
+ * at a pixel scale of 3 the reachable steps are 1, 1.333, 1.667, 2, and so on.
+ * 2 is the one value that is grid-safe at *every* pixel scale, because doubling
+ * a whole number is always a whole number — so this framing holds on a laptop
+ * and on a 4K display without landing on a different step at each.
+ *
+ * # What it actually frames
+ * Measured against the four built landmarks at a 738px viewport: Aptech fills
+ * 50% of the frame height, Vaultsys 72%, NatureTech 124%, Planet01 137%. The
+ * two tall ones overflow the top, which is a deliberate consequence rather than
+ * an accident — Planet01 is 504 world pixels of tower and the shore band it
+ * stands on is only about 160, so a zoom that fits it in frame would be a zoom
+ * that made the cottages tiny.
+ *
+ * A scene that wants to be seen whole says so in its own `camera.zoom`.
+ */
 export const DEFAULT_SCENE_CAMERA: SceneCamera = {
-  zoom: 1,
+  zoom: 2,
   offsetX: 0,
 };
 

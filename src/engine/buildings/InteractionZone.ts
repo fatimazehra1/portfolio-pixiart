@@ -263,6 +263,11 @@ export class InteractionPrompt {
     this.container.visible = true;
   }
 
+  /** How tall the panel currently is, in prompt pixels. 0 before anything shows. */
+  get height(): number {
+    return this.art?.height ?? 0;
+  }
+
   /** Withdraw the offer. The panel fades rather than vanishing. */
   hide(): void {
     this.target = 0;

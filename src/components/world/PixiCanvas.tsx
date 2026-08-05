@@ -54,6 +54,7 @@ export default function PixiCanvas() {
       }
 
       world = instance;
+      (window as unknown as Record<string, unknown>).__world = instance; // TEMP(verify)
       host.appendChild(instance.canvas);
       setViewport(instance.viewport);
       setReady(true);
