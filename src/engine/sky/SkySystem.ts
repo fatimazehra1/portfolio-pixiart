@@ -351,6 +351,27 @@ export class SkySystem {
     this.applyParallax();
   }
 
+  /**
+   * Keep the sky's horizon on the sea's, whatever the camera is doing.
+   *
+   * The camera pivots its zoom on the horizon (`Camera.setAnchorY`), which does
+   * almost all of this work — the sea's horizon holds its screen position at
+   * every zoom, so a sky that never moves is already correct. Almost: the
+   * camera snaps its transform to whole art pixels, and that rounding can leave
+   * the sea up to half a pixel step off where the arithmetic wanted it.
+   *
+   * Half a step is invisible on a building and glaring on a horizon, because a
+   * horizon is a hard horizontal line meeting another hard horizontal line. So
+   * the sky is told the residual and takes it up. Snapped itself, so the sky
+   * never lands off its own grid to fix someone else's rounding.
+   *
+   * @param shift where the sea's horizon has actually gone, relative to where
+   *   the sky's is, in CSS pixels.
+   */
+  setHorizonShift(shift: number): void {
+    this.container.y = Math.round(shift / this.pixelScaleValue) * this.pixelScaleValue;
+  }
+
   /** Re-fit to a new viewport, in CSS pixels. */
   resize(width: number, height: number): void {
     if (width <= 0 || height <= 0) return;

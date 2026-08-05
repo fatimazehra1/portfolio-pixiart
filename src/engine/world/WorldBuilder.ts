@@ -245,8 +245,15 @@ export class World {
         options.onCamera?.(viewLeft, zoom);
       },
     });
+    // Zoom pivots on the horizon, not the middle of the screen. This is the one
+    // line that keeps the sea and the sky together at every zoom — see
+    // `Camera.setAnchorY`. Set before the first snap, so frame one is already
+    // framed the way every frame after it will be.
+    engine.camera.setAnchorY(this.ocean.topY);
+
     this.camera.resize(width, height);
     this.camera.snapToStart();
+    this.lockHorizon();
 
     this.time = new TimeManager({ onChange: options.onTime });
     this.dayNight = new DayNightManager({
@@ -347,6 +354,8 @@ export class World {
     this.stars.resize(this.sky.size.width, this.sky.size.height);
     this.ocean.resize(width, height);
     this.ground.resize(width, height);
+    // The horizon has moved, so the pivot has too.
+    this.engine.camera.setAnchorY(this.ocean.topY);
 
     // After the land, so anything standing on the shore is re-fitted to where
     // it is now rather than to where it was a moment ago.
@@ -358,6 +367,7 @@ export class World {
     this.weather.resize(width, height);
 
     this.camera.resize(width, height);
+    this.lockHorizon();
     this.options.onResize?.(size);
   }
 
@@ -405,6 +415,7 @@ export class World {
     // cancelling part of the camera's transform, so the two have to be written
     // in the same breath.
     this.engine.syncLayers();
+    this.lockHorizon();
     // Then the grade, so everything lit this frame is lit for where we now are.
     this.grade.update(delta);
 
@@ -417,6 +428,20 @@ export class World {
     this.buildings.update(delta);
     this.weather.update(delta);
     this.foreground.update(delta);
+  }
+
+  /**
+   * Hold the sky's horizon on the sea's.
+   *
+   * The camera's own pivot does the bulk of it; this takes up the rounding.
+   * Both numbers are read off the live transform rather than recomputed from
+   * the constants that produced it — the whole failure being fixed here was two
+   * halves of the picture agreeing in theory and not on screen.
+   */
+  private lockHorizon(): void {
+    const view = this.engine.camera.getView();
+    const horizon = this.ocean.topY;
+    this.sky.setHorizonShift(view.screenY + view.zoom * horizon - horizon);
   }
 
   /**

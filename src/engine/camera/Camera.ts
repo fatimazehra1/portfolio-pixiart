@@ -23,6 +23,8 @@ export interface CameraView {
   viewLeft: number;
   /** The snapped screen translation actually written to the container. */
   screenX: number;
+  /** The same, vertically. What the sky reads to hold the horizon. */
+  screenY: number;
   /** The rendered (quantised) zoom. */
   zoom: number;
   /** Screen pixels per art pixel. Always a whole number. */
@@ -85,6 +87,8 @@ export class Camera {
   private renderZoom = 1;
   /** One art pixel, in world units — the shared `pixelScale`. */
   private pixelSize = 1;
+  /** The world y that zoom pivots around. See `setAnchorY`. */
+  private anchorY: number | null = null;
   private minZoom = CAMERA_SETTINGS.minZoom;
   private maxZoom = CAMERA_SETTINGS.maxZoom;
 
@@ -145,6 +149,7 @@ export class Camera {
     return {
       viewLeft: this.getViewLeft(),
       screenX: this.container.x,
+      screenY: this.container.y,
       zoom: this.renderZoom,
       step: this.getPixelStep(),
     };
@@ -243,6 +248,34 @@ export class Camera {
     if (next === this.pixelSize) return;
     this.pixelSize = next;
     this.apply();
+  }
+
+  /**
+   * The world y that stays put when the camera zooms. Pass the horizon.
+   *
+   * A camera zooms around a fixed point, and which point that is decides what
+   * the zoom *means*. The default — the middle of the viewport — sits well above
+   * the shoreline in a side view, so zooming in pushes the horizon downward and
+   * away from it. The sky lives outside the camera and cannot follow, so the sea
+   * and the sky come apart: at 2× the horizon had moved 150 pixels off the
+   * gradient it is supposed to meet.
+   *
+   * Pivoting on the horizon instead makes the one line that both halves of the
+   * picture share the one line that never moves. Everything above it is sky and
+   * stays; everything below is town and grows towards the viewer, which is what
+   * zooming into a town should look like.
+   *
+   * Pass null to go back to pivoting on the middle of the view.
+   */
+  setAnchorY(y: number | null): void {
+    this.anchorY = y;
+    this.clampTarget();
+    this.apply();
+  }
+
+  /** Where zoom pivots vertically, in world pixels. */
+  getAnchorY(): number | null {
+    return this.anchorY;
   }
 
   /** Update the visible area (call on resize). Re-clamps and re-applies. */
@@ -434,10 +467,15 @@ export class Camera {
     const z = step / this.pixelSize;
     this.renderZoom = z;
 
+    // The vertical pivot. `anchorY` replaces the viewport centre so that the
+    // horizon, rather than the middle of the screen, is the point zoom leaves
+    // alone — see `setAnchorY`.
+    const pivotY = this.anchorY ?? this.viewport.height / 2;
+
     this.container.scale.set(z);
     this.container.position.set(
       Math.round((this.viewport.width / 2 - this.position.x * z) / step) * step,
-      Math.round((this.viewport.height / 2 - this.position.y * z) / step) * step
+      Math.round((pivotY - this.position.y * z) / step) * step
     );
   }
 
@@ -474,7 +512,16 @@ export class Camera {
 
     return {
       x: minX > maxX ? b.x + b.width / 2 : clamp(pos.x, minX, maxX),
-      y: minY > maxY ? b.y + b.height / 2 : clamp(pos.y, minY, maxY),
+      // An anchor pins the vertical axis outright, at every zoom.
+      //
+      // Not "clamp towards it" — sit on it. WORLD_HEIGHT is 0 and this is a side
+      // view, so there is nothing above or below to travel to; the anchor is the
+      // whole of where the camera is vertically. Leaving the ordinary clamp in
+      // charge here is what let the camera settle on the middle of the bounds
+      // instead, which put the world 150 pixels below the sky it belongs to.
+      y:
+        this.anchorY ??
+        (minY > maxY ? b.y + b.height / 2 : clamp(pos.y, minY, maxY)),
     };
   }
 }
