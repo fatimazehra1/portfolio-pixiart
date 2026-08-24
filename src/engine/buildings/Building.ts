@@ -1,8 +1,8 @@
-import { Container } from "pixi.js";
+import { Container, Rectangle, Sprite } from "pixi.js";
 import { InteractionZone } from "./InteractionZone";
-import type { BuildingRenderer } from "./BuildingRenderer";
+import { Pixels, type BuildingRenderer } from "./BuildingRenderer";
 import { BUILDING_PLOTS, PROP_BASELINES } from "../ground";
-import type { GroundBand } from "../ground";
+import type { GroundBand, PlotArea } from "../ground";
 import type { LightingState } from "../lighting";
 
 /** Where the land is, in CSS pixels. Read off the ground rather than recomputed. */
@@ -22,6 +22,17 @@ export interface BuildingContext {
   anchors: BuildingAnchors;
   /** Global motion multiplier. 0 for `prefers-reduced-motion: reduce`. */
   motionScale: number;
+  /**
+   * Ground kept clear, as fractions of *this world's* width.
+   *
+   * Defaults to the coastline's own layout, which is what the whole waterfront
+   * used before there was more than one world. A chapter world passes its own —
+   * its scenes rebased onto its own origin — because a plot expressed as a
+   * fraction of the ten-scene coast means nothing inside a world that contains
+   * one of them. This is the one line that stopped every building assuming it
+   * stood somewhere along a single shore.
+   */
+  plots?: readonly PlotArea[];
 }
 
 /**
@@ -100,6 +111,8 @@ export abstract class Building {
 
   private readonly motionScale: number;
   private readonly explicitRadius: number | undefined;
+  /** A hard-edged outline, shown while the pointer is on the building. */
+  private readonly highlight: Sprite;
 
   private pixelScaleValue = 1;
   /** Position in world pixels — the grid the manager's container works in. */
@@ -108,6 +121,8 @@ export abstract class Building {
 
   private elapsed = 0;
   private culledValue = false;
+  private hoverTarget = 0;
+  private hoverAmount = 0;
 
   constructor(
     definition: BuildingDefinition,
@@ -122,10 +137,31 @@ export abstract class Building {
     this.explicitRadius = definition.interactionRadius;
 
     this.container.label = `building:${definition.id}`;
-    this.container.eventMode = "none";
     this.container.addChild(renderer.container);
 
     renderer.build();
+
+    // A building is a place you can point at and click, not just walk up to.
+    // The hit region is the artwork's own bounding box, in the same unscaled
+    // grid `renderer.width`/`renderer.height` already use — set once, because
+    // a building's own art never changes size.
+    const half = renderer.width >> 1;
+    this.container.eventMode = "static";
+    this.container.cursor = "pointer";
+    this.container.hitArea = new Rectangle(-half, -renderer.height, renderer.width, renderer.height);
+
+    // The highlight itself: a frame a few pixels proud of the artwork, hidden
+    // until hovered. `BuildingManager` decides *when* to show it; this only
+    // owns how it looks, the same split every other visual here follows.
+    const pad = 3;
+    const frame = new Pixels(renderer.width + pad * 2, renderer.height + pad * 2);
+    frame.frame(0, 0, frame.width, frame.height);
+    this.highlight = new Sprite(frame.bake());
+    this.highlight.tint = 0xffe4a3;
+    this.highlight.alpha = 0;
+    this.highlight.eventMode = "none";
+    this.highlight.position.set(-half - pad, -renderer.height - pad);
+    this.container.addChild(this.highlight);
 
     this.zone = new InteractionZone({
       x: 0,
@@ -181,7 +217,8 @@ export abstract class Building {
   resize(context: BuildingContext): void {
     this.pixelScaleValue = context.pixelScale;
 
-    const plot = BUILDING_PLOTS.find((p) => p.name === this.definition.plot);
+    const plots = context.plots ?? BUILDING_PLOTS;
+    const plot = plots.find((p) => p.name === this.definition.plot);
     // A world with no plot of that name still gets its building, in the middle
     // rather than nowhere — a missing layout entry should look wrong, not throw.
     const position = this.definition.plotPosition ?? 0.5;
@@ -221,8 +258,28 @@ export abstract class Building {
    * why a world of twenty landmarks costs the same as a world of the two you can
    * currently see.
    */
+  /**
+   * The pointer is on this building, or has left it.
+   *
+   * Called by the manager — it decides which building is under the pointer,
+   * this only owns what that looks like. See the class doc's "what it does
+   * not do".
+   */
+  setHovered(hovering: boolean): void {
+    this.hoverTarget = hovering ? 1 : 0;
+  }
+
   update(delta: number): void {
     if (this.culledValue) return;
+
+    // The hover ring is feedback for the pointer, not ambient motion, so it
+    // still responds under `prefers-reduced-motion` — it just snaps instead
+    // of easing.
+    const hoverRate = this.motionScale > 0 ? 10 : 40;
+    const hoverStep = 1 - Math.exp(-hoverRate * delta);
+    this.hoverAmount += (this.hoverTarget - this.hoverAmount) * hoverStep;
+    if (Math.abs(this.hoverTarget - this.hoverAmount) < 0.002) this.hoverAmount = this.hoverTarget;
+    this.highlight.alpha = this.hoverAmount * 0.8;
 
     const step = delta * this.motionScale;
     if (step <= 0) return;
@@ -232,6 +289,8 @@ export abstract class Building {
   }
 
   destroy(): void {
+    this.container.removeAllListeners();
+    this.highlight.texture.destroy(true);
     this.renderer.destroy();
     this.container.destroy({ children: true });
   }

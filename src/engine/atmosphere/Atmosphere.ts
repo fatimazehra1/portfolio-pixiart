@@ -3,7 +3,7 @@ import { toTexture } from "../shared";
 import { applyAmbient } from "../lighting";
 import type { LightingState } from "../lighting";
 import { RESOLVED_SCENES } from "../scene";
-import type { SceneDirector, SceneState } from "../scene";
+import type { ResolvedScene, SceneDirector, SceneState } from "../scene";
 import type { GradeManager } from "../grade";
 
 /**
@@ -39,6 +39,16 @@ import type { GradeManager } from "../grade";
  * colour over a lit window would put the fog in front of the lamp.
  */
 export interface AtmosphereOptions {
+  /**
+   * The scenes to lay patches over. Defaults to the whole coastline.
+   *
+   * Passed in rather than read off the registry, because the scenes a patch
+   * belongs to are now the scenes of *one chapter world*, rebased onto that
+   * world's own origin. Reaching for the global list would put nine other
+   * chapters' colour fields inside every world, at coordinates that mean
+   * nothing there.
+   */
+  scenes?: readonly ResolvedScene[];
   /** Pass the sky's `pixelScale` so the patches land on the shared grid. */
   pixelScale?: number;
   /** Viewport height in CSS pixels. */
@@ -89,6 +99,7 @@ export class Atmosphere {
   readonly container = new Container();
 
   private readonly ramp: Texture;
+  private readonly scenes: readonly ResolvedScene[];
   private readonly patches = new Map<string, Sprite>();
   private readonly spread: number;
   private readonly maxAlpha: number;
@@ -99,6 +110,7 @@ export class Atmosphere {
   private unbindLighting: (() => void) | null = null;
 
   constructor(options: AtmosphereOptions) {
+    this.scenes = options.scenes ?? RESOLVED_SCENES;
     this.spread = options.spread ?? DEFAULT_SPREAD;
     this.maxAlpha = options.maxAlpha ?? DEFAULT_MAX_ALPHA;
     this.pixelScaleValue = Math.max(1, Math.round(options.pixelScale ?? 1));
@@ -108,7 +120,7 @@ export class Atmosphere {
 
     this.ramp = this.bakeRamp();
 
-    for (const scene of RESOLVED_SCENES) {
+    for (const scene of this.scenes) {
       const patch = new Sprite(this.ramp);
       patch.eventMode = "none";
       // Multiply: a patch can shade the coast, never light it. See the class note.
@@ -167,7 +179,7 @@ export class Atmosphere {
     // before it runs out of land.
     const depth = snap(Math.max(1, height * 1.5 - top));
 
-    for (const scene of RESOLVED_SCENES) {
+    for (const scene of this.scenes) {
       const patch = this.patches.get(scene.id);
       if (!patch) continue;
 
@@ -198,7 +210,7 @@ export class Atmosphere {
    * sunset* rather than in the abstract.
    */
   private apply(state: SceneState): void {
-    for (const scene of RESOLVED_SCENES) {
+    for (const scene of this.scenes) {
       const patch = this.patches.get(scene.id);
       if (!patch) continue;
 

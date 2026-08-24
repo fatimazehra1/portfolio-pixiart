@@ -1,57 +1,40 @@
 import { Engine } from "../core/Engine";
 import { CameraController } from "../camera";
-import { SkySystem } from "../sky";
-import { Stars } from "../stars";
-import { Ocean } from "../ocean";
-import { Ground, PROP_BASELINES } from "../ground";
-import { Environment } from "../environment";
-import { Foreground } from "../foreground";
-import { Atmosphere } from "../atmosphere";
-import { Lighthouse } from "../lighthouse";
-import {
-  AptechBuilding,
-  BuildingManager,
-  NatureTechBuilding,
-  Planet01Building,
-  VaultsysBuilding,
-} from "../buildings";
-import type { Building, BuildingContext } from "../buildings";
 import { TimeManager } from "../time";
 import { DayNightManager } from "../dayNight";
 import { LightingManager } from "../lighting";
 import { GradeManager } from "../grade";
-import { SceneDirector, RESOLVED_SCENES, worldWidthFor } from "../scene";
+import { pixelScaleFor } from "../shared";
+import { CHAPTER_BUILDERS } from "../chapters";
+import {
+  ChapterHost,
+  OverviewLayer,
+  RESOLVED_CHAPTERS,
+  UniverseDirector,
+  chapterById,
+  universeBounds,
+  universeCentre,
+} from "../universe";
+import type { ResolvedChapter, UniverseState } from "../universe";
+import type { CameraView } from "../camera/Camera";
 import type { SceneState } from "../scene";
-import { WeatherSystem } from "../weather";
-import type { PropKind } from "../environment";
 import type { TimeOfDay } from "../sky";
 import type { TimeSnapshot } from "../time";
-import type { Size } from "../types";
+import type { Bounds, Size } from "../types";
 
 /**
- * Which hand-plotted renderer belongs to which scene.
+ * Room kept clear at the bottom of the frame, in CSS pixels.
  *
- * The whole of the "config drives systems, art stays hand-plotted" decision, in
- * one table. A scene names a `rendererId`; this is where that name becomes a
- * class. There is deliberately no facade grammar and no generated architecture
- * behind it — the buildings are the thing that makes this portfolio worth
- * looking at, and any config expressive enough to describe them would be harder
- * to author than the code that draws them.
+ * The interface's navigation strip lives there. The engine does not know what
+ * the interface is and must not, but it does have to know that the bottom of
+ * the frame is spoken for — otherwise the map centres itself into a strip it
+ * cannot see and the lowest world sits permanently behind it.
  *
- * A scene with no entry here simply has no building yet. That is a normal state
- * — six of the ten are in it — and it must stay a normal state, because the
- * ground, the weather, the grade and the planting for those chapters are all
- * already working.
+ * A number rather than a measurement of the DOM: reading the real element would
+ * couple the renderer to a component's markup, and re-framing the map every
+ * time a React tree reflowed is far worse than being fifteen pixels out.
  */
-const RENDERERS: Record<string, (context: BuildingContext) => Building> = {
-  aptech: (context) => new AptechBuilding(context),
-  planet01: (context) => new Planet01Building(context),
-  vaultsys: (context) => new VaultsysBuilding(context),
-  naturetech: (context) => new NatureTechBuilding(context),
-  // The lighthouse is a scene with a `rendererId`, but it is not a Building —
-  // it has no interaction and its own system owns it. Listed nowhere on
-  // purpose; see `Lighthouse` in `build`.
-};
+const INTERFACE_RESERVE = 96;
 
 export interface WorldOptions {
   host: HTMLElement;
@@ -65,57 +48,82 @@ export interface WorldOptions {
   onCamera?: (viewLeft: number, zoom: number) => void;
   /** Called whenever the clock ticks over. */
   onTime?: (snapshot: TimeSnapshot) => void;
-  /** Called when the local climate changes. */
+  /** Called when the local climate changes inside the world you are in. */
   onScene?: (state: SceneState) => void;
+  /** Called whenever the view mode, the world or the hovered world changes. */
+  onUniverse?: (state: UniverseState) => void;
+  /** Which world to open on, if any. Defaults to the overview. */
+  openChapter?: string;
 }
 
 /**
- * The whole world, assembled.
+ * The career universe, assembled.
  *
- * Everything that used to live in the React component: which systems exist, what
- * order they draw in, what listens to what, and how it all comes apart again.
- * `PixiCanvas` is now only a mount point — it creates one of these, appends a
- * canvas, and destroys it on unmount.
+ * # What changed, and why the name did not
+ * This used to build one horizontal coastline with ten chapters standing along
+ * it. It now builds a *map of independent worlds* and hosts exactly one of them
+ * at a time. The class is still `World` because it is still the same thing to
+ * everyone outside the engine — the whole of what is on screen, created once
+ * and destroyed once — and renaming it would have been churn in every file that
+ * touches it for no gain.
  *
- * That move is what the scene refactor was for. The component had grown to the
- * point where adding a chapter to the waterfront meant editing a React file,
- * and a React file is the last place the composition of a coastline should
- * live. Now the world is built from `SCENES` and this class knows how, and the
- * component knows neither.
+ * # The division
+ * Two kinds of system, and the split is the architecture:
  *
- * # What is still hardcoded here, and why
- * The *kinds* of system — that there is a sky, a sea, a shore, planting, a
- * foreground, weather. Those are the world's physics, not its content: a new
- * chapter needs none of them changed, and a world without a sea would not be
- * this world. Content lives in `SCENES`.
+ *  - **Global**, owned here, alive for the session: the renderer, the camera,
+ *    the clock, the day/night cycle, the ambient light, the grade, the overview
+ *    map, and the director that says where you are. None of them belong to a
+ *    place; all of them are true wherever you are standing.
+ *  - **Local**, owned by a `ChapterWorld`, alive only while you are inside it:
+ *    a sky, a sea, a shore, planting, buildings, weather, a foreground. These
+ *    are what a *place* is made of, and eight places do not share them.
+ *
+ * The grade is the seam between the two, and the only one. It takes the hour
+ * from the global side and the climate from whichever world is open, and
+ * everything downstream reads the answer without knowing there are two halves
+ * or that one of them can be swapped out from under it.
+ *
+ * # The journey
+ * ```
+ *   overview  --click a world-->  entering  --arrive-->  inside  --leave-->  overview
+ * ```
+ * The camera flies towards the world on the map; behind that flight the
+ * interior is built; at the top of the flight the two are swapped and the
+ * camera cuts into the world's own coordinates. The cut is correct and is the
+ * only one in the engine: the frame you leave and the frame you arrive in share
+ * no coordinate system, so easing between them would be a slide across nothing.
  */
 export class World {
   readonly engine: Engine;
-
-  readonly sky: SkySystem;
-  readonly stars: Stars;
-  readonly ocean: Ocean;
-  readonly ground: Ground;
-  readonly environment: Environment;
-  readonly foreground: Foreground;
-  readonly atmosphere: Atmosphere;
-  readonly lighthouse: Lighthouse;
-  readonly buildings: BuildingManager;
-  readonly weather: WeatherSystem;
 
   readonly camera: CameraController;
   readonly time: TimeManager;
   readonly dayNight: DayNightManager;
   readonly lighting: LightingManager;
   readonly grade: GradeManager;
-  readonly scenes: SceneDirector;
 
-  readonly worldWidth: number;
+  /** The map of worlds. */
+  readonly overview: OverviewLayer;
+  /** Where you are in the journey between the map and a world. */
+  readonly universe: UniverseDirector;
+  /** The one chapter world that is alive, if any. */
+  readonly chapters: ChapterHost;
 
-  private readonly unbind: (() => void)[] = [];
   private readonly options: WorldOptions;
+  private readonly unbind: (() => void)[] = [];
   private stopUpdate: (() => void) | null = null;
   private destroyed = false;
+
+  /**
+   * Whether the visitor has changed the zoom themselves since arriving on the
+   * map. Stops an automatic re-fit from overriding a deliberate look.
+   */
+  private zoomedByHand = false;
+  /** The input count when the map was last framed. See `watchManualZoom`. */
+  private framedZoomInputs = 0;
+
+  /** Where on the map the camera sat before it flew into a world. */
+  private overviewReturn = { x: 0, y: 0, zoom: 1 };
 
   private constructor(engine: Engine, options: WorldOptions) {
     this.engine = engine;
@@ -123,184 +131,90 @@ export class World {
 
     const { width, height } = engine.viewport;
     const motionScale = options.motionScale ?? 1;
-    const timeOfDay = options.timeOfDay;
-    this.worldWidth = worldWidthFor();
 
-    // First, and before any system exists. The director depends on nothing —
-    // it is a pure reading of the registry — and the Environment asks it how
-    // thickly to plant *while it is still in its own constructor*. Anything
-    // built after that point would be too late to answer.
-    this.scenes = new SceneDirector();
+    // --- The global systems --------------------------------------------------
 
-    // --- The backdrop --------------------------------------------------------
+    this.time = new TimeManager({ onChange: options.onTime });
+    this.dayNight = new DayNightManager({ time: this.time.time });
+    this.lighting = new LightingManager({ dayNight: this.dayNight });
+    // Built with no climate at all. There is no world open yet, and the overview
+    // has no weather in it — the grade's local half arrives when a world does.
+    this.grade = new GradeManager({ lighting: this.lighting });
 
-    // The sky is the one thing outside the camera. It is not a place: it is what
-    // you see when you look away from the town, and a sky that slid off screen
-    // as you walked would be a painted backdrop on wheels.
-    this.sky = new SkySystem({ width, height, timeOfDay, motionScale });
-    const pixelScale = this.sky.pixelScale;
+    // --- The map -------------------------------------------------------------
 
+    // The overview has no sky to take a pixel grid from, so it takes the same
+    // rule the sky would have used. One grid, whichever view is on screen.
+    const pixelScale = pixelScaleFor(height);
     engine.camera.setPixelSize(pixelScale);
-    engine.syncLayers();
 
-    this.stars = new Stars({ motionScale });
-    this.stars.mountInto(this.sky.container);
-    this.stars.resize(this.sky.size.width, this.sky.size.height);
-
-    this.ocean = new Ocean({ width, height, timeOfDay, pixelScale, motionScale });
-    engine.layer("backdrop").addChild(this.ocean.container);
-
-    // --- The world -----------------------------------------------------------
-
-    this.ground = new Ground({
+    this.universe = new UniverseDirector();
+    this.overview = new OverviewLayer({
+      chapters: RESOLVED_CHAPTERS,
+      pixelScale,
       width,
       height,
-      worldWidth: this.worldWidth,
-      timeOfDay,
-      pixelScale,
       motionScale,
-      // The Environment grows the planting now. Leaving the ground's own
-      // hand-placed set on as well would put two rocks on every rock.
-      props: false,
-    });
-    engine.layer("terrain").addChild(this.ground.container);
-
-    const anchors = this.shoreAnchors();
-
-    this.environment = new Environment({
-      width,
-      height,
-      worldWidth: this.worldWidth,
-      pixelScale,
-      anchors,
-      motionScale,
-      plantingAt: (x, kind) => this.plantingAt(x, kind),
-    });
-    engine.layer("props").addChild(this.environment.container);
-
-    // Regional colour over the land, under the town. The cheap stand-in for
-    // per-region grading — see `Atmosphere` for why it is a stand-in and why
-    // that is the right call here.
-    this.atmosphere = new Atmosphere({ height, pixelScale, shorelineY: this.ground.topY });
-    engine.layer("atmosphere").addChild(this.atmosphere.container);
-
-    this.lighthouse = new Lighthouse({
-      width,
-      height,
-      worldWidth: this.worldWidth,
-      pixelScale,
-      anchors,
-      motionScale,
+      onHover: (id) => this.universe.hover(id),
+      // A world under the cursor at the end of a pan is not a world you asked
+      // to enter. Without this guard every drag that happens to finish over an
+      // island flies you into it.
+      onSelect: (id) => {
+        if (!this.camera.wasDragged) this.enterChapter(id);
+      },
     });
 
-    this.buildings = new BuildingManager({
-      width,
-      height,
-      worldWidth: this.worldWidth,
-      pixelScale,
-      anchors,
-      motionScale,
-    });
-
-    // Built from the registry rather than listed. Adding a chapter with a
-    // renderer is one scene entry and one line in RENDERERS.
-    for (const scene of RESOLVED_SCENES) {
-      const make = scene.rendererId ? RENDERERS[scene.rendererId] : undefined;
-      if (make) this.buildings.add(make(this.buildings.context));
-    }
-
-    engine.layer("structures").addChild(this.lighthouse.container, this.buildings.container);
-
-    this.weather = new WeatherSystem({ width, height, pixelScale, motionScale });
-    engine.layer("weather").addChild(this.weather.container);
-
-    this.foreground = new Foreground({
-      width,
-      height,
-      worldWidth: this.worldWidth,
-      pixelScale,
-      motionScale,
-    });
-    engine.layer("foreground").addChild(this.foreground.container);
-
-    // Two lines, back to front. Everything in the world is inside the camera and
-    // the order between those things is the layer stack's business.
+    // Two spaces, two mounts. The void is screen space and goes behind the
+    // camera; the worlds are somewhere and go inside it.
     engine.app.stage.removeChildren();
-    engine.app.stage.addChild(this.sky.container);
+    engine.app.stage.addChild(this.overview.backdrop);
     engine.app.stage.addChild(engine.camera.container);
+    engine.camera.container.addChild(this.overview.field);
 
-    // --- What drives it ------------------------------------------------------
+    this.chapters = new ChapterHost({
+      engine,
+      grade: this.grade,
+      time: this.time.time,
+      motionScale,
+      timeOfDay: options.timeOfDay,
+      builders: CHAPTER_BUILDERS,
+    });
+
+    // --- The camera ----------------------------------------------------------
 
     this.camera = new CameraController({
       camera: engine.camera,
       host: options.host,
-      worldWidth: this.worldWidth,
-      onMove: (viewLeft, zoom) => {
-        this.sky.setViewOffset(viewLeft);
-        this.ocean.setViewOffset(viewLeft);
-        this.environment.setViewOffset(viewLeft);
-        this.foreground.setViewOffset(viewLeft);
-        this.buildings.setViewOffset(viewLeft);
-
-        // Where *you* are, as opposed to where the camera is looking. The
-        // middle of the view, until there is a character to be it — and the
-        // reason the director takes this as an argument rather than reading the
-        // camera itself is so that the day there is one, only this line changes.
-        const focus = viewLeft + engine.viewport.width / (2 * zoom);
-        this.buildings.setFocus(focus);
-        this.scenes.focusOn(focus);
-
-        options.onCamera?.(viewLeft, zoom);
-      },
+      bounds: universeBounds(),
+      // On the map the wheel is approach, not travel. See `WheelMode`.
+      wheelMode: "zoom",
+      onMove: () => this.publishCamera(),
     });
-    engine.camera.setAnchorY(this.zoomAnchor());
 
     this.camera.resize(width, height);
-    this.camera.snapToStart();
-    this.lockHorizon();
+    this.showOverview(true);
 
-    this.time = new TimeManager({ onChange: options.onTime });
-    this.dayNight = new DayNightManager({
-      time: this.time.time,
-      sky: this.sky,
-      ocean: this.ocean,
-      ground: this.ground,
-    });
-    this.lighting = new LightingManager({ dayNight: this.dayNight });
+    // --- What listens to what ------------------------------------------------
 
-    // The seam this whole refactor exists to create: the global hour and the
-    // local climate meet here, and everything downstream reads the result
-    // without knowing there are two of them.
-    this.grade = new GradeManager({ lighting: this.lighting, scenes: this.scenes });
+    this.universe.onArrive = (chapter) => this.openChapter(chapter);
+    this.universe.onReturn = () => this.closeChapter();
+    if (options.onUniverse) this.unbind.push(this.universe.subscribe(options.onUniverse));
 
-    this.unbind.push(
-      this.stars.bindTime(this.time.time),
-      this.lighthouse.bindLighting(this.grade),
-      this.environment.bindLighting(this.grade),
-      this.buildings.bindLighting(this.grade),
-      this.foreground.bindLighting(this.grade),
-      this.weather.bindLighting(this.grade),
-      this.weather.bindScenes(this.scenes),
-      this.atmosphere.bindLighting(this.grade),
-      this.atmosphere.bindScenes(this.scenes)
-    );
-
-    // Per-scene framing. The zoom follows wherever you are, blended across the
-    // walk like everything else, so approaching a scene that wants a tighter
-    // frame tightens gradually rather than snapping at its edge. It overrides
-    // the `-`/`=` keys on the next scene change, which is correct: those are
-    // development tooling and per-scene framing is the actual requirement.
-    this.unbind.push(
-      this.scenes.subscribe((state) => this.camera.zoomTo(state.camera.zoom))
-    );
-
-    if (options.onScene) this.unbind.push(this.scenes.subscribe(options.onScene));
-
-    // Publish an opening climate, so the first frame is already somewhere
-    // rather than fading in from neutral once the camera first reports.
-    this.scenes.focusOn(this.camera.viewLeft + width / 2);
+    // The way back. One key, and deliberately the one every visitor already
+    // tries: without it the journey is one-way and the architecture cannot be
+    // exercised end to end. Any real UI for leaving a world is a later phase
+    // and will call `leaveChapter` exactly as this does.
+    window.addEventListener("keydown", this.onKeyDown);
+    this.unbind.push(() => window.removeEventListener("keydown", this.onKeyDown));
 
     this.stopUpdate = engine.onUpdate((ticker) => this.step(ticker.deltaMS / 1000));
+
+    // An explicit opening world, for a deep link or for development. Skips the
+    // flight, because there is nothing to fly away from.
+    if (options.openChapter) {
+      const chapter = chapterById(options.openChapter);
+      if (chapter && this.universe.enter(chapter.id)) this.universe.update(999);
+    }
   }
 
   /** Create the engine and everything in it. */
@@ -317,6 +231,8 @@ export class World {
     return world;
   }
 
+  // --- Queries ---------------------------------------------------------------
+
   /** The canvas to put in the DOM. */
   get canvas(): HTMLCanvasElement {
     return this.engine.canvas;
@@ -326,55 +242,112 @@ export class World {
     return this.engine.viewport;
   }
 
+  /** Where you are: the map, a flight, or a world. */
+  get state(): UniverseState {
+    return this.universe.state;
+  }
+
   // --- Commands --------------------------------------------------------------
 
   /**
-   * Bring a scene into frame, using the framing it asked for.
+   * Fly into a chapter world.
    *
-   * Where `SceneConfig.camera.offsetX` becomes real: the scene says how it
-   * wants to be looked at, and this is the one thing that looks at it that way.
-   * Eases rather than cuts, because a reset is still a camera move.
+   * @returns false if there is no such chapter, or you are not on the map.
+   */
+  enterChapter(id: string): boolean {
+    if (!this.universe.enter(id)) return false;
+
+    const chapter = this.universe.state.chapter;
+    if (!chapter) return false;
+
+    // Remember the frame to come back to, then push towards the world. The
+    // interior is built at the top of this flight, not now — building it here
+    // would spend the whole approach baking textures on the same frame budget
+    // the approach is animating on.
+    this.overviewReturn = {
+      x: this.cameraCentreX(),
+      y: this.cameraCentreY(),
+      zoom: this.camera.zoom,
+    };
+
+    this.camera.panTo(chapter.overview.x, chapter.overview.y);
+    this.camera.zoomTo(chapter.camera.approachZoom);
+    return true;
+  }
+
+  /** Pull back out of the world you are in, onto the map. */
+  leaveChapter(): boolean {
+    return this.universe.leave();
+  }
+
+  /**
+   * Bring a scene inside the current world into frame.
    *
-   * @returns false if there is no scene by that id.
+   * @returns false if you are not in a world, or it has no scene by that id.
    */
   focusScene(id: string): boolean {
-    const scene = RESOLVED_SCENES.find((s) => s.id === id);
-    if (!scene) return false;
+    const world = this.chapters.current;
+    if (!world) return false;
 
-    this.camera.zoomTo(scene.camera.zoom);
-    this.camera.panTo(scene.worldX + scene.camera.offsetX);
+    const framing = world.framingFor(id);
+    if (!framing) return false;
+
+    this.camera.zoomTo(framing.zoom);
+    this.camera.panTo(framing.x);
     return true;
+  }
+
+  /**
+   * Where a world is on screen right now, in CSS pixels from the canvas corner.
+   *
+   * The one thing the React interface needs from the renderer, and deliberately
+   * the only thing: a point and a size. The overlay draws cards and connector
+   * lines against this without knowing that Pixi exists, and the engine stays
+   * unaware that anything is drawn on top of it.
+   *
+   * Returns null once you are inside a world — there is no map to pin a card
+   * to, and a card left hanging at the last place its world was is worse than
+   * no card at all.
+   */
+  chapterScreen(id: string): { x: number; y: number; radius: number } | null {
+    if (this.chapters.isOpen) return null;
+
+    const chapter = chapterById(id);
+    if (!chapter) return null;
+
+    const point = this.engine.camera.worldToScreen({
+      x: chapter.overview.x,
+      y: chapter.overview.y,
+    });
+    return {
+      x: point.x,
+      y: point.y,
+      radius: chapter.overview.radius * this.engine.camera.getZoom(),
+    };
   }
 
   /** Re-fit everything to a new viewport, in CSS pixels. */
   resize(size: Size): void {
     if (this.destroyed) return;
-    const { width, height } = size;
 
-    this.sky.resize(width, height);
-    // A taller viewport can earn a bigger whole-number scale, and the camera's
-    // grid is that scale — re-read it before anything is placed against it.
-    this.engine.camera.setPixelSize(this.sky.pixelScale);
-    this.engine.syncLayers();
+    this.chapters.resize(size);
+    // After the world, because a taller viewport can earn a bigger whole-number
+    // pixel scale and the map has to be re-baked onto whatever grid the world
+    // settled on. With no world open there is nothing to agree with, so the map
+    // takes the same rule a sky would have used.
+    this.overview.resize(size, pixelScaleFor(size.height));
+    if (!this.chapters.isOpen) this.engine.camera.setPixelSize(pixelScaleFor(size.height));
 
-    this.stars.resize(this.sky.size.width, this.sky.size.height);
-    this.ocean.resize(width, height);
-    this.ground.resize(width, height);
-    // The shore has moved, so the pivot has too.
-    this.engine.camera.setAnchorY(this.zoomAnchor());
+    this.camera.resize(size.width, size.height);
 
-    // After the land, so anything standing on the shore is re-fitted to where
-    // it is now rather than to where it was a moment ago.
-    const anchors = this.shoreAnchors();
-    this.environment.resize(width, height, anchors);
-    this.lighthouse.resize(width, height, anchors);
-    this.buildings.resize(width, height, anchors);
-    this.foreground.resize(width, height);
-    this.weather.resize(width, height);
-    this.atmosphere.resize(height, this.ground.topY);
-
-    this.camera.resize(width, height);
-    this.lockHorizon();
+    // The map is framed to the viewport, so a resize re-frames it. Only while
+    // actually on the map, and only if the visitor has not zoomed themselves —
+    // re-fitting under someone who has pushed in to look at a world would yank
+    // the view out from under them.
+    if (this.universe.state.mode === "overview" && !this.zoomedByHand) {
+      this.camera.zoomTo(this.fitZoom(this.camera.bounds));
+      this.framedZoomInputs = this.camera.zoomInputs;
+    }
     this.options.onResize?.(size);
   }
 
@@ -385,130 +358,211 @@ export class World {
     this.stopUpdate?.();
     this.stopUpdate = null;
 
-    // Unwind from the far end: the grade listens to the lighting and the
-    // scenes, the lighting to the cycle, the cycle to the clock.
     for (const off of this.unbind) off();
     this.unbind.length = 0;
+
+    // Unwind from the far end: the chapter listens to the grade, the grade to
+    // the lighting, the lighting to the cycle, the cycle to the clock.
+    this.chapters.destroy();
+    this.universe.destroy();
+    this.overview.destroy();
 
     this.grade.destroy();
     this.lighting.destroy();
     this.dayNight.destroy();
-    this.scenes.destroy();
-    this.stars.destroy();
     this.time.destroy();
     this.camera.destroy();
-
-    this.weather.destroy();
-    this.foreground.destroy();
-    this.atmosphere.destroy();
-    this.buildings.destroy();
-    this.lighthouse.destroy();
-    this.environment.destroy();
-    this.ground.destroy();
-    this.ocean.destroy();
-    this.sky.destroy();
 
     this.engine.destroy();
   }
 
   // --- Internal --------------------------------------------------------------
 
+  private readonly onKeyDown = (event: KeyboardEvent): void => {
+    if (event.code !== "Escape" || event.repeat) return;
+    if (this.leaveChapter()) event.preventDefault();
+  };
+
   /** One frame. */
   private step(delta: number): void {
     // The clock and the camera go first, so the world is drawn at the time and
     // place it has this frame rather than the ones it had last frame.
     this.time.update(delta);
+    this.universe.update(delta);
+    this.applyApproach();
     this.camera.update(delta);
     // Straight off the camera, every frame. A parallax layer holds its place by
     // cancelling part of the camera's transform, so the two have to be written
     // in the same breath.
     this.engine.syncLayers();
-    this.lockHorizon();
-    // The prompt needs the transform to stay inside the frame at close zooms.
-    const view = this.engine.camera.getView();
-    this.buildings.setCameraView(view.screenY, view.zoom);
     // Then the grade, so everything lit this frame is lit for where we now are.
     this.grade.update(delta);
 
-    this.sky.update(delta);
-    this.stars.update(delta);
-    this.ocean.update(delta);
-    this.ground.update(delta);
-    this.environment.update(delta);
-    this.lighthouse.update(delta);
-    this.buildings.update(delta);
-    this.weather.update(delta);
-    this.foreground.update(delta);
-  }
-
-  /**
-   * The world y that zoom pivots on: the ground the town stands on.
-   *
-   * The obvious choice is the horizon, and it is the wrong one. Everything
-   * below the pivot grows *downward* as you zoom, so pivoting on the horizon
-   * pushes the shore off the bottom of the frame — at 2x the foot of a building
-   * sat 70 pixels below the viewport and you were looking at a wall with no
-   * ground under it. Pivoting on the band the buildings stand on keeps their
-   * feet where they are and lets the sky compress instead, which is the right
-   * way round: there is nothing in the sky that has to stay put.
-   *
-   * The sea and the sky still hold together, because the sky is not relying on
-   * this — `lockHorizon` moves it by however much the sea moved, whatever the
-   * pivot happens to be. The two mechanisms are independent on purpose.
-   */
-  private zoomAnchor(): number {
-    const anchors = this.shoreAnchors();
-    return anchors.shorelineY + anchors.groundHeight * PROP_BASELINES.backVerge;
-  }
-
-  /**
-   * Hold the sky's horizon on the sea's.
-   *
-   * The camera's own pivot does the bulk of it; this takes up the rounding.
-   * Both numbers are read off the live transform rather than recomputed from
-   * the constants that produced it — the whole failure being fixed here was two
-   * halves of the picture agreeing in theory and not on screen.
-   */
-  private lockHorizon(): void {
     const view = this.engine.camera.getView();
-    const horizon = this.ocean.topY;
-    this.sky.setHorizonShift(view.screenY + view.zoom * horizon - horizon);
+    const world = this.chapters.current;
+
+    if (world) {
+      // Per-scene framing, read rather than pushed. See `ChapterWorld.desiredZoom`.
+      this.camera.zoomTo(world.desiredZoom);
+      world.update(delta);
+    } else {
+      this.watchManualZoom();
+      this.updateOverview(delta, view);
+    }
   }
 
   /**
-   * Where the shore is, for anything that has to stand on it.
+   * Notice the visitor changing the zoom for themselves.
    *
-   * Read off the sea and the land themselves rather than recomputed from the
-   * same constants — two systems agreeing by coincidence is how a building ends
-   * up hovering a pixel above its own beach.
+   * Reads the controller's input counter rather than comparing zoom values. The
+   * camera quantises zoom to whole screen pixels per art pixel, so the rendered
+   * value is never the requested one and any comparison reads as a change on
+   * the very first frame.
    */
-  private shoreAnchors() {
-    return {
-      horizonY: this.ocean.topY,
-      shorelineY: this.ground.topY,
-      groundHeight: this.ground.size.height * this.ground.pixelScale,
-    };
+  private watchManualZoom(): void {
+    if (this.zoomedByHand) return;
+    if (this.camera.zoomInputs !== this.framedZoomInputs) this.zoomedByHand = true;
+  }
+
+  /** Ease the map out on the way in, and back in on the way out. */
+  private applyApproach(): void {
+    const { approach, mode } = this.universe.state;
+    if (mode === "overview" || mode === "inside") return;
+    this.overview.setPresence(1 - approach);
   }
 
   /**
-   * How thickly a kind should grow at a point, from whichever scenes reach it.
+   * The map's own per-frame work.
    *
-   * Uses the director's own weighting, so the planting thins and thickens
-   * across the walk between two chapters exactly as the light and the weather
-   * do — one falloff, one answer, three systems reading it.
+   * Only hover is pushed in. Detail used to be pushed too, as a per-chapter
+   * number derived from zoom — but detail is now a property of *the view*
+   * rather than of any one world, and `OverviewLayer` reads it off the camera
+   * transform it is already handed. Computing it out here and sending it nine
+   * times was nine ways for the map to disagree with itself about how far away
+   * it was.
    */
-  private plantingAt(x: number, kind: PropKind): number {
-    const state = this.scenes.sample(x);
-    let multiplier = 0;
+  private updateOverview(delta: number, view: CameraView): void {
+    const hovered = this.universe.state.hovered?.id ?? null;
+    for (const chapter of this.universe.all) {
+      this.overview.setHover(chapter.id, chapter.id === hovered ? 1 : 0);
+    }
+    this.overview.update(delta, view);
+  }
 
-    for (const scene of RESOLVED_SCENES) {
-      const weight = state.weights.get(scene.id);
-      if (!weight) continue;
-      const planting = scene.planting;
-      const perKind = planting.density?.[kind] ?? 1;
-      multiplier += perKind * (planting.scale ?? 1) * weight;
+  /**
+   * Arrive: build the world, hand the camera its coordinates, and cut.
+   *
+   * Everything here is one frame's work and all of it has to happen together —
+   * a camera clamped to the map's bounds while looking at a world's ground is a
+   * frame of the wrong place, and one frame of the wrong place at the end of a
+   * flight is the whole arrival ruined.
+   */
+  private openChapter(chapter: ResolvedChapter): void {
+    const world = this.chapters.open(chapter);
+    if (!world) return;
+
+    this.overview.setPresence(0);
+
+    const entry = world.entryFocus();
+    this.engine.camera.setAnchorY(world.zoomAnchorY);
+    this.camera.setBounds(world.bounds);
+    // A world is never shown smaller than it was composed to be seen. The map's
+    // floor is below 1 so eight worlds fit on screen at once; a shore's is not.
+    this.camera.setZoomRange(1, 3);
+    this.camera.setWheelMode("pan");
+    this.camera.zoomTo(chapter.camera.zoom);
+    this.camera.snapTo(entry.x, entry.y);
+
+    // A world with no scenes has no local climate to report, which is a normal
+    // state rather than a missing one — see `ChapterWorld.scenes`.
+    if (this.options.onScene && world.scenes) {
+      this.unbind.push(world.scenes.subscribe(this.options.onScene));
     }
 
-    return multiplier > 0 ? multiplier : 1;
+    this.publishCamera();
+  }
+
+  /** Leave: destroy the world and give the camera the map back. */
+  private closeChapter(): void {
+    this.chapters.close();
+
+    this.engine.camera.setAnchorY(null);
+    this.showOverview(false);
+    // Zoom before the snap, because `snapTo` takes the target zoom as read and
+    // applies it in the same breath. The other order lands on the map at the
+    // world's zoom and then eases out of it, which reads as a second move.
+    this.camera.zoomTo(this.overviewReturn.zoom);
+    this.camera.snapTo(this.overviewReturn.x, this.overviewReturn.y);
+    this.publishCamera();
+  }
+
+  /** Put the camera and the map back into overview mode. */
+  private showOverview(opening: boolean): void {
+    const bounds = universeBounds();
+    this.camera.setBounds(bounds);
+    // Below 1, so it is possible to stand far enough back to see the whole map.
+    this.camera.setZoomRange(0.5, 3);
+    this.camera.setWheelMode("zoom");
+    this.overview.setPresence(1);
+    // A fresh arrival on the map is not a deliberate framing, so a resize may
+    // still re-fit it.
+    this.zoomedByHand = false;
+    this.framedZoomInputs = this.camera.zoomInputs;
+
+    if (opening) {
+      const centre = universeCentre();
+      const zoom = this.fitZoom(bounds);
+      this.camera.zoomTo(zoom);
+      this.framedZoomInputs = this.camera.zoomInputs;
+      // Looking slightly *below* the map's centre, which lifts the composition
+      // up the frame and out from behind the navigation strip.
+      this.camera.snapTo(centre.x, centre.y + INTERFACE_RESERVE / (2 * zoom));
+      this.publishCamera();
+    }
+  }
+
+  /**
+   * The zoom that fits the whole map in the frame.
+   *
+   * The overview has to *open* zoomed out — the first thing anyone sees has to
+   * be four worlds and the space between them, because that space is the whole
+   * argument the view is making. Opening at zoom 1 framed a viewport's worth of
+   * map and cropped two of the four worlds off the edges, which reads as being
+   * dropped somewhere rather than as being shown something.
+   *
+   * Clamped at 1, so a very large window pushes in rather than drifting further
+   * and further out into empty sky.
+   */
+  private fitZoom(bounds: Bounds): number {
+    const { width, height } = this.engine.viewport;
+    if (bounds.width <= 0 || bounds.height <= 0) return 1;
+    // The usable frame is shorter than the viewport by whatever the interface
+    // has claimed, or the fit would be computed against space the map cannot
+    // actually occupy.
+    const usable = Math.max(120, height - INTERFACE_RESERVE);
+    return Math.min(1, width / bounds.width, usable / bounds.height);
+  }
+
+  /** The world x at the middle of the view. */
+  private cameraCentreX(): number {
+    return this.camera.viewLeft + this.engine.viewport.width / (2 * this.camera.zoom);
+  }
+
+  /** The world y at the middle of the view. */
+  private cameraCentreY(): number {
+    return this.camera.viewTop + this.engine.viewport.height / (2 * this.camera.zoom);
+  }
+
+  /**
+   * Tell the current world, and anyone outside, where the camera is.
+   *
+   * The focus is the middle of the view, until there is a character to be it —
+   * and the reason a world takes this as an argument rather than reading the
+   * camera itself is so that the day there is one, only this line changes.
+   */
+  private publishCamera(): void {
+    const view = this.engine.camera.getView();
+    this.chapters.onCamera(view, this.cameraCentreX());
+    this.options.onCamera?.(view.viewLeft, view.zoom);
   }
 }

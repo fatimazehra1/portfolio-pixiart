@@ -8,8 +8,15 @@ export type GradeListener = (state: LightingState) => void;
 export interface GradeManagerOptions {
   /** The global light. Where the hour comes from. */
   lighting: LightingManager;
-  /** Where the local climate comes from. */
-  scenes: SceneDirector;
+  /**
+   * Where the local climate comes from, if there is one.
+   *
+   * Optional, and swappable at runtime through `setScenes` — because the local
+   * climate now belongs to whichever chapter world you are inside, and in the
+   * overview there is no world and therefore no local climate. The grade
+   * outlives every world it grades, so it cannot be built around one.
+   */
+  scenes?: SceneDirector | null;
   /**
    * How fast the grade chases the scene, as an exponential rate per second.
    *
@@ -42,7 +49,7 @@ const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
  * It draws nothing and owns no Pixi objects.
  */
 export class GradeManager {
-  private readonly scenes: SceneDirector;
+  private scenes: SceneDirector | null = null;
   private readonly listeners = new Set<GradeListener>();
   private readonly smoothing: number;
 
@@ -59,7 +66,6 @@ export class GradeManager {
   private current: LightingState | null = null;
 
   constructor(options: GradeManagerOptions) {
-    this.scenes = options.scenes;
     this.smoothing = options.smoothing ?? DEFAULT_SMOOTHING;
 
     this.unbindLighting = options.lighting.subscribe((state) => {
@@ -67,13 +73,7 @@ export class GradeManager {
       this.publish();
     });
 
-    this.unbindScenes = this.scenes.subscribe((state) => {
-      this.target = state.palette;
-      // Nothing has been anywhere yet, so the first scene is arrived at rather
-      // than eased into — otherwise the world opens by fading in from neutral.
-      if (!this.current) this.local = { ...state.palette };
-      this.publish();
-    });
+    this.setScenes(options.scenes ?? null);
   }
 
   // --- Queries ---------------------------------------------------------------
@@ -86,6 +86,11 @@ export class GradeManager {
   /** The local delta actually in effect this frame. */
   get delta(): PaletteDelta {
     return this.local;
+  }
+
+  /** The climate currently being graded against, or null in the overview. */
+  get climate(): SceneDirector | null {
+    return this.scenes;
   }
 
   // --- Commands --------------------------------------------------------------
@@ -112,6 +117,41 @@ export class GradeManager {
     };
 
     this.publish();
+  }
+
+  /**
+   * Point the grade at a different local climate, or at none.
+   *
+   * The seam between the chapter you are inside and the light everything is
+   * drawn in. Entering a world hands its director over; leaving hands null, and
+   * the grade eases back to neutral — which is the right look for the overview,
+   * because the space between the worlds has no weather in it.
+   *
+   * Nothing downstream is told. Every consumer already reads `LightingState`
+   * off this and none of them knows there is more than one place the local half
+   * of it could have come from — which is the whole reason the grade was worth
+   * having as a separate thing.
+   */
+  setScenes(scenes: SceneDirector | null): void {
+    this.unbindScenes?.();
+    this.unbindScenes = null;
+    this.scenes = scenes;
+
+    if (!scenes) {
+      // No world, no climate. Eased into rather than assigned, so stepping out
+      // of a foggy chapter onto the map is a lift rather than a cut.
+      this.target = { ...NEUTRAL_PALETTE };
+      this.publish();
+      return;
+    }
+
+    this.unbindScenes = scenes.subscribe((state) => {
+      this.target = state.palette;
+      // Nothing has been anywhere yet, so the first scene is arrived at rather
+      // than eased into — otherwise the world opens by fading in from neutral.
+      if (!this.current) this.local = { ...state.palette };
+      this.publish();
+    });
   }
 
   /** Listen for the graded light. Called immediately if there is a state. */

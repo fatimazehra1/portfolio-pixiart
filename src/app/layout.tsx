@@ -15,13 +15,13 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "The Waterfront — Fatima Shakeel",
+  title: "Fatima Shakeel — a career, as a universe",
   description:
-    "An interactive pixel-art harbor telling the story of Fatima's software engineering journey. Each building is a chapter.",
+    "An interactive career universe: each chapter of Fatima's software engineering journey is its own small pixel-art world, explored by zooming in from a map of them all.",
   openGraph: {
-    title: "The Waterfront — Fatima Shakeel",
+    title: "Fatima Shakeel — a career, as a universe",
     description:
-      "An interactive pixel-art portfolio. Explore the harbor, or head straight to the resume.",
+      "An interactive career universe. Explore the worlds, or head straight to the resume.",
     type: "website",
   },
 };

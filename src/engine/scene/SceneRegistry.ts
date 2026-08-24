@@ -42,6 +42,7 @@ export const SCENES: readonly SceneConfig[] = [
     width: 702,
     status: "past",
     rendererId: "aptech",
+    chapterId: "aptech",
     note: "Where the training happened. Finished, and finished well.",
   },
   {
@@ -50,6 +51,7 @@ export const SCENES: readonly SceneConfig[] = [
     worldX: 2754,
     width: 432,
     status: "past",
+    chapterId: "freelance",
     note: "Where the freelance years happened. Finished, and behind you.",
   },
   {
@@ -59,6 +61,7 @@ export const SCENES: readonly SceneConfig[] = [
     width: 540,
     status: "past",
     rendererId: "planet01",
+    chapterId: "planet01",
     overrides: {
       // The tower is the visual centrepiece of the whole waterfront and it is
       // built to be seen from a long way off. `past` would put a veil over the
@@ -80,6 +83,7 @@ export const SCENES: readonly SceneConfig[] = [
     width: 648,
     status: "past",
     rendererId: "vaultsys",
+    chapterId: "vaulsys",
     note: "Disciplined, quiet, and deliberately the least animated place on the shore.",
   },
   {
@@ -89,6 +93,7 @@ export const SCENES: readonly SceneConfig[] = [
     width: 810,
     status: "active",
     rendererId: "naturetech",
+    chapterId: "naturetech",
     overrides: {
       // The one building that is deliberately unfinished. Dust belongs to the
       // work rather than to neglect, so it sits *on top of* the active climate
@@ -113,6 +118,7 @@ export const SCENES: readonly SceneConfig[] = [
     worldX: 7398,
     width: 540,
     status: "active",
+    chapterId: "bbit",
     note: "Still studying, still building. Upright; a spire among the low roofs.",
   },
   {
@@ -121,6 +127,7 @@ export const SCENES: readonly SceneConfig[] = [
     worldX: 8424,
     width: 432,
     status: "dormant",
+    chapterId: "workshop",
     zones: [
       {
         id: "workshop-ai",
@@ -145,6 +152,7 @@ export const SCENES: readonly SceneConfig[] = [
     worldX: 9369,
     width: 378,
     status: "active",
+    chapterId: "ideas",
     overrides: {
       // Ideas striking, not neglect. The lightning is the whole reading: this
       // place is *not* abandoned, it is where things arrive unannounced, and a
@@ -235,6 +243,7 @@ export function resolveScene(scene: SceneConfig): ResolvedScene {
   return {
     id: scene.id,
     name: scene.name,
+    chapterId: scene.chapterId,
     worldX: scene.worldX,
     width: scene.width,
     status: scene.status,
@@ -272,4 +281,96 @@ export const RESOLVED_SCENES: readonly ResolvedScene[] = SCENES.map(resolveScene
 /** Find a scene by id. */
 export function sceneById(id: string): ResolvedScene | undefined {
   return RESOLVED_SCENES.find((s) => s.id === id);
+}
+
+// --- Chapter-local layouts ---------------------------------------------------
+
+/**
+ * The scenes belonging to one chapter world, in registry order.
+ *
+ * Filtered by `SceneConfig.chapterId`. A chapter that names ids the registry
+ * does not have simply gets fewer scenes — a typo should show up as a thin
+ * world, not as a throw during world construction.
+ */
+export function scenesForChapter(chapterId: string): readonly SceneConfig[] {
+  return SCENES.filter((scene) => scene.chapterId === chapterId);
+}
+
+/** The same, by explicit id list rather than by ownership. */
+export function scenesByIds(ids: readonly string[]): readonly SceneConfig[] {
+  const wanted = new Set(ids);
+  return SCENES.filter((scene) => wanted.has(scene.id));
+}
+
+/** Ground one scene keeps clear, as a fraction of a chapter world's width. */
+export interface ChapterPlot {
+  name: string;
+  from: number;
+  to: number;
+  note: string;
+}
+
+/** A run of scenes lifted off the coast and re-based onto its own origin. */
+export interface SceneLayout {
+  /** The scenes, resolved, with `worldX` (and every zone's) shifted to local. */
+  scenes: readonly ResolvedScene[];
+  /** How wide the local world is, in world pixels. */
+  width: number;
+  /** How far west everything moved. Local x plus this is the old coastal x. */
+  offset: number;
+  /** Ground kept clear, as fractions of `width`. What `plots` consumers want. */
+  plots: readonly ChapterPlot[];
+}
+
+/**
+ * Lift a run of scenes off the coastline and give it a world of its own.
+ *
+ * This is the whole of the "chapters stop being plots on one shore" change, and
+ * it is deliberately a *reading* of the registry rather than an edit to it. The
+ * scenes stay authored where they are — one coast, absolute x, composed as a
+ * whole — and a chapter world asks for its own few and gets them starting at
+ * its own origin, with its own width and its own plots.
+ *
+ * So a chapter can be moved onto its own planet without the scene it is built
+ * from changing at all, and the coastline stays intact and buildable for as
+ * long as it is useful. It is also why almost nothing downstream had to learn
+ * what a chapter is: `Ground`, `Environment`, `Lighthouse` and `BuildingManager`
+ * already take a width and a plot list, and this is what supplies them.
+ *
+ * @param margin open ground kept west of the first scene and east of the last.
+ */
+export function layoutScenes(
+  scenes: readonly SceneConfig[],
+  margin: number = WORLD_MARGIN
+): SceneLayout {
+  if (scenes.length === 0) {
+    return { scenes: [], width: Math.max(1, margin * 2), offset: 0, plots: [] };
+  }
+
+  let west = Infinity;
+  let east = -Infinity;
+  for (const scene of scenes) {
+    west = Math.min(west, scene.worldX - scene.width / 2);
+    east = Math.max(east, scene.worldX + scene.width / 2);
+  }
+
+  const offset = Math.round(west - margin);
+  const width = Math.round(east + margin) - offset;
+
+  const local = scenes.map((scene) =>
+    resolveScene({
+      ...scene,
+      worldX: scene.worldX - offset,
+      zones: scene.zones?.map((zone) => ({ ...zone, worldX: zone.worldX - offset })),
+    })
+  );
+
+  const plots: ChapterPlot[] = local.map((scene) => ({
+    name: scene.id,
+    from: (scene.worldX - scene.width / 2) / width,
+    to: (scene.worldX + scene.width / 2) / width,
+    note: "",
+  }));
+
+  return { scenes: local, width, offset, plots };
 }

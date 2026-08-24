@@ -2,11 +2,15 @@ export {
   SCENES,
   RESOLVED_SCENES,
   WORLD_MARGIN,
+  layoutScenes,
   resolveScene,
   sceneById,
   scenePlots,
+  scenesByIds,
+  scenesForChapter,
   worldWidthFor,
 } from "./SceneRegistry";
+export type { ChapterPlot, SceneLayout } from "./SceneRegistry";
 export {
   STATUS_CLIMATE,
   NEUTRAL_PALETTE,

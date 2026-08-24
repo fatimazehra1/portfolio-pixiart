@@ -40,26 +40,53 @@ export type { LightPreset, LightingState } from "./lighting";
 export { LayerManager, LAYER_ORDER, LAYER_STACK } from "./layers/LayerManager";
 export type { LayerSpec } from "./layers/LayerManager";
 
-// Scenes — the single source of truth for the world's composition.
+// Scenes — the single source of truth for what is inside a world.
 export {
   SCENES,
   RESOLVED_SCENES,
   SceneDirector,
   STATUS_CLIMATE,
   NEUTRAL_PALETTE,
+  layoutScenes,
   sceneById,
   scenePlots,
+  scenesByIds,
+  scenesForChapter,
   worldWidthFor,
 } from "./scene";
 export type {
   PaletteDelta,
   ResolvedScene,
   SceneConfig,
+  SceneLayout,
   SceneState,
   SceneStatus,
   WeatherKind,
   WeatherLayerSpec,
 } from "./scene";
+
+// The universe — the single source of truth for which worlds exist and where.
+export {
+  CHAPTERS,
+  RESOLVED_CHAPTERS,
+  ChapterHost,
+  OverviewLayer,
+  UniverseDirector,
+  chapterById,
+  universeBounds,
+  universeCentre,
+} from "./universe";
+export type {
+  ChapterConfig,
+  ChapterIdentity,
+  ChapterWorld,
+  ResolvedChapter,
+  UniverseState,
+  ViewMode,
+} from "./universe";
+
+// Chapter interiors — how each kind of world is built.
+export { CHAPTER_BUILDERS, CoastChapter } from "./chapters";
 
 // Local grade — where the global hour meets the local climate.
 export { GradeManager, gradeLighting, gradeColor, desaturate } from "./grade";

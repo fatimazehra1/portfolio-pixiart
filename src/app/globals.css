@@ -22,6 +22,29 @@
 
   --background: var(--parchment);
   --foreground: var(--ink);
+
+  /*
+   * Interface tokens (DESIGN.md §UI Style — Interface rules).
+   *
+   * Deliberately separate from the world palette above. Those colours are
+   * materials being lit by a time of day; these are surfaces in an interface
+   * that has no time of day and must stay legible over every one of them. The
+   * interface sits above pixel art of every brightness, so its panels carry
+   * their own dark ground rather than borrowing the world's.
+   */
+  --ui-panel: rgb(14 18 26 / 0.72);
+  --ui-panel-strong: rgb(14 18 26 / 0.9);
+  --ui-border: rgb(255 255 255 / 0.1);
+  --ui-border-strong: rgb(255 255 255 / 0.18);
+  --ui-text: rgb(238 241 246 / 0.96);
+  --ui-muted: rgb(238 241 246 / 0.58);
+  --ui-faint: rgb(238 241 246 / 0.34);
+  --ui-connector: rgb(255 255 255 / 0.28);
+
+  /* Status accents. One per ChapterStatus. */
+  --ui-current: #7ddc9a;
+  --ui-past: #8fb2d8;
+  --ui-ongoing: #e0a458;
 }
 
 @theme inline {
@@ -62,3 +85,35 @@ canvas {
     transition-duration: 0.001ms !important;
   }
 }
+
+/*
+ * The interface layer sits over the canvas and must never eat a pointer event
+ * meant for the world. Panels opt back in individually.
+ */
+.ui-layer {
+  pointer-events: none;
+}
+
+.ui-layer > * {
+  pointer-events: auto;
+}
+
+/* A panel, per DESIGN.md §UI Style — Interface rules. */
+.ui-panel {
+  background: var(--ui-panel);
+  border: 1px solid var(--ui-border);
+  border-radius: 0.75rem;
+  backdrop-filter: blur(12px);
+  box-shadow: 0 8px 28px rgb(0 0 0 / 0.32);
+  color: var(--ui-text);
+}
+
+/*
+ * The `canvas` rule below pixelates every canvas on the page. The interface
+ * draws its connector lines in SVG, which must stay smooth — a clean hairline
+ * is the whole point of them.
+ */
+.ui-layer svg {
+  image-rendering: auto;
+}
+

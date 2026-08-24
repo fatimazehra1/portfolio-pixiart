@@ -1,6 +1,13 @@
 import { create } from "zustand";
 import { DEFAULT_TIME_OF_DAY, TIME_SETTINGS, WORLD_WIDTH } from "@/engine";
-import type { Size, TimeOfDay, TimePhase, TimeSnapshot } from "@/engine";
+import type {
+  Size,
+  TimeOfDay,
+  TimePhase,
+  TimeSnapshot,
+  UniverseState,
+  ViewMode,
+} from "@/engine";
 
 /**
  * World store — the React-facing slice of engine state.
@@ -56,6 +63,21 @@ export interface WorldState {
   /** Total width of the world in CSS pixels. */
   worldWidth: number;
 
+  /**
+   * Whether you are looking at the map of worlds, travelling, or inside one.
+   *
+   * The one piece of engine state the UI genuinely cannot do without: a
+   * loading screen, a back button and a chapter label all need to know which
+   * of the two views is on screen, and none of them can ask the renderer.
+   */
+  view: ViewMode;
+  /** The chapter world being entered, explored, or left. */
+  chapterId: string | null;
+  /** The world under the pointer, on the map. */
+  hoveredChapterId: string | null;
+  /** How far into a world we are, 0 on the map and 1 inside. */
+  approach: number;
+
   setReady: (value: boolean) => void;
   setViewport: (size: Size) => void;
   setTimeOfDay: (timeOfDay: TimeOfDay) => void;
@@ -63,6 +85,8 @@ export interface WorldState {
   setWorldWidth: (worldWidth: number) => void;
   /** Mirror a clock snapshot into the store. Driven by TimeManager. */
   setTimeSnapshot: (snapshot: TimeSnapshot) => void;
+  /** Mirror the universe state into the store. Driven by UniverseDirector. */
+  setUniverse: (state: UniverseState) => void;
 }
 
 export const useWorldStore = create<WorldState>((set) => ({
@@ -80,6 +104,11 @@ export const useWorldStore = create<WorldState>((set) => ({
   timeDay: 0,
   timePaused: TIME_SETTINGS.startPaused,
 
+  view: "overview",
+  chapterId: null,
+  hoveredChapterId: null,
+  approach: 0,
+
   setReady: (isReady) => set({ isReady }),
   setViewport: (viewport) => set({ viewport }),
   setTimeOfDay: (timeOfDay) => set({ timeOfDay }),
@@ -93,5 +122,12 @@ export const useWorldStore = create<WorldState>((set) => ({
       timeBlend: snapshot.blend,
       timeDay: snapshot.day,
       timePaused: snapshot.paused,
+    }),
+  setUniverse: (state) =>
+    set({
+      view: state.mode,
+      chapterId: state.chapter?.id ?? null,
+      hoveredChapterId: state.hovered?.id ?? null,
+      approach: state.approach,
     }),
 }));

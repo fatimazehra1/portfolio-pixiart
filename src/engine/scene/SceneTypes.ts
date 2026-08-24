@@ -188,6 +188,21 @@ export interface SceneConfig {
    */
   zones?: readonly SceneZone[];
 
+  /**
+   * Which chapter world this scene belongs to. See `universe/UniverseRegistry`.
+   *
+   * The migration marker. Every scene here is still laid out on one coastline,
+   * because that layout works and nothing is served by breaking it before the
+   * worlds that replace it exist. This field says where each one is *going*:
+   * a chapter builds its interior from the scenes that name it, rebased onto
+   * its own origin, so moving a chapter off the coast is a matter of the
+   * registry it is read through rather than of the scene itself.
+   *
+   * Scenes with no chapter belong to the universe rather than to any one world
+   * — the dock you arrive at, the lighthouse the whole map is read against.
+   */
+  chapterId?: string;
+
   /** A note to the next person reading the layout. Never rendered. */
   note?: string;
 }
@@ -196,6 +211,8 @@ export interface SceneConfig {
 export interface ResolvedScene {
   id: string;
   name: string;
+  /** Which chapter world it belongs to, if any. See `SceneConfig.chapterId`. */
+  chapterId: string | undefined;
   worldX: number;
   width: number;
   status: SceneStatus;

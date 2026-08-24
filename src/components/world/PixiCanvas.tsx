@@ -3,6 +3,7 @@
 import { useEffect, useRef } from "react";
 import { World } from "@/engine";
 import { useWorldStore } from "@/stores/worldStore";
+import { setWorld } from "./worldHandle";
 
 /**
  * React mount point for the rendering engine.
@@ -32,7 +33,7 @@ export default function PixiCanvas() {
     let world: World | null = null;
     let cancelled = false;
 
-    const { setCamera, setTimeSnapshot } = useWorldStore.getState();
+    const { setCamera, setTimeSnapshot, setUniverse } = useWorldStore.getState();
 
     // DESIGN.md §Animation: calm by default, still when asked. 0 stops the drift
     // and makes time-of-day changes instant without flattening the art.
@@ -46,6 +47,7 @@ export default function PixiCanvas() {
         onResize: setViewport,
         onCamera: setCamera,
         onTime: setTimeSnapshot,
+        onUniverse: setUniverse,
       });
 
       if (cancelled) {
@@ -54,6 +56,9 @@ export default function PixiCanvas() {
       }
 
       world = instance;
+      // Published for the React interface, which calls into it for world screen
+      // positions. See `worldHandle` for why this is not context or store.
+      setWorld(instance);
       (window as unknown as Record<string, unknown>).__world = instance; // TEMP(verify)
       host.appendChild(instance.canvas);
       setViewport(instance.viewport);
@@ -63,6 +68,7 @@ export default function PixiCanvas() {
     return () => {
       cancelled = true;
       setReady(false);
+      setWorld(null);
       world?.destroy();
       world = null;
     };

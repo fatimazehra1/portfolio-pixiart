@@ -1,4 +1,5 @@
 import type { Camera, FollowOptions, FollowTarget } from "./Camera";
+import type { Bounds } from "../types";
 import {
   CAMERA_KEYS,
   CAMERA_SETTINGS,
@@ -14,6 +15,17 @@ import {
   type CameraSettings,
 } from "./CameraConfig";
 
+/**
+ * How far a pointer must travel before it counts as a drag, in CSS pixels.
+ *
+ * Small, but not zero. Zero would make every click a one-pixel pan and would
+ * make `wasDragged` true for every click that had any tremor in it at all.
+ */
+const DRAG_THRESHOLD = 4;
+
+/** What a wheel gesture does. See `CameraControllerOptions.wheelMode`. */
+export type WheelMode = "pan" | "zoom";
+
 export interface CameraControllerOptions {
   /** The camera to drive. */
   camera: Camera;
@@ -26,6 +38,25 @@ export interface CameraControllerOptions {
    * anything shorter than the viewport) pins the camera vertically.
    */
   worldHeight?: number;
+  /**
+   * The rectangle the camera may travel over, in world pixels.
+   *
+   * Takes precedence over `worldWidth`/`worldHeight`, which describe a world
+   * that starts at the origin and runs east — the shape of the old single
+   * coastline. A chapter world and the overview are both plain rectangles that
+   * may start anywhere, so they pass this instead.
+   */
+  bounds?: Bounds;
+  /**
+   * What the wheel does. `"pan"` scrolls sideways, `"zoom"` pushes in and out.
+   *
+   * Two modes because the two views want opposite things from the same gesture.
+   * Inside a world you are walking along a shore and the wheel is travel; on
+   * the overview map you are choosing how close to a world you want to be, and
+   * the wheel is approach. See `DESIGN.md §Camera`: zoom is for interactions,
+   * and on the map, zoom *is* the interaction.
+   */
+  wheelMode?: WheelMode;
   /** Overrides for any of the tuning values. */
   settings?: Partial<CameraSettings>;
   /**
@@ -77,8 +108,17 @@ export class CameraController {
     | ((viewLeft: number, zoom: number, viewTop: number) => void)
     | undefined;
 
-  private worldWidth: number;
-  private worldHeight: number;
+  /**
+   * The world rectangle, in world pixels.
+   *
+   * Replaces the width-and-a-pinned-height pair the controller used to hold.
+   * That pair was the single horizontal coastline written into the camera: a
+   * world always at the origin, always one viewport tall, always travelled from
+   * west to east. A chapter world and the overview map are both ordinary
+   * rectangles, and this is what lets them be.
+   */
+  private worldBounds: Bounds;
+  private wheelMode: WheelMode;
   private readonly held = new Set<string>();
 
   /** Last values handed to `onMove`, so we only report real movement. */
@@ -88,13 +128,43 @@ export class CameraController {
   /** Tracks the moment the camera comes to rest. */
   private wasSettled = false;
 
+  /**
+   * The pointer drag in progress, if any.
+   *
+   * Held as the last position in *world* space rather than screen space, so a
+   * drag that crosses a zoom change (a trackpad pinch mid-drag) does not jump:
+   * the grab point stays the same point on the map whatever the scale does.
+   */
+  /**
+   * How many times the visitor has driven the zoom themselves.
+   *
+   * A counter rather than a flag so a reader can tell "has it changed since I
+   * last looked" without anyone having to reset it. Counted at the input sites
+   * because there are three of them — wheel, keys, and any future pinch — and
+   * inferring it by watching the zoom value cannot work: the camera quantises
+   * zoom to whole pixels per art pixel, so the rendered value never equals the
+   * requested one and every comparison reads as a change.
+   */
+  private zoomInputCount = 0;
+
+  private dragging = false;
+  private dragPointer = -1;
+  private dragFrom = { x: 0, y: 0 };
+  /** How far the pointer has travelled this drag, in CSS pixels. */
+  private dragDistance = 0;
+
   private attached = false;
 
   constructor(options: CameraControllerOptions) {
     this.camera = options.camera;
     this.host = options.host;
-    this.worldWidth = options.worldWidth ?? WORLD_WIDTH;
-    this.worldHeight = options.worldHeight ?? WORLD_HEIGHT;
+    this.worldBounds = options.bounds ?? {
+      x: 0,
+      y: 0,
+      width: options.worldWidth ?? WORLD_WIDTH,
+      height: options.worldHeight ?? WORLD_HEIGHT,
+    };
+    this.wheelMode = options.wheelMode ?? "pan";
     this.settings = { ...CAMERA_SETTINGS, ...options.settings };
     this.onMove = options.onMove;
 
@@ -126,7 +196,12 @@ export class CameraController {
 
   /** How far the camera can travel horizontally, in CSS pixels. 0 if the world fits. */
   get travel(): number {
-    return Math.max(0, this.worldWidth - this.camera.getViewport().width);
+    return Math.max(0, this.worldBounds.width - this.camera.getViewport().width);
+  }
+
+  /** The rectangle the camera is currently confined to, in world pixels. */
+  get bounds(): Bounds {
+    return { ...this.worldBounds };
   }
 
   // --- Commands --------------------------------------------------------------
@@ -141,19 +216,58 @@ export class CameraController {
   resize(width: number, height: number): void {
     this.camera.setViewport({ width, height });
     this.camera.setBounds({
-      x: 0,
-      y: 0,
-      width: this.worldWidth,
-      height: Math.max(this.worldHeight, height),
+      x: this.worldBounds.x,
+      y: this.worldBounds.y,
+      width: this.worldBounds.width,
+      // A world with no vertical extent still gets a viewport's worth, which is
+      // what pins the camera in a side view rather than letting it drift over
+      // empty space. A world that has real height keeps it.
+      height: Math.max(this.worldBounds.height, height),
     });
   }
 
   /** Change how big the world is. Re-clamps immediately. */
-  setWorldSize(worldWidth: number, worldHeight = this.worldHeight): void {
-    this.worldWidth = worldWidth;
-    this.worldHeight = worldHeight;
+  setWorldSize(worldWidth: number, worldHeight = this.worldBounds.height): void {
+    this.setBounds({ x: 0, y: 0, width: worldWidth, height: worldHeight });
+  }
+
+  /**
+   * Move the camera into a different world. Re-clamps immediately.
+   *
+   * The one call that swaps which place the camera is allowed to be in — the
+   * overview map, or the inside of a chapter. Everything else about the camera
+   * is unchanged by the swap, which is the point: entering a world is a change
+   * of bounds and a change of pivot, not a different camera.
+   */
+  setBounds(bounds: Bounds): void {
+    this.worldBounds = { ...bounds };
     const viewport = this.camera.getViewport();
     this.resize(viewport.width, viewport.height);
+  }
+
+  /** Change what a wheel gesture does. See `CameraControllerOptions.wheelMode`. */
+  setWheelMode(mode: WheelMode): void {
+    this.wheelMode = mode;
+  }
+
+  /** Change how far in and out the camera may go. See `Camera.setZoomRange`. */
+  setZoomRange(min: number, max: number): void {
+    this.camera.setZoomRange(min, max);
+  }
+
+  /**
+   * Put the camera at a world point with no easing, and make that its home.
+   *
+   * What arriving inside a world uses. A cut is correct here and only here: you
+   * have just travelled, the frame you are cutting from is the map and the
+   * frame you are cutting to is the ground, and easing between two places that
+   * share no coordinate system would be a slide across nothing.
+   */
+  snapTo(x: number, y = 0): void {
+    this.camera.setHome(x, y);
+    this.camera.snapTo(x, y);
+    this.wasSettled = true;
+    this.report(true);
   }
 
   /**
@@ -189,10 +303,7 @@ export class CameraController {
    * the position `R` returns to.
    */
   snapToStart(): void {
-    this.camera.setHome(0, 0);
-    this.camera.snapTo(0, 0);
-    this.wasSettled = true;
-    this.report(true);
+    this.snapTo(this.worldBounds.x, this.worldBounds.y);
   }
 
   /** Advance input and easing. `delta` is in seconds. */
@@ -220,6 +331,10 @@ export class CameraController {
     window.removeEventListener("keyup", this.onKeyUp);
     window.removeEventListener("blur", this.onBlur);
     this.host.removeEventListener("wheel", this.onWheel);
+    this.host.removeEventListener("pointerdown", this.onPointerDown);
+    window.removeEventListener("pointermove", this.onPointerMove);
+    window.removeEventListener("pointerup", this.onPointerUp);
+    window.removeEventListener("pointercancel", this.onPointerUp);
 
     this.held.clear();
   }
@@ -236,6 +351,10 @@ export class CameraController {
     // camera would drift forever on return.
     window.addEventListener("blur", this.onBlur);
     this.host.addEventListener("wheel", this.onWheel, { passive: false });
+    this.host.addEventListener("pointerdown", this.onPointerDown);
+    window.addEventListener("pointermove", this.onPointerMove);
+    window.addEventListener("pointerup", this.onPointerUp);
+    window.addEventListener("pointercancel", this.onPointerUp);
   }
 
   /** Push the camera's target by however far the held pan keys ask for. */
@@ -258,10 +377,38 @@ export class CameraController {
   private applyZoom(delta: number): void {
     const direction = this.axis(ZOOM_OUT_KEYS, ZOOM_IN_KEYS);
     if (direction === 0) return;
+    this.zoomInputCount++;
 
     // Exponential, so zooming in for a second and back out for a second lands
     // exactly where it started.
     this.camera.zoomBy(Math.exp(direction * this.settings.zoomSpeed * delta));
+  }
+
+  /**
+   * Zoom towards a point on screen, keeping the world under it in place.
+   *
+   * The difference between a map you *steer* and a map you merely scale. Zoom
+   * that pivots on the centre of the frame pushes whatever you were reaching
+   * for out to the edge, so you chase it: zoom, pan back, zoom, pan back.
+   * Anchoring on the pointer means the thing under the cursor is the thing you
+   * arrive at, which is the entire interaction the overview is built on.
+   *
+   * Worked in world space rather than screen space: convert the anchor to a
+   * world point at the old zoom, apply the zoom, then shift the target by
+   * however far that world point moved. Doing it in screen deltas instead is
+   * subtly wrong at the bounds, where the clamp eats part of the move.
+   */
+  zoomAt(factor: number, screenX: number, screenY: number): void {
+    const local = this.local(screenX, screenY);
+
+    const before = this.camera.screenToWorld(local);
+    this.camera.zoomBy(factor);
+    // The camera has not re-rendered yet, so ask where the anchor *will* be at
+    // the zoom now being eased towards, not the one still on screen.
+    const after = this.camera.screenToWorld(local);
+
+    this.takeManualControl();
+    this.camera.panBy(before.x - after.x, before.y - after.y);
   }
 
   /** -1 for the negative key set, +1 for the positive, 0 for neither or both. */
@@ -312,7 +459,79 @@ export class CameraController {
     this.held.clear();
   };
 
+  /**
+   * Whether the last pointer gesture was a drag rather than a click.
+   *
+   * The overview needs this: a world under the cursor at the end of a pan is
+   * not a world you asked to enter, and without the distinction every drag that
+   * happens to finish over an island flies you into it.
+   */
+  /** How many deliberate zoom inputs have happened. See `zoomInputCount`. */
+  get zoomInputs(): number {
+    return this.zoomInputCount;
+  }
+
+  get wasDragged(): boolean {
+    return this.dragDistance > DRAG_THRESHOLD;
+  }
+
+  private readonly onPointerDown = (event: PointerEvent): void => {
+    // Primary button only. A right-drag is a context menu everywhere else and
+    // should stay one here.
+    if (event.button !== 0) return;
+
+    this.dragging = true;
+    this.dragPointer = event.pointerId;
+    this.dragDistance = 0;
+    this.dragFrom = this.camera.screenToWorld(this.local(event.clientX, event.clientY));
+  };
+
+  private readonly onPointerMove = (event: PointerEvent): void => {
+    if (!this.dragging || event.pointerId !== this.dragPointer) return;
+
+    const local = this.local(event.clientX, event.clientY);
+    const now = this.camera.screenToWorld(local);
+    const dx = this.dragFrom.x - now.x;
+    const dy = this.dragFrom.y - now.y;
+
+    this.dragDistance += Math.hypot(dx, dy) * this.camera.getZoom();
+    // Below the threshold nothing moves at all, so the tiny tremor between
+    // pressing and releasing a mouse button never nudges the map.
+    if (this.dragDistance <= DRAG_THRESHOLD) return;
+
+    this.takeManualControl();
+    // Pushes the target and lets the easing carry the camera there, rather than
+    // assigning the position outright. `Camera.snapTo` would land it exactly on
+    // the finger, but it also collapses the zoom onto its target — so a drag
+    // during a zoom ease would jerk the scale, which is far worse than the
+    // hundred milliseconds of give the easing costs.
+    this.camera.panBy(dx, dy);
+  };
+
+  private readonly onPointerUp = (event: PointerEvent): void => {
+    if (event.pointerId !== this.dragPointer) return;
+    this.dragging = false;
+    this.dragPointer = -1;
+  };
+
+  /** A client point, relative to the canvas. */
+  private local(clientX: number, clientY: number): { x: number; y: number } {
+    const rect = this.host.getBoundingClientRect();
+    return { x: clientX - rect.left, y: clientY - rect.top };
+  }
+
   private readonly onWheel = (event: WheelEvent): void => {
+    if (this.wheelMode === "zoom") {
+      if (event.deltaY === 0) return;
+      // Exponential, so a scroll in and the same scroll back out land exactly
+      // where they started — the same rule the zoom keys follow.
+      this.zoomInputCount++;
+      const factor = Math.exp(-event.deltaY * this.settings.wheelZoomSensitivity);
+      this.zoomAt(factor, event.clientX, event.clientY);
+      event.preventDefault();
+      return;
+    }
+
     // Trackpads send horizontal deltas directly; mice usually only have a
     // vertical wheel, so shift-scroll is the conventional stand-in.
     const horizontal = event.deltaX !== 0 ? event.deltaX : event.shiftKey ? event.deltaY : 0;

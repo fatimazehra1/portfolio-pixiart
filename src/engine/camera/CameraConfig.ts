@@ -54,6 +54,14 @@ export interface CameraSettings {
   followSmoothing: number;
   /** Multiplier on horizontal wheel deltas. */
   wheelSensitivity: number;
+  /**
+   * Multiplier on vertical wheel deltas when the wheel is zooming.
+   *
+   * Small, and it has to be: wheel deltas arrive in the dozens or hundreds and
+   * this is an exponent. What it buys is a map you approach by scrolling, which
+   * is how "zoom toward a world" reads on a trackpad.
+   */
+  wheelZoomSensitivity: number;
   /** How hard zoom chases its target. Slower than panning; zoom is a statement. */
   zoomSmoothing: number;
   /**
@@ -76,9 +84,18 @@ export const CAMERA_SETTINGS: CameraSettings = {
   smoothing: 7.5,
   followSmoothing: 4.5,
   wheelSensitivity: 1,
+  wheelZoomSensitivity: 0.0016,
   zoomSmoothing: 5,
   zoomSpeed: 1.1,
-  minZoom: 1,
+  /**
+   * The floor is 0.5 rather than 1 now, and that is the overview's doing.
+   *
+   * A world you are inside should never be shown smaller than it was composed
+   * to be seen, so the interior sets its own floor of 1 through
+   * `setZoomRange`. The map is the opposite case: it has to be possible to
+   * stand far enough back to see eight worlds at once, and that is below 1.
+   */
+  minZoom: 0.5,
   maxZoom: 3,
   publishThreshold: 0.5,
 };

@@ -1,8 +1,9 @@
 import { Container } from "pixi.js";
-import { INTERACT_KEY, InteractionPrompt, PROMPT } from "./InteractionZone";
+import { INTERACT_KEY } from "./InteractionZone";
 import type { InteractionZone } from "./InteractionZone";
 import type { Building, BuildingAnchors, BuildingContext } from "./Building";
 import { PROP_BASELINES } from "../ground";
+import type { PlotArea } from "../ground";
 import type { LightingState } from "../lighting";
 
 /**
@@ -27,6 +28,8 @@ export interface BuildingManagerOptions {
   anchors: BuildingAnchors;
   /** Global motion multiplier. 0 for `prefers-reduced-motion: reduce`. */
   motionScale?: number;
+  /** Ground kept clear, as fractions of this world's width. See `BuildingContext`. */
+  plots?: readonly PlotArea[];
   /** How far beyond the view a building stays alive, in CSS pixels. */
   cullMargin?: number;
   /** Notified whenever a building is interacted with. */
@@ -36,23 +39,32 @@ export interface BuildingManagerOptions {
 const DEFAULT_CULL_MARGIN = 120;
 
 /**
- * The registry, the camera cull, the proximity test and the one prompt.
+ * The registry, the camera cull, the proximity test and the pointer.
  *
- * # Why these four things live together
+ * # Why these things live together
  * They are all questions about *all* the buildings at once. Which is nearest?
- * Which are worth drawing? Whose name goes on the panel? A building answering
- * any of those for itself would mean ten keyboard listeners racing each other
- * and ten prompts deciding independently to appear.
+ * Which are worth drawing? Which one is under the pointer right now? A building
+ * answering any of those for itself would mean ten keyboard listeners and ten
+ * hit-testers racing each other.
  *
  * So a building knows how to stand and how to look, and this knows how they
  * compare. Adding a landmark is `manager.add(new WhateverBuilding(context))`,
  * and nothing here needs to know it happened.
  *
+ * # Hover and click, not a floating "PRESS E"
+ * A building is interactive the way anything in the modern interface is:
+ * pointing at it highlights it, clicking it opens what it has. `E` still
+ * triggers whichever building is nearest the focus point below, as an
+ * optional keyboard equivalent — but nothing paints a prompt over the art to
+ * advertise it, because DESIGN.md's split keeps that kind of affordance on the
+ * interface side of the seam, not drawn into the world.
+ *
  * # The focus point
- * Proximity is measured from a *focus* — the point in the world you are
- * considered to be at. There is no player yet, so the camera's centre is used,
- * dropped onto the path the player will eventually walk. When a character
- * exists, one call changes and nothing else does:
+ * Proximity — which is `E`, not the pointer — is measured from a *focus*: the
+ * point in the world you are considered to be at. There is no player yet, so
+ * the camera's centre is used, dropped onto the path the player will
+ * eventually walk. When a character exists, one call changes and nothing else
+ * does:
  *
  * ```ts
  * manager.setFocus(player.x, player.y);
@@ -73,7 +85,6 @@ export class BuildingManager {
   readonly container = new Container();
 
   private readonly world = new Container();
-  private readonly prompt: InteractionPrompt;
 
   private readonly registry = new Map<string, Building>();
   /** The same buildings, as an array — iterated every frame, so never rebuilt. */
@@ -84,12 +95,12 @@ export class BuildingManager {
   private readonly motionScale: number;
 
   private worldWidth: number;
+  private plots: readonly PlotArea[] | undefined;
   private viewportWidth: number;
   private pixelScaleValue: number;
   private anchors: BuildingAnchors;
 
   private viewOffset = 0;
-  /** The camera transform, for keeping the prompt on screen. See setCameraView. */
   private viewScreenY = 0;
   private viewZoom = 1;
   /** Where the player is considered to be, in world CSS pixels. */
@@ -107,6 +118,7 @@ export class BuildingManager {
 
   constructor(options: BuildingManagerOptions) {
     this.worldWidth = options.worldWidth;
+    this.plots = options.plots;
     this.viewportWidth = options.width;
     this.pixelScaleValue = options.pixelScale;
     this.anchors = options.anchors;
@@ -115,17 +127,17 @@ export class BuildingManager {
     this.onInteractCallback = options.onInteract;
 
     this.container.label = "buildings";
-    this.container.eventMode = "none";
+    // `passive`, not `none`: the container itself is not a target, but a
+    // building inside it is, and `none` would block hit-testing for children
+    // too.
+    this.container.eventMode = "passive";
     this.world.label = "buildings:world";
-    this.world.eventMode = "none";
+    this.world.eventMode = "passive";
     // Buildings are sorted by their baseline, so one standing further down the
     // beach correctly covers one set further back.
     this.world.sortableChildren = true;
 
-    this.prompt = new InteractionPrompt(this.motionScale);
-    // Above every building, always. A prompt that sorted with the architecture
-    // would disappear behind the thing it is describing.
-    this.container.addChild(this.world, this.prompt.container);
+    this.container.addChild(this.world);
 
     this.resize(options.width, options.height, options.anchors);
     this.attach();
@@ -140,6 +152,7 @@ export class BuildingManager {
       pixelScale: this.pixelScaleValue,
       anchors: this.anchors,
       motionScale: this.motionScale,
+      plots: this.plots,
     };
   }
 
@@ -174,6 +187,16 @@ export class BuildingManager {
     this.list.push(building);
     // Depth by baseline, matching how the shore sorts its planting.
     building.container.zIndex = building.worldY;
+
+    // Hover and click. The building owns what either looks like; this only
+    // decides that pointing at it and clicking it are the ways in.
+    building.container.on("pointerover", () => building.setHovered(true));
+    building.container.on("pointerout", () => building.setHovered(false));
+    building.container.on("pointertap", () => {
+      building.zone.trigger();
+      this.onInteractCallback?.(building);
+    });
+
     this.world.addChild(building.container);
 
     if (this.lighting) building.applyLighting(this.lighting);
@@ -288,18 +311,11 @@ export class BuildingManager {
     }
 
     if (nearest) {
-      const anchor = nearest.promptAnchor;
-      this.prompt.show(nearest.zone, anchor.x, this.promptY(anchor.y - PROMPT.lift));
       this.activeBuilding = nearest;
       this.active = nearest.zone;
-      // A building far enough off screen to be culled cannot be offering
-      // anything you can see, whatever the arithmetic says.
-      this.prompt.setOnScreen(!nearest.culled);
     } else if (this.active) {
       this.clearFocus();
     }
-
-    this.prompt.update(delta);
   }
 
   destroy(): void {
@@ -312,17 +328,14 @@ export class BuildingManager {
     this.list.length = 0;
     this.registry.clear();
 
-    this.prompt.destroy();
     this.container.destroy({ children: true });
   }
 
   /**
    * Tell the manager how the camera is transforming it.
    *
-   * Only the prompt needs this, and only so it can stay on screen. A tall
-   * building at a close zoom puts its own roof above the top of the viewport,
-   * and a prompt anchored to that roof goes with it — you end up standing in
-   * front of a landmark being offered something you cannot read.
+   * Kept for whatever next reads the transform relative to the buildings —
+   * nothing here currently does, now that the prompt that used it is gone.
    */
   setCameraView(screenY: number, zoom: number): void {
     this.viewScreenY = screenY;
@@ -330,28 +343,6 @@ export class BuildingManager {
   }
 
   // --- Internal --------------------------------------------------------------
-
-  /**
-   * Keep the prompt inside the frame, in the manager's own pixel grid.
-   *
-   * Pushed down rather than clamped to the very edge, so it still reads as
-   * floating above something rather than stuck to the ceiling. Below the
-   * threshold nothing happens at all — an ordinary building's prompt sits where
-   * the building puts it, which is what it should do.
-   */
-  private promptY(wanted: number): number {
-    const scale = this.pixelScaleValue * this.viewZoom;
-    if (scale <= 0) return wanted;
-
-    // The panel hangs *above* its anchor, so the anchor has to sit at least a
-    // panel-height below the top of the frame. Height is already in this
-    // container's own pixels, so it carries over unscaled; only the screen-space
-    // margin has to be converted back through the transform.
-    const margin = PROMPT.lift * this.pixelScaleValue;
-    const lowest = this.prompt.height + (margin - this.viewScreenY) / scale;
-
-    return Math.max(wanted, Math.round(lowest));
-  }
 
   private attach(): void {
     if (this.attached) return;
@@ -366,7 +357,6 @@ export class BuildingManager {
   }
 
   private clearFocus(): void {
-    this.prompt.hide();
     this.active = null;
     this.activeBuilding = null;
   }
