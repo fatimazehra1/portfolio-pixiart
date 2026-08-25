@@ -68,14 +68,9 @@ export const ISO_THEME: Readonly<Record<string, IsoThemeEntry>> = {
     rockPalette: [0x8c8478, 0x6e675c, 0x534d44, 0x38332c],
     undersideLength: 60,
     building: () => new Planet01Renderer(1),
-    // Tallest on the board, deliberately — but "tallest" is relative to the
-    // *other buildings' actual rendered heights*, not to this island's own
-    // width. 1.35 here was still being read as a width-fit multiple (its
-    // real effect at this aspect ratio), and rendered at ~2.9x the other
-    // three buildings' mean height. This targets ~1.3x that mean directly:
-    // renderedHeight = topWidth * heightFactor when height is the binding
-    // constraint, which it now is (0.53 < the width-fit scale).
-    heightFactor: 0.53,
+    // Tallest on the board, deliberately — a rooftop-classroom tower earns
+    // more presence than the others, capped well under 1.5x their height.
+    heightFactor: 1.35,
   },
   // Matches `ChapterConfig.id` in the registry, which is spelled with one
   // "t" — a mismatch here silently falls back to `DEFAULT_ISO_THEME` (no
@@ -120,10 +115,7 @@ export const ISO_THEME: Readonly<Record<string, IsoThemeEntry>> = {
     topPalette: [0xe8e2d4, 0xcfc7b3, 0xb0a793, 0x8f8776],
     rockPalette: [0x716b5e, 0x5a554a, 0x433f37, 0x2d2a25],
     undersideLength: 44,
-    // The most recognisable island on the map is the goal — contact, the
-    // CTA — so it gets the strongest lift of any chapter, plus its own beam
-    // (see `OverviewLayer.plantLandmark`).
-    lightBoost: 1.7,
+    lightBoost: 1.35,
   },
 };
 
