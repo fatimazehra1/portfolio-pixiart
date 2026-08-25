@@ -9,6 +9,7 @@ import { KIND_TONES, PETALS, PROP_MATERIALS, PropFactory } from "../environment"
 import type { PropKind, PropView } from "../environment";
 import type { BuildingRenderer } from "../buildings";
 import type { CameraView } from "../camera/Camera";
+import type { LightingState } from "../lighting";
 import type { Size } from "../types";
 import type { ResolvedChapter } from "./UniverseTypes";
 
@@ -34,6 +35,39 @@ const VOID_BOTTOM = 0xf6dcc0; // pale peach
 const BOB_PIXELS = 2;
 const BOB_PERIOD = [16, 27] as const;
 const DETAIL_SMOOTHING = 6;
+
+/**
+ * There is no day/night cycle between the worlds — see `OverviewLayer`'s own
+ * doc comment on why props are lit from the flat material table instead of
+ * the clock. Buildings need the same treatment: without *some* lighting
+ * state, `BuildingRenderer` falls back to each material's raw colour, and a
+ * few of those (Vaultsys's stone, the lighthouse's shadow tone) were
+ * authored to be lit rather than to stand alone. `lightBoost` in `IsoTheme`
+ * multiplies this further for the two that still read dark under it.
+ */
+const HUB_BUILDING_LIGHT: LightingState = {
+  ambientIntensity: 1.15,
+  ambientTint: 0xfff3d6,
+  tintStrength: 0.1,
+  shadowStrength: 0.6,
+  highlightStrength: 0.6,
+  bloomMultiplier: 0.2,
+  localLightMultiplier: 0,
+  fromPhase: "noon",
+  toPhase: "noon",
+  blend: 0,
+};
+
+/**
+ * Width beyond which a building would visibly overrun its own island.
+ *
+ * Loose on purpose: Vaultsys (156×88, aspect 1.77) needs ~1.95x to reach its
+ * own height target, and a tighter cap was silently short-circuiting it back
+ * down to a runt before that target was ever reached. Only Aptech's genuinely
+ * wide campus (aspect 2.5) still gets capped, which is correct — it is
+ * supposed to read as low and wide.
+ */
+const BUILDING_WIDTH_CAP = 2.0;
 
 /** Chronological order the dashed paths connect, exactly as authored. */
 const PATH_ORDER = [
@@ -443,8 +477,15 @@ export class OverviewLayer {
     const renderer = theme.building();
     renderer.build();
 
-    const targetWidth = (island.topBounds.right - island.topBounds.left) * 0.78;
-    const drawScale = Math.max(0.12, Math.min(1, targetWidth / renderer.width));
+    // Scaled to a target *height*, not width — a raw-pixel scale makes a
+    // squat campus (156×62) and a five-storey tower (108×168) read as wildly
+    // different presences even on equal-sized islands. The width cap is what
+    // stops a short, wide building (Aptech) hitting that height target by
+    // overrunning its island sideways instead.
+    const topWidth = island.topBounds.right - island.topBounds.left;
+    const heightScale = (topWidth * (theme.heightFactor ?? 1.05)) / renderer.height;
+    const widthCapScale = (topWidth * BUILDING_WIDTH_CAP) / renderer.width;
+    const drawScale = Math.max(0.1, Math.min(heightScale, widthCapScale));
 
     const col = Math.round(island.topCenter.x);
     const footY = island.surface[col] >= 0 ? island.surface[col] : island.topBounds.top;
@@ -453,6 +494,13 @@ export class OverviewLayer {
     renderer.container.x = -(renderer.width * drawScale) / 2;
     renderer.container.y = footY - island.topCenter.y;
     body.addChild(renderer.container);
+
+    const boost = theme.lightBoost ?? 1;
+    renderer.applyLighting({
+      ...HUB_BUILDING_LIGHT,
+      ambientIntensity: HUB_BUILDING_LIGHT.ambientIntensity * boost,
+    });
+
     return renderer;
   }
 
@@ -475,9 +523,15 @@ export class OverviewLayer {
     const theme = ISO_THEME[chapter.id] ?? DEFAULT_ISO_THEME;
     const drawScale = Math.max(1, Math.round((island.topBounds.right - island.topBounds.left) / (art.width * 3)));
 
+    // One tone lighter than the shape's own shading calls for, and further
+    // lifted by `lightBoost` where a bitmap is mostly its `#` (shadow) cells —
+    // the lighthouse most of all. Unlit, these read as near-black silhouettes
+    // against the hub's bright sky; there is no clock here to light them
+    // properly, so the flat lift stands in for it.
+    const boost = theme.lightBoost ?? 1;
     const make = (texture: Texture, tint: number) => {
       const sprite = new Sprite(texture);
-      sprite.tint = tint;
+      sprite.tint = lift(tint, boost);
       sprite.eventMode = "none";
       sprite.scale.set(drawScale);
       return sprite;
@@ -486,8 +540,8 @@ export class OverviewLayer {
     const container = new Container();
     container.eventMode = "none";
     container.addChild(
-      make(art.base, theme.rockPalette[1]),
-      make(art.dark, theme.rockPalette[3]),
+      make(art.base, theme.rockPalette[0]),
+      make(art.dark, theme.rockPalette[2]),
       make(art.light, theme.topPalette[0])
     );
 
@@ -570,9 +624,10 @@ export class OverviewLayer {
       );
     }
 
-    // Dark against the light backdrop — the earlier white read as invisible
-    // against dusty lavender and pale peach both.
-    this.pathGraphics.stroke({ width: 1.5, color: 0x6b5642, alpha: 0.38 });
+    // Dark against the light backdrop, and heavy enough to actually read at
+    // hub scale — the first pass was both too pale and too thin to survive
+    // being drawn under nine islands.
+    this.pathGraphics.stroke({ width: 3, color: 0x4a3a2a, alpha: 0.6 });
   }
 
   private strokeDashedCurve(
@@ -591,8 +646,8 @@ export class OverviewLayer {
     const cy = (p0.y + p1.y) / 2 + ny * bow;
 
     const steps = Math.max(8, Math.round(dist / 10));
-    const dash = 5;
-    const gap = 5;
+    const dash = 9;
+    const gap = 6;
     let travelled = 0;
     let drawing = true;
     let prev = p0;
@@ -667,4 +722,13 @@ function seedOf(id: string): number {
   let seed = 0x9e37;
   for (let i = 0; i < id.length; i++) seed = (seed * 31 + id.charCodeAt(i)) >>> 0;
   return seed;
+}
+
+/** Multiply a colour's channels by `factor`, clamped. The cheapest brighten. */
+function lift(color: number, factor: number): number {
+  const clamp = (v: number) => (v < 0 ? 0 : v > 255 ? 255 : Math.round(v));
+  const r = clamp(((color >> 16) & 0xff) * factor);
+  const g = clamp(((color >> 8) & 0xff) * factor);
+  const b = clamp((color & 0xff) * factor);
+  return (r << 16) | (g << 8) | b;
 }

@@ -25,6 +25,21 @@ export interface IsoThemeEntry {
   undersideLength: number;
   /** Makes this chapter's landmark, if it has a dedicated renderer. */
   building?: () => BuildingRenderer;
+  /**
+   * Target building height, as a multiple of the island's own top-face width.
+   * Every building is scaled to hit this rather than its raw pixel size, so a
+   * squat campus and a five-storey tower read as similar *presences* on the
+   * map. 1.0–1.3 for most; Planet01 goes higher on purpose — it is meant to
+   * be the tallest thing on the board, just not an outlier.
+   */
+  heightFactor?: number;
+  /**
+   * Extra ambient boost applied only to this chapter's building/landmark, on
+   * top of the hub's own flat lighting. For the two that read as near-black
+   * under plain daylight — Vaultsys's stone is deliberately cool and dark,
+   * and Lighthouse leans hard on its `#` shadow tone.
+   */
+  lightBoost?: number;
 }
 
 export const ISO_THEME: Readonly<Record<string, IsoThemeEntry>> = {
@@ -34,6 +49,10 @@ export const ISO_THEME: Readonly<Record<string, IsoThemeEntry>> = {
     rockPalette: [0xa88f66, 0x8a7350, 0x6b5a3e, 0x4a3f2c],
     undersideLength: 46,
     building: () => new AptechRenderer(1),
+    // Low and wide by design (ART_DIRECTION.md — a campus you're let into, not
+    // a tower you look up at); a width cap keeps it from overrunning its
+    // island, so its own height comes out under the shared target.
+    heightFactor: 1.0,
   },
   freelance: {
     // A meadow desk — soft green, small.
@@ -42,18 +61,28 @@ export const ISO_THEME: Readonly<Record<string, IsoThemeEntry>> = {
     undersideLength: 32,
   },
   planet01: {
-    // City stone — cool blue-grey, the biggest world.
-    topPalette: [0xb9cfe0, 0x93b4cc, 0x6f93ac, 0x4f7186],
-    rockPalette: [0x6c7c88, 0x54636e, 0x3e4a54, 0x2c353d],
+    // Warm city stone — the biggest world. Was a cool blue that read as
+    // water from a distance, top *and* underside; moved both onto the same
+    // rock/earth family as every other island.
+    topPalette: [0xd8cdb8, 0xbcae94, 0x9c8d72, 0x7c6e56],
+    rockPalette: [0x8c8478, 0x6e675c, 0x534d44, 0x38332c],
     undersideLength: 60,
     building: () => new Planet01Renderer(1),
+    // Tallest on the board, deliberately — a rooftop-classroom tower earns
+    // more presence than the others, capped well under 1.5x their height.
+    heightFactor: 1.35,
   },
-  vaultsys: {
+  // Matches `ChapterConfig.id` in the registry, which is spelled with one
+  // "t" — a mismatch here silently falls back to `DEFAULT_ISO_THEME` (no
+  // `building`), and the real renderer never gets used at all.
+  vaulsys: {
     // Fortified grey stone — cool, shut, exact.
     topPalette: [0xc7ccd4, 0xa7adb8, 0x878e9a, 0x686f7a],
     rockPalette: [0x6a707a, 0x565b64, 0x42464e, 0x2e3136],
     undersideLength: 50,
     building: () => new VaultsysRenderer(1),
+    heightFactor: 1.2,
+    lightBoost: 1.3,
   },
   naturetech: {
     // Green construction earth — the current work, warm and active.
@@ -61,6 +90,7 @@ export const ISO_THEME: Readonly<Record<string, IsoThemeEntry>> = {
     rockPalette: [0x8a7a5a, 0x6d6045, 0x504632, 0x362f21],
     undersideLength: 58,
     building: () => new NatureTechRenderer(1),
+    heightFactor: 1.15,
   },
   bbit: {
     // Purple stone — study, upright, quiet.
@@ -85,6 +115,7 @@ export const ISO_THEME: Readonly<Record<string, IsoThemeEntry>> = {
     topPalette: [0xe8e2d4, 0xcfc7b3, 0xb0a793, 0x8f8776],
     rockPalette: [0x716b5e, 0x5a554a, 0x433f37, 0x2d2a25],
     undersideLength: 44,
+    lightBoost: 1.35,
   },
 };
 

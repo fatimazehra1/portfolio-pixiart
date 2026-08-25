@@ -25,16 +25,24 @@ import type { Bounds, Size } from "../types";
 /**
  * Room kept clear at the bottom of the frame, in CSS pixels.
  *
- * The interface's navigation strip lives there. The engine does not know what
- * the interface is and must not, but it does have to know that the bottom of
- * the frame is spoken for — otherwise the map centres itself into a strip it
- * cannot see and the lowest world sits permanently behind it.
+ * Just the hint text now — the navigation strip that used to live here moved
+ * into the sidebar (see `LEFT_RESERVE`). The engine does not know what the
+ * interface is and must not, but it does have to know a sliver of the bottom
+ * is spoken for, or the map centres itself a few pixels low.
  *
  * A number rather than a measurement of the DOM: reading the real element would
  * couple the renderer to a component's markup, and re-framing the map every
  * time a React tree reflowed is far worse than being fifteen pixels out.
  */
-const INTERFACE_RESERVE = 96;
+const BOTTOM_RESERVE = 28;
+
+/**
+ * Room kept clear at the left of the frame, in CSS pixels — the sidebar's own
+ * width plus its margin. Same reasoning as `BOTTOM_RESERVE`: without this the
+ * map centres across the *full* viewport, and the sidebar then sits directly
+ * over the left third of it instead of beside it.
+ */
+const LEFT_RESERVE = 280;
 
 export interface WorldOptions {
   host: HTMLElement;
@@ -345,7 +353,12 @@ export class World {
     // re-fitting under someone who has pushed in to look at a world would yank
     // the view out from under them.
     if (this.universe.state.mode === "overview" && !this.zoomedByHand) {
-      this.camera.zoomTo(this.fitZoom(this.camera.bounds));
+      // `universeBounds()` fresh, not `this.camera.bounds` — the camera's own
+      // bounds are padded past the content on the sidebar/hint sides (see
+      // `showOverview`) so it has room to pan there, and fitting against that
+      // padding would zoom the map out to make room for space nothing is
+      // actually reserving.
+      this.camera.zoomTo(this.fitZoom(universeBounds()));
       this.framedZoomInputs = this.camera.zoomInputs;
     }
     this.options.onResize?.(size);
@@ -499,7 +512,20 @@ export class World {
   /** Put the camera and the map back into overview mode. */
   private showOverview(opening: boolean): void {
     const bounds = universeBounds();
-    this.camera.setBounds(bounds);
+    const zoom = this.fitZoom(bounds);
+
+    // Padded past the content's own edges on the reserved sides, or the
+    // camera's own clamp overrules `snapTo` below the moment the content
+    // already fits the viewport: with nothing to clip, centring inside
+    // `bounds` *is* the only position the clamp considers valid, and the
+    // requested offset gets silently thrown away. This is the room the
+    // clamp needs to actually grant it.
+    this.camera.setBounds({
+      x: bounds.x - LEFT_RESERVE / zoom,
+      y: bounds.y,
+      width: bounds.width + LEFT_RESERVE / zoom,
+      height: bounds.height + BOTTOM_RESERVE / zoom,
+    });
     // Below 1, so it is possible to stand far enough back to see the whole map.
     this.camera.setZoomRange(0.5, 3);
     this.camera.setWheelMode("zoom");
@@ -511,12 +537,16 @@ export class World {
 
     if (opening) {
       const centre = universeCentre();
-      const zoom = this.fitZoom(bounds);
       this.camera.zoomTo(zoom);
       this.framedZoomInputs = this.camera.zoomInputs;
-      // Looking slightly *below* the map's centre, which lifts the composition
-      // up the frame and out from behind the navigation strip.
-      this.camera.snapTo(centre.x, centre.y + INTERFACE_RESERVE / (2 * zoom));
+      // Looking slightly left of and below the map's true centre — the
+      // reserve is subtracted, not added, because a strip claimed on the
+      // *left* of the screen has to push the camera's look-at point the
+      // other way for the content to clear it.
+      this.camera.snapTo(
+        centre.x - LEFT_RESERVE / (2 * zoom),
+        centre.y + BOTTOM_RESERVE / (2 * zoom)
+      );
       this.publishCamera();
     }
   }
@@ -536,11 +566,12 @@ export class World {
   private fitZoom(bounds: Bounds): number {
     const { width, height } = this.engine.viewport;
     if (bounds.width <= 0 || bounds.height <= 0) return 1;
-    // The usable frame is shorter than the viewport by whatever the interface
-    // has claimed, or the fit would be computed against space the map cannot
-    // actually occupy.
-    const usable = Math.max(120, height - INTERFACE_RESERVE);
-    return Math.min(1, width / bounds.width, usable / bounds.height);
+    // The usable frame is smaller than the viewport by whatever the interface
+    // has claimed on that side, or the fit would be computed against space the
+    // map cannot actually occupy.
+    const usableWidth = Math.max(160, width - LEFT_RESERVE);
+    const usableHeight = Math.max(120, height - BOTTOM_RESERVE);
+    return Math.min(1, usableWidth / bounds.width, usableHeight / bounds.height);
   }
 
   /** The world x at the middle of the view. */

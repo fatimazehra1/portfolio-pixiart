@@ -105,11 +105,12 @@ export default function ChapterOverlay() {
           at.y > -at.radius &&
           at.y < height + at.radius;
 
-        // Under the world, centred. A label above would fight the landmarks,
-        // which are the tallest thing on every island.
+        // Above the world, centred. Islands now cluster close enough that a
+        // label sitting under one regularly fell across its lower neighbour's
+        // silhouette — above is open sky far more often than below is.
         label.style.transform = `translate3d(${Math.round(at.x)}px, ${Math.round(
-          at.y + at.radius * 0.55 + 10
-        )}px, 0) translateX(-50%)`;
+          at.y - at.radius * 0.85 - 10
+        )}px, 0) translate(-50%, -100%)`;
         // The hovered world's own label steps aside for its card.
         const shown = onScreen && current !== content.id;
         label.style.opacity = String(shown ? fade : 0);
@@ -188,17 +189,17 @@ export default function ChapterOverlay() {
             onFocus={() => hover(item.id)}
             onBlur={() => hover(null)}
             onClick={() => getWorld()?.enterChapter(item.id)}
-            className="flex cursor-pointer items-center gap-1.5 rounded-md px-1.5 py-1 font-sans transition-colors hover:bg-white/8"
+            className="ui-panel flex cursor-pointer items-center gap-1.5 px-2 py-1 font-sans transition-colors hover:bg-white/8"
             aria-label={`${item.title}, ${item.period}`}
           >
             <span
               className="h-1 w-1 rounded-full"
-              style={{ background: "var(--ui-muted)" }}
+              style={{ background: "var(--ui-faint)" }}
               aria-hidden
             />
             <span
               className="text-[0.6875rem] leading-none font-medium tracking-wide whitespace-nowrap"
-              style={{ color: "var(--ui-muted)" }}
+              style={{ color: "var(--ui-text)" }}
             >
               {item.title}
             </span>
