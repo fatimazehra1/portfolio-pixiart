@@ -59,15 +59,17 @@ const HUB_BUILDING_LIGHT: LightingState = {
 };
 
 /**
- * Width beyond which a building would visibly overrun its own island.
+ * A building's width, as a fraction of its island's own top-face width.
  *
- * Loose on purpose: Vaultsys (156×88, aspect 1.77) needs ~1.95x to reach its
- * own height target, and a tighter cap was silently short-circuiting it back
- * down to a runt before that target was ever reached. Only Aptech's genuinely
- * wide campus (aspect 2.5) still gets capped, which is correct — it is
- * supposed to read as low and wide.
+ * This is the hard constraint, not a fallback — the island is what exists
+ * first, and nothing standing on it may be wider than it is. A previous pass
+ * had this backwards: a generous cap meant to protect wide buildings instead
+ * let Vaultsys and Aptech render at up to 2x their own island's width, which
+ * reads as a building floating beside its island rather than standing on it.
+ * `heightFactor` in `IsoTheme` is the aspiration; this is the ceiling it
+ * always has to fit under first.
  */
-const BUILDING_WIDTH_CAP = 2.0;
+const BUILDING_WIDTH_FIT = 0.8;
 
 /** Chronological order the dashed paths connect, exactly as authored. */
 const PATH_ORDER = [
@@ -76,7 +78,7 @@ const PATH_ORDER = [
   "ideas",
   "freelance",
   "planet01",
-  "vaultsys",
+  "vaulsys",
   "bbit",
   "naturetech",
   "lighthouse",
@@ -123,6 +125,8 @@ interface Marker {
   hover: number;
   bobRate: number;
   bobPhase: number;
+  /** Marker-local y of whatever stands tallest — island, building, or landmark. */
+  visualTop: number;
 }
 
 export class OverviewLayer {
@@ -190,6 +194,18 @@ export class OverviewLayer {
   setHover(id: string, hover: number): void {
     const marker = this.markers.get(id);
     if (marker) marker.target = hover < 0 ? 0 : hover > 1 ? 1 : hover;
+  }
+
+  /**
+   * The universe-space y of whatever stands tallest on this world — island,
+   * building, or landmark. `World.chapterScreen` uses this to anchor a
+   * world's label above the actual structure, not just above the island's
+   * own (much shorter) silhouette.
+   */
+  topOf(id: string): number | null {
+    const marker = this.markers.get(id);
+    if (!marker) return null;
+    return marker.chapter.overview.y + marker.visualTop * this.pixelScaleValue;
   }
 
   update(delta: number, _view: CameraView): void {
@@ -462,6 +478,7 @@ export class OverviewLayer {
           (Math.PI * 2) /
           (BOB_PERIOD[0] + (chapter.overview.x % (BOB_PERIOD[1] - BOB_PERIOD[0]))),
         bobPhase: (chapter.overview.y % 100) / 16,
+        visualTop: top,
       });
     }
   }
@@ -477,15 +494,17 @@ export class OverviewLayer {
     const renderer = theme.building();
     renderer.build();
 
-    // Scaled to a target *height*, not width — a raw-pixel scale makes a
-    // squat campus (156×62) and a five-storey tower (108×168) read as wildly
-    // different presences even on equal-sized islands. The width cap is what
-    // stops a short, wide building (Aptech) hitting that height target by
-    // overrunning its island sideways instead.
+    // Width first, always — the island exists before anything stands on it,
+    // and a building wider than its own top face reads as floating beside the
+    // island rather than standing on it. The height factor only ever shrinks
+    // this further, aiming for a *presence* similar across every building
+    // (a raw-pixel scale makes a squat campus and a five-storey tower read as
+    // wildly different sizes even on equal islands) — it never grows a
+    // building past the width fit to get there.
     const topWidth = island.topBounds.right - island.topBounds.left;
-    const heightScale = (topWidth * (theme.heightFactor ?? 1.05)) / renderer.height;
-    const widthCapScale = (topWidth * BUILDING_WIDTH_CAP) / renderer.width;
-    const drawScale = Math.max(0.1, Math.min(heightScale, widthCapScale));
+    const widthFitScale = (topWidth * BUILDING_WIDTH_FIT) / renderer.width;
+    const heightTargetScale = (topWidth * (theme.heightFactor ?? 1.05)) / renderer.height;
+    const drawScale = Math.max(0.1, Math.min(widthFitScale, heightTargetScale));
 
     const col = Math.round(island.topCenter.x);
     const footY = island.surface[col] >= 0 ? island.surface[col] : island.topBounds.top;

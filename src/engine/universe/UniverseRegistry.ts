@@ -115,7 +115,7 @@ export const CHAPTERS: readonly ChapterConfig[] = [
         { bitmap: "aerial", at: 0.5, scale: 2, tier: "mid" },
       ],
     },
-    overview: { x: 980, y: 690, radius: 88 },
+    overview: { x: 940, y: 710, radius: 88 },
     interior: { kind: "coast", scenes: ["vaultsys"] },
     note: "Fintech. Java, Oracle SQL, payment infrastructure.",
   },
@@ -137,7 +137,7 @@ export const CHAPTERS: readonly ChapterConfig[] = [
       ],
     },
     // Current work: the largest world on the map, and the warmest.
-    overview: { x: 1300, y: 590, radius: 109 },
+    overview: { x: 1300, y: 650, radius: 109 },
     interior: { kind: "coast", scenes: ["naturetech"] },
     camera: { zoom: 1 },
     note: "Where the work is now. Enterprise ERP, Laravel, Next.js, NestJS.",
@@ -155,7 +155,7 @@ export const CHAPTERS: readonly ChapterConfig[] = [
       terrain: "spire",
       landmarks: [{ bitmap: "spire", at: 0, scale: 3, tier: "far" }],
     },
-    overview: { x: 1150, y: 170, radius: 84 },
+    overview: { x: 1180, y: 140, radius: 84 },
     interior: { kind: "coast", scenes: ["bbit"] },
     note: "The education that runs alongside the work, not after it.",
   },
@@ -213,7 +213,7 @@ export const CHAPTERS: readonly ChapterConfig[] = [
     },
     // Alone at the far east. The end of the map, and the one world meant to be
     // findable from anywhere on it.
-    overview: { x: 1600, y: 350, radius: 86 },
+    overview: { x: 1470, y: 430, radius: 86 },
     interior: { kind: "coast", scenes: ["lighthouse"] },
     note: "Contact. Always lit, at every hour and under every status.",
   },

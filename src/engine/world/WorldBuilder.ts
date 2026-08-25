@@ -317,7 +317,7 @@ export class World {
    * to, and a card left hanging at the last place its world was is worse than
    * no card at all.
    */
-  chapterScreen(id: string): { x: number; y: number; radius: number } | null {
+  chapterScreen(id: string): { x: number; y: number; radius: number; topY: number } | null {
     if (this.chapters.isOpen) return null;
 
     const chapter = chapterById(id);
@@ -327,10 +327,16 @@ export class World {
       x: chapter.overview.x,
       y: chapter.overview.y,
     });
+    // Whatever stands tallest — a five-storey tower reaches well above the
+    // island's own radius would suggest, and a label anchored to the radius
+    // alone ends up sitting over the building instead of above it.
+    const topWorldY = this.overview.topOf(id) ?? chapter.overview.y - chapter.overview.radius;
+    const topPoint = this.engine.camera.worldToScreen({ x: chapter.overview.x, y: topWorldY });
     return {
       x: point.x,
       y: point.y,
       radius: chapter.overview.radius * this.engine.camera.getZoom(),
+      topY: topPoint.y,
     };
   }
 

@@ -105,11 +105,12 @@ export default function ChapterOverlay() {
           at.y > -at.radius &&
           at.y < height + at.radius;
 
-        // Above the world, centred. Islands now cluster close enough that a
-        // label sitting under one regularly fell across its lower neighbour's
-        // silhouette — above is open sky far more often than below is.
+        // Above whatever stands tallest on the world, centred — `topY`
+        // already accounts for the building or landmark, not just the
+        // island's own (much shorter) silhouette, so a five-storey tower
+        // doesn't leave the label sitting across its own facade.
         label.style.transform = `translate3d(${Math.round(at.x)}px, ${Math.round(
-          at.y - at.radius * 0.85 - 10
+          at.topY - 10
         )}px, 0) translate(-50%, -100%)`;
         // The hovered world's own label steps aside for its card.
         const shown = onScreen && current !== content.id;
