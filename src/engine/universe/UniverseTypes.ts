@@ -53,52 +53,15 @@ export interface ChapterIdentity {
   /** What the place is made of, in one word. A hint to its interior builder. */
   terrain: ChapterTerrain;
   /**
-   * The shape of the landmass itself.
-   *
-   * The first thing that has to differ between two worlds, and the thing that
-   * differs at the greatest distance. Colour separates worlds you are already
-   * looking at; silhouette separates worlds you have not looked at yet — it is
-   * what you read at the far zoom where nothing else has resolved. Nine worlds
-   * sharing one shape is nine of the same world in nine colours.
-   */
-  form: IslandForm;
-  /**
    * What stands on it, back to front.
    *
-   * Deliberately a small list of *silhouettes*, not an environment. At overview
-   * scale a world is thirty pixels tall; what reads is a tower being tall, a
-   * crane leaning, a tent being pointed. The detailed environment is the
-   * interior's job and is a different problem entirely.
+   * Deliberately a small list of *silhouettes*, not an environment. Used as
+   * the hub's fallback for a chapter with no dedicated building renderer; the
+   * detailed environment is the interior's job and is a different problem
+   * entirely.
    */
   landmarks: readonly LandmarkSpec[];
-  /** The one thing that moves here. See `AmbientKind`. */
-  ambient?: AmbientKind;
 }
-
-/**
- * The silhouette family a world's landmass is cut from.
- *
- * One word per shape, resolved into geometry by `IslandFactory`. Named after
- * what the shape *is* rather than after the chapter that uses it, so two worlds
- * may share a form where that is the honest reading.
- */
-export type IslandForm =
-  /** Wide, flat-topped, room to build on. Campuses and cities. */
-  | "plateau"
-  /** Stepped down one side. A place built on more than one level. */
-  | "terrace"
-  /** Squat, hard-edged, more rock than land. Institutions. */
-  | "slab"
-  /** Small and round. One building's worth of ground. */
-  | "knoll"
-  /** Tall and narrow. Something that wanted height. */
-  | "peak"
-  /** An irregular heap, still being piled up. Work in progress. */
-  | "mound"
-  /** Broken into pieces that hang together. Unfinished thinking. */
-  | "cluster"
-  /** Thin, angular, sharp. Nothing settled here. */
-  | "shard";
 
 /**
  * One structure standing on a world, as a hand-plotted silhouette.
@@ -149,25 +112,6 @@ export type DetailTier =
   | "mid"
   /** One world filling the frame. Everything it has. */
   | "near";
-
-/**
- * The one thing that moves on a world at overview scale.
- *
- * At most one per world, on purpose. A map where every island is animating is
- * a map with no focus and a frame budget spent on things nobody is looking at;
- * a map where each island has exactly one slow tell reads as *alive*.
- */
-export type AmbientKind =
-  /** A light that turns over. Lighthouses, aerials. */
-  | "beacon"
-  /** Rising puffs. Chimneys, forges. */
-  | "smoke"
-  /** A slow lean, back and forth. Cranes. */
-  | "swing"
-  /** An occasional flash. Welding, ideas arriving. */
-  | "spark"
-  /** A cloth edge moving. Flags, tents, awnings. */
-  | "flutter";
 
 export type ChapterTerrain =
   | "shore"

@@ -1,11 +1,10 @@
 /**
  * The universe — the level above the world.
  *
- * The overview is a map of small, independent chapter worlds; each world is its
- * own place with its own bounds, identity, framing and interior. This module
- * owns the map, the model of a world, the trip between the two, and the one
- * world that is alive at a time. It owns no art and draws nothing but
- * placeholders.
+ * The overview is a cluster of isometric islands, one per chapter world; each
+ * world is its own place with its own bounds, identity, framing and interior.
+ * This module owns the map, the model of a world, the trip between the two,
+ * and the one world that is alive at a time.
  *
  * Import from "@/engine/universe".
  */
@@ -27,9 +26,7 @@ export type {
   ChapterInterior,
   ChapterOverview,
   ChapterTerrain,
-  AmbientKind,
   DetailTier,
-  IslandForm,
   LandmarkSpec,
   InteriorKind,
   ResolvedChapter,
@@ -52,7 +49,8 @@ export type {
 export { OverviewLayer } from "./OverviewLayer";
 export { LandmarkFactory, LANDMARKS } from "./LandmarkFactory";
 export type { LandmarkTextures } from "./LandmarkFactory";
-export { bakeIsland } from "./IslandFactory";
-export type { Island, IslandProp, IslandTones } from "./IslandFactory";
-export { tierFor, visibleAt, TIER_THRESHOLDS } from "./LevelOfDetail";
+export { generateIsoIsland, seedFrom } from "./IsoIslandFactory";
+export type { IsoIsland, IsoIslandParams } from "./IsoIslandFactory";
+export { ISO_THEME, DEFAULT_ISO_THEME } from "./IsoTheme";
+export type { IsoThemeEntry } from "./IsoTheme";
 export type { OverviewLayerOptions } from "./OverviewLayer";

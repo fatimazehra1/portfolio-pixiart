@@ -1,81 +1,70 @@
-import { Container, Rectangle, Sprite, Texture } from "pixi.js";
-import { maskToTexture } from "../shared";
-import { bakeIsland } from "./IslandFactory";
-import type { Island, IslandTones } from "./IslandFactory";
+import { Container, Graphics, Rectangle, Sprite, Texture, TilingSprite } from "pixi.js";
+import { createRandom, ditherAlpha, range, rangeInt, toTexture } from "../shared";
+import { generateIsoIsland } from "./IsoIslandFactory";
+import type { IsoIsland } from "./IsoIslandFactory";
+import { DEFAULT_ISO_THEME, ISO_THEME } from "./IsoTheme";
+import type { IsoThemeEntry } from "./IsoTheme";
 import { LandmarkFactory } from "./LandmarkFactory";
-import { tierFor, visibleAt } from "./LevelOfDetail";
-import {
-  KIND_TONES,
-  PETALS,
-  PROP_MATERIALS,
-  PropFactory,
-  PropView,
-} from "../environment";
-import { StarField, STAR_SETTINGS } from "../stars";
+import { KIND_TONES, PETALS, PROP_MATERIALS, PropFactory } from "../environment";
+import type { PropKind, PropView } from "../environment";
+import type { BuildingRenderer } from "../buildings";
 import type { CameraView } from "../camera/Camera";
 import type { Size } from "../types";
-import type { AmbientKind, DetailTier, ResolvedChapter } from "./UniverseTypes";
+import type { ResolvedChapter } from "./UniverseTypes";
 
 /**
- * The overview: the career universe, seen from outside.
+ * The overview: the career universe, as a cluster of isometric islands.
  *
- * Nine worlds in a dark sky, each one a chapter, composed in two dimensions at
- * nine different sizes and heights. The one thing this view has to prove is
- * that a career is a set of *places* rather than a row of buildings on a road —
- * so if the worlds ever line up, the composition has failed and no amount of
- * art will rescue it.
+ * Nine worlds, generated from one shape function (`IsoIslandFactory`) rather
+ * than hand-plotted, each carrying its own building (where a chapter has one)
+ * or a small silhouette, and a scatter of the shore's own planting. They
+ * cluster tightly rather than sit spaced out on a grid — the composition is
+ * "a place packed with places", not "a diagram of one".
  *
- * # Three channels of identity
- * A world is told apart by its **outline** first (`IslandFactory` cuts eight
- * genuinely different forms), then by what **stands** on it (`LandmarkFactory`
- * silhouettes), then by **colour**. In that order, because that is the order
- * the channels survive distance: at the far zoom the outline is all there is.
- *
- * # Progressive detail
- * Every landmark and every plant carries a tier, and `LevelOfDetail` says which
- * tiers exist at the current zoom. Below its tier a thing is switched off — not
- * dimmed — so the far view of nine worlds costs nine outlines and nine primary
- * landmarks, and pushing in *reveals* rather than *enlarges*. That reveal is
- * the whole feeling the map is built to produce.
- *
- * # Where it sits
- * Two containers in two different spaces, and the split matters:
- *
- *  - `backdrop` is **screen space**, mounted behind the camera. The sky does
- *    not move when you pan, for the same reason the coast's does not: it is not
- *    a place, it is what is behind every place.
- *  - `field` is **world space**, inside the camera container. The worlds are
- *    somewhere, and panning moves them.
- *
- * # Alive, barely
- * Each world gets at most **one** ambient tell — a beacon turning over, smoke
- * rising, a crane leaning. One, because a map where everything animates has no
- * focus and spends its frame budget on things nobody is looking at, while a map
- * where each place has a single slow movement reads as inhabited. All of it is
- * whole-pixel and none of it is synchronised.
+ * # Two spaces, as before
+ * `backdrop` is screen space, behind the camera: the warm gradient and the
+ * drifting cloud bands are atmosphere, not places, and do not pan.
+ * `field` is world space, inside the camera: the dashed paths and every
+ * island live there, so panning moves them together.
  */
 
-/** How hard the hover ramp chases its target, as a rate per second. */
-const DETAIL_SMOOTHING = 6;
+const VOID_TOP = 0xcdb7d6; // dusty lavender
+const VOID_BOTTOM = 0xf6dcc0; // pale peach
 
-/** The space between the worlds. Never pure black (DESIGN.md §Color Palette). */
-const VOID_COLOR = 0x0b1220;
-
-/**
- * How far a world rises and falls, in art pixels, and over how long.
- *
- * Two pixels across the better part of half a minute. Ambient motion in pixel
- * art has exactly one failure mode — being noticed — and the fix is always less
- * distance over more time, never a softer curve.
- */
 const BOB_PIXELS = 2;
 const BOB_PERIOD = [16, 27] as const;
+const DETAIL_SMOOTHING = 6;
+
+/** Chronological order the dashed paths connect, exactly as authored. */
+const PATH_ORDER = [
+  "aptech",
+  "workshop",
+  "ideas",
+  "freelance",
+  "planet01",
+  "vaultsys",
+  "bbit",
+  "naturetech",
+  "lighthouse",
+] as const;
+
+/** What grows where, keyed by `identity.terrain` — same idea the coast uses. */
+const PLANTING: Record<string, { kinds: readonly PropKind[]; count: [number, number] }> = {
+  campus: { kinds: ["tree", "bush", "flower", "tallGrass"], count: [4, 6] },
+  city: { kinds: ["rock", "bush", "tallGrass"], count: [2, 4] },
+  vault: { kinds: ["rock", "rock", "bush"], count: [2, 3] },
+  forge: { kinds: ["tree", "rock", "bush", "tallGrass"], count: [3, 5] },
+  shore: { kinds: ["rock", "driftwood", "tallGrass"], count: [2, 4] },
+  spire: { kinds: ["bush", "tallGrass"], count: [2, 4] },
+  workshop: { kinds: ["rock", "bush"], count: [2, 4] },
+  meadow: { kinds: ["flower", "tallGrass", "bush"], count: [4, 6] },
+};
+const DEFAULT_PLANTING = PLANTING.shore;
 
 export interface OverviewLayerOptions {
   chapters: readonly ResolvedChapter[];
-  /** Pass the engine's shared `pixelScale` so the worlds land on the grid. */
+  /** Pass the engine's shared `pixelScale` so the islands land on the grid. */
   pixelScale: number;
-  /** Viewport size in CSS pixels. */
   width: number;
   height: number;
   /** Global motion multiplier. 0 for `prefers-reduced-motion: reduce`. */
@@ -86,64 +75,45 @@ export interface OverviewLayerOptions {
   onSelect?: (id: string) => void;
 }
 
-/** One landmark standing on a world. */
-interface Landmark {
-  container: Container;
-  tier: DetailTier;
-  /** The lit tone, which is what a beacon and a spark brighten. */
-  light: Sprite;
-  /** Whether this is the world's primary structure. Ambient acts on it. */
-  primary: boolean;
-  /** Where it stands, before any ambient motion. What `swing` oscillates around. */
-  baseX: number;
-}
-
-/** One world's sprites and its current state. */
 interface Marker {
   chapter: ResolvedChapter;
-  island: Island;
+  island: IsoIsland;
+  /** Root, at the chapter's overview position. Does not bob — the hit area stays put. */
   container: Container;
-  /** Everything that bobs. The hit target does not, so the click stays still. */
+  /** Everything that bobs: island, building, props, glow. */
   body: Container;
-  ring: Sprite;
-  landmarks: Landmark[];
-  views: { view: PropView; tier: DetailTier }[];
-  /** Smoke puffs, if this world makes smoke. */
-  puffs: Sprite[];
-  /** Where the hover ramp is heading, 0–1. */
+  glow: Sprite;
+  building: BuildingRenderer | null;
+  propViews: PropView[];
   target: number;
-  /** Where it actually is. */
   hover: number;
   bobRate: number;
   bobPhase: number;
-  ambientPhase: number;
 }
 
 export class OverviewLayer {
-  /** Screen space, behind the camera. The sky between the worlds. */
   readonly backdrop = new Container();
-  /** World space, inside the camera. The worlds themselves. */
   readonly field = new Container();
 
+  private readonly gradient = new Sprite();
+  private readonly cloudLayers: { sprite: TilingSprite; speed: number }[] = [];
+  private readonly pathGraphics = new Graphics();
+
   private readonly markers = new Map<string, Marker>();
-  private readonly textures: Texture[] = [];
-  private readonly props: PropFactory;
+  private readonly props = new PropFactory({ seed: 0x2a1f });
+  /** For the five chapters with no dedicated renderer — a small quiet silhouette. */
   private readonly landmarkArt = new LandmarkFactory();
-  private readonly stars: StarField;
-  private readonly starLayer = new Container();
+  private readonly cloudTextures: Texture[] = [];
+  private glowTexture: Texture | null = null;
+
   private readonly onHover: ((id: string | null) => void) | undefined;
   private readonly onSelect: ((id: string) => void) | undefined;
   private readonly chapters: readonly ResolvedChapter[];
   private readonly motionScale: number;
-  private readonly voidSprite: Sprite;
-  private puffTexture: Texture | null = null;
 
   private pixelScaleValue: number;
   private viewport: Size;
   private elapsed = 0;
-  /** The tier everything is currently built for. Only changes on a threshold. */
-  private tier: DetailTier = "far";
-  /** 1 on the map, 0 once you are inside a world. */
   private presence = 1;
 
   constructor(options: OverviewLayerOptions) {
@@ -157,57 +127,21 @@ export class OverviewLayer {
     this.backdrop.label = "overview:backdrop";
     this.backdrop.eventMode = "none";
     this.field.label = "overview:field";
-    // `static` rather than `passive`: the hit targets are below and the
-    // container has to be walked to reach them.
     this.field.eventMode = "static";
 
-    this.voidSprite = new Sprite(Texture.WHITE);
-    this.voidSprite.tint = VOID_COLOR;
-    this.voidSprite.eventMode = "none";
-    this.backdrop.addChild(this.voidSprite);
+    this.gradient.eventMode = "none";
+    this.backdrop.addChild(this.gradient);
+    this.buildClouds();
 
-    // The shore's own star field, held permanently open. On the coast the clock
-    // decides whether stars are out; between the worlds there is no hour and no
-    // horizon, so they simply are.
-    this.stars = new StarField({ ...STAR_SETTINGS, horizon: 1, fadeStart: 1 });
-    this.stars.setVisibility(1);
-    // Inside its own scaled container, exactly as the coast's sky holds it: the
-    // field works in art pixels, and a star mounted unscaled is one screen pixel
-    // — an accurate star and the wrong art.
-    this.starLayer.addChild(this.stars.container);
-    this.starLayer.eventMode = "none";
-    this.backdrop.addChild(this.starLayer);
-
-    // One workshop for every world's planting, so two campuses that want the
-    // same tree share one drawing of it.
-    this.props = new PropFactory({ seed: 0x151a });
+    this.pathGraphics.eventMode = "none";
+    this.field.addChild(this.pathGraphics);
 
     this.build();
     this.resize(this.viewport);
   }
 
-  // --- Queries ---------------------------------------------------------------
+  // --- Commands ----------------------------------------------------------------
 
-  /** Whether the map is on screen at all. */
-  get visible(): boolean {
-    return this.backdrop.visible;
-  }
-
-  /** The detail tier currently built. */
-  get detailTier(): DetailTier {
-    return this.tier;
-  }
-
-  // --- Commands --------------------------------------------------------------
-
-  /**
-   * How present the map is, 0–1.
-   *
-   * Driven by `UniverseState.approach`, inverted: 1 on the map, 0 once you are
-   * inside a world. Below the threshold both containers switch off outright
-   * rather than sitting at alpha 0, so an invisible map cannot swallow a click
-   * meant for the world underneath it.
-   */
   setPresence(presence: number): void {
     this.presence = presence < 0 ? 0 : presence > 1 ? 1 : presence;
     const on = this.presence > 0.001;
@@ -219,29 +153,22 @@ export class OverviewLayer {
     this.field.alpha = this.presence;
   }
 
-  /** How strongly one world is being pointed at, 0–1. */
   setHover(id: string, hover: number): void {
     const marker = this.markers.get(id);
     if (marker) marker.target = hover < 0 ? 0 : hover > 1 ? 1 : hover;
   }
 
-  /**
-   * Ease the hover ramps, run the ambient, and re-gate detail.
-   *
-   * `view` is the camera's applied transform. Only its zoom is read — the field
-   * is inside the camera container, so the camera has already placed it and
-   * this must not place it a second time.
-   */
-  update(delta: number, view: CameraView): void {
+  update(delta: number, _view: CameraView): void {
     if (delta <= 0) return;
-
-    // Detail first, so anything switched on this frame is animated this frame
-    // rather than appearing a frame late.
-    this.applyTier(tierFor(view.zoom));
+    void _view;
 
     this.elapsed += delta * this.motionScale;
-    // Nothing breathes when motion is off (DESIGN.md §Animation).
-    if (this.motionScale > 0) this.stars.update(delta);
+
+    if (this.motionScale > 0) {
+      for (const { sprite, speed } of this.cloudLayers) {
+        sprite.tilePosition.x -= speed * delta;
+      }
+    }
 
     const t = 1 - Math.exp(-DETAIL_SMOOTHING * delta);
 
@@ -249,137 +176,158 @@ export class OverviewLayer {
       const before = marker.hover;
       marker.hover = before + (marker.target - before) * t;
       if (Math.abs(marker.target - marker.hover) < 0.002) marker.hover = marker.target;
-
-      marker.ring.alpha = marker.hover * 0.8;
+      marker.glow.alpha = marker.hover * 0.55;
 
       if (this.motionScale > 0) {
-        // Whole pixels only. A sub-pixel drift is a blur, and this is pixel art.
         marker.body.y = Math.round(
           Math.sin(this.elapsed * marker.bobRate + marker.bobPhase) * BOB_PIXELS
         );
-        this.runAmbient(marker);
+        marker.building?.tick(this.elapsed);
       }
 
-      for (const entry of marker.views) entry.view.animate(this.elapsed);
+      for (const view of marker.propViews) view.animate(this.elapsed);
     }
   }
 
-  /** Re-fit to a new viewport, in CSS pixels. */
   resize(size: Size, pixelScale: number = this.pixelScaleValue): void {
     if (size.width <= 0 || size.height <= 0) return;
 
     this.viewport = size;
-    this.voidSprite.width = size.width;
-    this.voidSprite.height = size.height;
+    this.gradient.width = size.width;
+    this.gradient.height = size.height;
+    this.layoutClouds(size);
 
     const next = Math.max(1, Math.round(pixelScale));
     if (next !== this.pixelScaleValue) {
-      // The grid itself changed, so every world is now the wrong number of art
-      // pixels across and must be re-baked. Every other resize leaves them be.
       this.pixelScaleValue = next;
       this.rebuild();
     }
 
     this.field.scale.set(this.pixelScaleValue);
-    this.starLayer.scale.set(this.pixelScaleValue);
-    this.stars.resize(
-      Math.ceil(size.width / this.pixelScaleValue),
-      Math.ceil(size.height / this.pixelScaleValue)
-    );
   }
 
   destroy(): void {
     this.release();
     this.props.destroy();
-    this.landmarkArt.destroy();
-    this.stars.destroy();
-    this.puffTexture?.destroy(true);
-    this.puffTexture = null;
+    this.glowTexture?.destroy(true);
+    this.glowTexture = null;
+    for (const texture of this.cloudTextures) texture.destroy(true);
+    this.cloudTextures.length = 0;
+    this.gradient.texture?.destroy(true);
     this.backdrop.destroy({ children: true });
     this.field.destroy({ children: true });
   }
 
-  // --- Internal --------------------------------------------------------------
+  // --- Internal: backdrop --------------------------------------------------
 
-  /**
-   * Switch things on and off for a new tier.
-   *
-   * Visibility rather than construction, and that is a deliberate trade. Nine
-   * worlds hold on the order of fifty small sprites between them — trivial
-   * memory — while building and destroying them at every threshold crossing
-   * would churn textures and pool entries every time the camera drifted across
-   * a boundary. Pixi skips invisible subtrees entirely, so the draw cost is the
-   * same either way, which is the cost that actually matters here.
-   */
-  private applyTier(next: DetailTier): void {
-    if (next === this.tier) return;
-    this.tier = next;
-
-    for (const marker of this.markers.values()) {
-      for (const landmark of marker.landmarks) {
-        landmark.container.visible = visibleAt(landmark.tier, next);
-      }
-      for (const entry of marker.views) {
-        entry.view.container.visible = visibleAt(entry.tier, next);
-      }
-      // Smoke is a near-and-mid tell. At the far zoom a two-pixel puff is noise.
-      for (const puff of marker.puffs) puff.visible = next !== "far";
-    }
-  }
-
-  /** The one thing that moves on this world. See `AmbientKind`. */
-  private runAmbient(marker: Marker): void {
-    const kind: AmbientKind | undefined = marker.chapter.identity.ambient;
-    if (!kind) return;
-
-    const primary = marker.landmarks.find((l) => l.primary);
-    const t = this.elapsed + marker.ambientPhase;
-
-    switch (kind) {
-      case "beacon": {
-        // A lamp turning: bright for a moment, then round the back. Sharpened
-        // with a power so it reads as a sweep rather than a throb.
-        if (!primary) return;
-        const turn = (Math.sin(t * 0.9) + 1) / 2;
-        primary.light.alpha = 0.25 + turn ** 3 * 0.75;
-        return;
-      }
-      case "spark": {
-        // Arrival, not weather: mostly nothing, occasionally a flash.
-        if (!primary) return;
-        const strike = Math.sin(t * 2.3) * Math.sin(t * 5.7 + 1.1);
-        primary.light.alpha = strike > 0.86 ? 1 : 0.3;
-        return;
-      }
-      case "swing": {
-        // A crane leaning. One pixel each way, and slow enough that you catch
-        // it having moved rather than watch it moving. Measured from `baseX`,
-        // not the container's current position — the earlier version fed each
-        // frame's result back in as the next frame's base, which is a random
-        // walk, not a sway, and drifted the crane clean off its island over a
-        // few minutes.
-        if (!primary) return;
-        primary.container.x = primary.baseX + Math.round(Math.sin(t * 0.35));
-        return;
-      }
-      case "flutter": {
-        if (!primary) return;
-        primary.light.alpha = 0.6 + 0.4 * Math.sin(t * 1.7);
-        return;
-      }
-      case "smoke": {
-        // Puffs rise, fade, and start again from the chimney. Each one is a
-        // third of a cycle behind the last, so the column never pulses.
-        for (let i = 0; i < marker.puffs.length; i++) {
-          const puff = marker.puffs[i];
-          const phase = (t * 0.22 + i / marker.puffs.length) % 1;
-          puff.y = puff.height * -1 - Math.round(phase * 9);
-          puff.alpha = (1 - phase) * 0.55;
+  /** A warm vertical gradient — dusty lavender at the top, pale peach below. */
+  private bakeGradient(): Texture {
+    const h = 128;
+    return toTexture(
+      1,
+      h,
+      (pixels) => {
+        const lerp = (a: number, b: number, t: number) => Math.round(a + (b - a) * t);
+        const top = [(VOID_TOP >> 16) & 0xff, (VOID_TOP >> 8) & 0xff, VOID_TOP & 0xff];
+        const bot = [(VOID_BOTTOM >> 16) & 0xff, (VOID_BOTTOM >> 8) & 0xff, VOID_BOTTOM & 0xff];
+        for (let y = 0; y < h; y++) {
+          const t = y / (h - 1);
+          const o = y * 4;
+          pixels[o] = lerp(top[0], bot[0], t);
+          pixels[o + 1] = lerp(top[1], bot[1], t);
+          pixels[o + 2] = lerp(top[2], bot[2], t);
+          pixels[o + 3] = 255;
         }
-        return;
+      },
+      "Overview"
+    );
+  }
+
+  /** A soft, multi-lobed cloud puff, tileable enough at low alpha. */
+  private bakeCloudTile(seed: number): Texture {
+    const rand = createRandom(seed);
+    const w = 220;
+    const h = 56;
+    const alpha = new Float32Array(w * h);
+
+    const lobes = rangeInt(rand, 2, 3);
+    for (let i = 0; i < lobes; i++) {
+      const cx = range(rand, w * 0.2, w * 0.8);
+      const cy = range(rand, h * 0.4, h * 0.65);
+      const rx = range(rand, w * 0.14, w * 0.22);
+      const ry = range(rand, h * 0.28, h * 0.4);
+
+      for (let y = 0; y < h; y++) {
+        const dy = (y - cy) / ry;
+        for (let x = 0; x < w; x++) {
+          const dx = (x - cx) / rx;
+          const d = Math.sqrt(dx * dx + dy * dy);
+          if (d > 1.2) continue;
+          alpha[y * w + x] = Math.max(alpha[y * w + x], Math.max(0, 1 - d / 1.2));
+        }
       }
     }
+
+    const mask = new Uint8Array(w * h);
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const i = y * w + x;
+        if (alpha[i] <= 0) continue;
+        mask[i] = ditherAlpha(alpha[i], 5, x, y);
+      }
+    }
+
+    return toTexture(
+      w,
+      h,
+      (pixels) => {
+        for (let i = 0; i < mask.length; i++) {
+          const o = i * 4;
+          pixels[o] = 255;
+          pixels[o + 1] = 255;
+          pixels[o + 2] = 255;
+          pixels[o + 3] = mask[i];
+        }
+      },
+      "Overview"
+    );
   }
+
+  private buildClouds(): void {
+    // Three bands: further is smaller, fainter and slower — the one cheap cue
+    // that reads as depth without a single extra draw call's worth of logic.
+    // Each gets its own tile so the three don't read as one pattern at three
+    // scales.
+    const bands = [
+      { seed: 0x9911, y: 0.14, alpha: 0.22, scale: 0.85, speed: 2.4 },
+      { seed: 0xa42c, y: 0.28, alpha: 0.32, scale: 1.15, speed: 4.1 },
+      { seed: 0xb0e7, y: 0.44, alpha: 0.26, scale: 1.4, speed: 6.3 },
+    ];
+
+    for (const band of bands) {
+      const texture = this.bakeCloudTile(band.seed);
+      this.cloudTextures.push(texture);
+      const sprite = new TilingSprite({ texture, width: 1, height: 1 });
+      sprite.eventMode = "none";
+      sprite.alpha = band.alpha;
+      sprite.tint = 0xffffff;
+      (sprite as unknown as { __band: typeof band }).__band = band;
+      this.backdrop.addChild(sprite);
+      this.cloudLayers.push({ sprite, speed: band.speed });
+    }
+  }
+
+  private layoutClouds(size: Size): void {
+    for (const { sprite } of this.cloudLayers) {
+      const band = (sprite as unknown as { __band: { y: number; scale: number } }).__band;
+      sprite.width = size.width;
+      sprite.height = size.height * 0.3;
+      sprite.y = size.height * band.y;
+      sprite.tileScale.set(band.scale);
+    }
+  }
+
+  // --- Internal: islands ----------------------------------------------------
 
   private rebuild(): void {
     const state = new Map<string, number>();
@@ -387,10 +335,6 @@ export class OverviewLayer {
 
     this.release();
     this.build();
-    // The tier was reset by the rebuild; re-apply whatever it actually is.
-    const tier = this.tier;
-    this.tier = "far";
-    this.applyTier(tier);
 
     for (const [id, hover] of state) {
       const marker = this.markers.get(id);
@@ -402,71 +346,72 @@ export class OverviewLayer {
 
   private build(): void {
     const scale = this.pixelScaleValue;
+    if (!this.glowTexture) this.glowTexture = this.bakeGlow(48);
+
+    // Paths first, so the islands sit over them.
+    this.pathGraphics.clear();
+    this.drawPaths(scale);
 
     for (const chapter of this.chapters) {
-      const island = bakeIsland(chapter, scale);
-      const { identity } = chapter;
-
-      const keel = this.tones(
-        island.keel,
-        identity.secondary,
-        shift(identity.secondary, 1.35),
-        shift(identity.secondary, 0.66)
-      );
-      const cap = this.tones(
-        island.cap,
-        identity.primary,
-        shift(identity.primary, 1.3),
-        shift(identity.primary, 0.7)
-      );
+      const theme = ISO_THEME[chapter.id] ?? DEFAULT_ISO_THEME;
+      const size = Math.max(10, Math.round(chapter.overview.radius / scale));
+      const island = generateIsoIsland({
+        size,
+        topPalette: theme.topPalette,
+        rockPalette: theme.rockPalette,
+        edgeSeed: seedOf(chapter.id),
+        undersideLength: Math.max(8, Math.round(theme.undersideLength / scale)),
+      });
 
       const body = new Container();
-      body.label = "island";
+      body.label = "island:body";
       body.eventMode = "none";
-      body.addChild(...keel, ...cap);
 
-      const offsetX = -(island.width >> 1);
-      const offsetY = -island.surfaceY;
-      for (const sprite of [...keel, ...cap]) {
-        sprite.x = offsetX;
-        sprite.y = offsetY;
-      }
+      const glow = new Sprite(this.glowTexture);
+      glow.anchor.set(0.5);
+      glow.tint = theme.topPalette[0];
+      glow.alpha = 0;
+      glow.eventMode = "none";
+      glow.scale.set((island.width / 96) * 1.3);
+      body.addChild(glow);
 
-      const landmarks = this.raise(chapter, island, offsetX, offsetY);
-      for (const landmark of landmarks) body.addChild(landmark.container);
+      const islandSprite = new Sprite(island.texture);
+      islandSprite.x = -island.topCenter.x;
+      islandSprite.y = -island.topCenter.y;
+      islandSprite.eventMode = "none";
+      body.addChild(islandSprite);
 
-      const views = this.plant(island, offsetX, offsetY);
-      for (const entry of views) body.addChild(entry.view.container);
-
-      const puffs = identity.ambient === "smoke" ? this.makePuffs(landmarks) : [];
-      for (const puff of puffs) body.addChild(puff);
-
-      // The approach ring, around the world's waterline rather than its full
-      // height — an island hangs below the place it *is*.
-      const radius = island.width >> 1;
-      const ring = new Sprite(this.disc(radius + 4, radius + 2));
-      ring.anchor.set(0.5);
-      ring.tint = identity.accent;
-      ring.alpha = 0;
-      ring.eventMode = "none";
-
-      // The hit target covers the whole island, keel included, and deliberately
-      // does not bob: a click missing because the thing under the pointer
-      // drifted out from under it is the bug ambient motion reliably causes.
-      const hit = new Sprite(Texture.EMPTY);
-      hit.eventMode = "static";
-      hit.cursor = "pointer";
-      hit.hitArea = new Rectangle(offsetX, offsetY, island.width, island.height);
+      const building = this.plantBuilding(theme, island, body);
+      const landmarkTop = building ? null : this.plantLandmark(chapter, island, body);
+      const propViews = this.scatterProps(chapter, island, body);
 
       const container = new Container();
       container.label = `chapter:${chapter.id}`;
       container.x = Math.round(chapter.overview.x / scale);
       container.y = Math.round(chapter.overview.y / scale);
-      container.addChild(ring, body, hit);
+      container.addChild(body);
 
+      // The hit area has to reach up over whatever stands on the island, not
+      // just the island's own texture bounds — a five-storey tower is most of
+      // what you would actually try to point at.
+      const structureTop = building
+        ? building.container.y - building.height * building.container.scale.y
+        : (landmarkTop ?? -island.topCenter.y);
+      const top = Math.min(-island.topCenter.y, structureTop);
+
+      const hit = new Sprite(Texture.EMPTY);
+      hit.eventMode = "static";
+      hit.cursor = "pointer";
+      hit.hitArea = new Rectangle(
+        -island.topCenter.x,
+        top,
+        island.width,
+        island.height - island.topCenter.y - top
+      );
       hit.on("pointerover", () => this.onHover?.(chapter.id));
       hit.on("pointerout", () => this.onHover?.(null));
       hit.on("pointertap", () => this.onSelect?.(chapter.id));
+      container.addChild(hit);
 
       this.field.addChild(container);
       this.markers.set(chapter.id, {
@@ -474,232 +419,252 @@ export class OverviewLayer {
         island,
         container,
         body,
-        ring,
-        landmarks,
-        views,
-        puffs,
+        glow,
+        building,
+        propViews,
         target: 0,
         hover: 0,
-        // Its own rate and phase, derived from where it sits rather than rolled,
-        // so nine worlds never rise together and a re-bake changes nothing.
         bobRate:
           (Math.PI * 2) /
           (BOB_PERIOD[0] + (chapter.overview.x % (BOB_PERIOD[1] - BOB_PERIOD[0]))),
         bobPhase: (chapter.overview.y % 100) / 16,
-        ambientPhase: (chapter.overview.x % 37) / 5,
       });
     }
   }
 
-  /** Stand this chapter's structures on its island. */
-  private raise(
-    chapter: ResolvedChapter,
-    island: Island,
-    offsetX: number,
-    offsetY: number
-  ): Landmark[] {
-    const out: Landmark[] = [];
-    const radius = island.width >> 1;
-    const { identity } = chapter;
+  /** Stand this chapter's own detailed landmark on its island, unscaled art unchanged. */
+  private plantBuilding(
+    theme: IsoThemeEntry,
+    island: IsoIsland,
+    body: Container
+  ): BuildingRenderer | null {
+    if (!theme.building) return null;
 
-    identity.landmarks.forEach((spec, index) => {
-      const art = this.landmarkArt.textures(spec.bitmap);
-      if (!art) return;
+    const renderer = theme.building();
+    renderer.build();
 
-      const scale = Math.max(1, Math.round(spec.scale ?? 1));
-      const drawWidth = art.width * scale;
-      const drawHeight = art.height * scale;
+    const targetWidth = (island.topBounds.right - island.topBounds.left) * 0.78;
+    const drawScale = Math.max(0.12, Math.min(1, targetWidth / renderer.width));
 
-      // Where it stands, and what it stands on. Read off the island's own
-      // surface rather than a nominal baseline, so a stepped or bumpy world
-      // does not hover its tower over the low side.
-      const column = Math.max(
-        0,
-        Math.min(island.width - 1, Math.round(radius + spec.at * radius))
-      );
-      const groundY = island.surface[column];
+    const col = Math.round(island.topCenter.x);
+    const footY = island.surface[col] >= 0 ? island.surface[col] : island.topBounds.top;
 
-      const make = (texture: Texture, tint: number) => {
-        const sprite = new Sprite(texture);
-        sprite.tint = tint;
-        sprite.eventMode = "none";
-        sprite.scale.set(scale);
-        return sprite;
-      };
-
-      // The lit face is a *lighter version of the structure*, not the accent.
-      // Tinting it with the accent painted whole walls in lamp colour and every
-      // building came out washed out and weightless — the accent is a light
-      // source, and a light source the size of a wall stops reading as one.
-      //
-      // The exception is a world whose ambient tell *is* a light: a lighthouse
-      // lamp and an idea striking are both supposed to be the brightest thing
-      // on their island, and only the primary structure carries it.
-      const glows =
-        index === 0 && (identity.ambient === "beacon" || identity.ambient === "spark");
-      const base = make(art.base, identity.secondary);
-      const dark = make(art.dark, shift(identity.secondary, 0.62));
-      const light = make(art.light, glows ? identity.accent : shift(identity.secondary, 1.5));
-
-      const container = new Container();
-      container.eventMode = "none";
-      container.addChild(base, dark, light);
-      // Centred on its column, and standing *on* the ground rather than in it.
-      container.x = offsetX + column - (drawWidth >> 1);
-      container.y = offsetY + groundY - drawHeight + 1;
-      if (spec.flip) {
-        container.scale.x = -1;
-        container.x += drawWidth;
-      }
-
-      const tier = spec.tier ?? "mid";
-      container.visible = visibleAt(tier, this.tier);
-
-      out.push({ container, tier, light, primary: index === 0, baseX: container.x });
-    });
-
-    return out;
+    renderer.container.scale.set(drawScale);
+    renderer.container.x = -(renderer.width * drawScale) / 2;
+    renderer.container.y = footY - island.topCenter.y;
+    body.addChild(renderer.container);
+    return renderer;
   }
 
-  /** Stand this island's planting on it, using the shore's own prop workshop. */
-  private plant(
-    island: Island,
-    offsetX: number,
-    offsetY: number
-  ): { view: PropView; tier: DetailTier }[] {
-    const out: { view: PropView; tier: DetailTier }[] = [];
+  /**
+   * The quiet fallback for the five chapters with no dedicated renderer yet —
+   * the same small silhouette `identity.landmarks` was already carrying, tinted
+   * to the island's own rock tones instead of drawn plain.
+   */
+  private plantLandmark(
+    chapter: ResolvedChapter,
+    island: IsoIsland,
+    body: Container
+  ): number | null {
+    const spec = chapter.identity.landmarks[0];
+    if (!spec) return null;
 
-    for (const item of island.props) {
-      const textures = this.props.textures(item.kind, item.variant);
+    const art = this.landmarkArt.textures(spec.bitmap);
+    if (!art) return null;
+
+    const theme = ISO_THEME[chapter.id] ?? DEFAULT_ISO_THEME;
+    const drawScale = Math.max(1, Math.round((island.topBounds.right - island.topBounds.left) / (art.width * 3)));
+
+    const make = (texture: Texture, tint: number) => {
+      const sprite = new Sprite(texture);
+      sprite.tint = tint;
+      sprite.eventMode = "none";
+      sprite.scale.set(drawScale);
+      return sprite;
+    };
+
+    const container = new Container();
+    container.eventMode = "none";
+    container.addChild(
+      make(art.base, theme.rockPalette[1]),
+      make(art.dark, theme.rockPalette[3]),
+      make(art.light, theme.topPalette[0])
+    );
+
+    const col = Math.round(island.topCenter.x);
+    const footY = island.surface[col] >= 0 ? island.surface[col] : island.topBounds.top;
+    container.x = -(art.width * drawScale) / 2;
+    container.y = footY - island.topCenter.y - art.height * drawScale;
+    body.addChild(container);
+    return container.y;
+  }
+
+  /** Scatter this chapter's planting across its island's top face. */
+  private scatterProps(chapter: ResolvedChapter, island: IsoIsland, body: Container): PropView[] {
+    const scheme = PLANTING[chapter.identity.terrain] ?? DEFAULT_PLANTING;
+    const rand = createRandom(seedOf(chapter.id) ^ 0x5bd1);
+    const count = rangeInt(rand, scheme.count[0], scheme.count[1]);
+    const views: PropView[] = [];
+
+    const left = island.topBounds.left;
+    const right = island.topBounds.right;
+    if (right <= left) return views;
+
+    for (let i = 0; i < count; i++) {
+      const kind = scheme.kinds[rangeInt(rand, 0, scheme.kinds.length - 1)];
+      const x = Math.max(left + 1, Math.min(right - 1, rangeInt(rand, left, right)));
+      const surfaceY = island.surface[x];
+      if (surfaceY < 0) continue;
+
+      const variant = rangeInt(rand, 0, 3);
+      const textures = this.props.textures(kind, variant);
       const view = this.props.acquire();
+      const flip = rand() < 0.5;
 
       view.bind(
         {
-          kind: item.kind,
-          variant: item.variant,
-          // Centred on its spot. `PropView` anchors a prop at its bottom-*left*
-          // corner, so a tree placed by its intended centre would hang its whole
-          // crown off the right-hand side of the island.
-          x: item.x + offsetX - (textures.width >> 1),
+          kind,
+          variant,
+          x: x - island.topCenter.x - (textures.width >> 1),
+          y: surfaceY - island.topCenter.y,
           band: "backVerge",
           dy: 0,
-          flip: item.flip,
+          flip,
           scale: 1,
           motion: "sway",
-          phase: item.phase,
-          swayRate: item.swayRate,
-          swayAmount: item.swayAmount,
-          y: item.y + offsetY,
+          phase: range(rand, 0, Math.PI * 2),
+          swayRate: range(rand, 0.3, 0.5),
+          swayAmount: 1,
         },
         textures,
         null
       );
 
-      // Lit from the flat material table rather than the day/night cycle. There
-      // is no hour between the worlds, and a map that changed colour with the
-      // clock would be telling you something untrue about itself.
-      const tones = KIND_TONES[item.kind];
+      const tones = KIND_TONES[kind];
       const light =
-        item.kind === "flower"
-          ? PROP_MATERIALS[PETALS[item.variant % PETALS.length]]
-          : PROP_MATERIALS[tones.light];
+        kind === "flower" ? PROP_MATERIALS[PETALS[i % PETALS.length]] : PROP_MATERIALS[tones.light];
       view.setTones(PROP_MATERIALS[tones.base], light, PROP_MATERIALS[tones.dark]);
 
-      view.container.visible = visibleAt(item.tier, this.tier);
-      out.push({ view, tier: item.tier });
+      body.addChild(view.container);
+      views.push(view);
     }
 
-    return out;
+    return views;
   }
 
-  /** Three puffs over the first chimney-ish landmark this world has. */
-  private makePuffs(landmarks: Landmark[]): Sprite[] {
-    // The last landmark, because a chimney or lean-to is authored after the
-    // building it sits on. A world with one landmark smokes from that one.
-    const source = landmarks[landmarks.length - 1] ?? landmarks[0];
-    if (!source) return [];
+  // --- Internal: paths -------------------------------------------------------
 
-    if (!this.puffTexture) {
-      const mask = new Uint8Array(4);
-      mask.fill(255);
-      this.puffTexture = maskToTexture(2, 2, mask, "OverviewLayer");
+  /** Curved dashed lines through the chapters, in chronological order. */
+  private drawPaths(scale: number): void {
+    const points = PATH_ORDER.map((id) => this.chapters.find((c) => c.id === id)).filter(
+      (c): c is ResolvedChapter => !!c
+    );
+
+    for (let i = 0; i < points.length - 1; i++) {
+      const a = points[i].overview;
+      const b = points[i + 1].overview;
+      this.strokeDashedCurve(
+        { x: a.x / scale, y: a.y / scale },
+        { x: b.x / scale, y: b.y / scale },
+        i % 2 === 0 ? 1 : -1
+      );
     }
 
-    const puffs: Sprite[] = [];
-    for (let i = 0; i < 3; i++) {
-      const puff = new Sprite(this.puffTexture);
-      puff.tint = 0xb8b2a8;
-      puff.eventMode = "none";
-      puff.alpha = 0;
-      puff.x = Math.round(source.container.x + 1);
-      puff.y = source.container.y;
-      puffs.push(puff);
-    }
-    return puffs;
+    // Dark against the light backdrop — the earlier white read as invisible
+    // against dusty lavender and pale peach both.
+    this.pathGraphics.stroke({ width: 1.5, color: 0x6b5642, alpha: 0.38 });
   }
 
-  /** Three sprites, one per tone, ready to be tinted and stacked. */
-  private tones(tones: IslandTones, base: number, light: number, dark: number): Sprite[] {
-    const make = (texture: Texture, tint: number) => {
-      const sprite = new Sprite(texture);
-      sprite.tint = tint;
-      sprite.eventMode = "none";
-      return sprite;
-    };
-    return [make(tones.base, base), make(tones.dark, dark), make(tones.light, light)];
+  private strokeDashedCurve(
+    p0: { x: number; y: number },
+    p1: { x: number; y: number },
+    bend: number
+  ): void {
+    const dx = p1.x - p0.x;
+    const dy = p1.y - p0.y;
+    const dist = Math.max(1, Math.hypot(dx, dy));
+    const nx = -dy / dist;
+    const ny = dx / dist;
+    const bow = dist * 0.16 * bend;
+
+    const cx = (p0.x + p1.x) / 2 + nx * bow;
+    const cy = (p0.y + p1.y) / 2 + ny * bow;
+
+    const steps = Math.max(8, Math.round(dist / 10));
+    const dash = 5;
+    const gap = 5;
+    let travelled = 0;
+    let drawing = true;
+    let prev = p0;
+
+    for (let s = 1; s <= steps; s++) {
+      const t = s / steps;
+      const mt = 1 - t;
+      const x = mt * mt * p0.x + 2 * mt * t * cx + t * t * p1.x;
+      const y = mt * mt * p0.y + 2 * mt * t * cy + t * t * p1.y;
+      const segLen = Math.hypot(x - prev.x, y - prev.y);
+
+      travelled += segLen;
+      if (drawing) {
+        this.pathGraphics.moveTo(prev.x, prev.y).lineTo(x, y);
+      }
+      if (travelled >= (drawing ? dash : gap)) {
+        travelled = 0;
+        drawing = !drawing;
+      }
+
+      prev = { x, y };
+    }
   }
+
+  // --- Internal: teardown ------------------------------------------------------
 
   private release(): void {
     for (const marker of this.markers.values()) {
-      for (const entry of marker.views) this.props.release(entry.view);
+      for (const view of marker.propViews) this.props.release(view);
+      marker.building?.destroy();
       marker.container.removeAllListeners();
       marker.container.destroy({ children: true });
-
-      for (const tone of [marker.island.cap, marker.island.keel]) {
-        tone.base.destroy(true);
-        tone.light.destroy(true);
-        tone.dark.destroy(true);
-      }
+      marker.island.texture.destroy(true);
     }
     this.markers.clear();
-
-    for (const texture of this.textures) texture.destroy(true);
-    this.textures.length = 0;
   }
 
-  /**
-   * A filled circle, or an annulus when `inner` is above zero.
-   *
-   * Baked as a white mask and tinted, like every other shape in this engine.
-   * Hard-edged: a pixel is in or out and there is no coverage term, because an
-   * anti-aliased circle is exactly the soft edge CLAUDE.md forbids.
-   */
-  private disc(radius: number, inner: number): Texture {
-    const size = radius * 2 + 1;
+  private bakeGlow(radius: number): Texture {
+    const r = Math.max(2, Math.round(radius));
+    const size = r * 2;
     const mask = new Uint8Array(size * size);
-    const outerSq = radius * radius;
-    const innerSq = inner * inner;
 
     for (let y = 0; y < size; y++) {
-      const dy = y - radius;
+      const dy = (y + 0.5 - r) / r;
       for (let x = 0; x < size; x++) {
-        const dx = x - radius;
-        const d = dx * dx + dy * dy;
-        if (d <= outerSq && d >= innerSq) mask[y * size + x] = 255;
+        const dx = (x + 0.5 - r) / r;
+        const d = Math.sqrt(dx * dx + dy * dy);
+        if (d > 1) continue;
+        mask[y * size + x] = ditherAlpha((1 - d) ** 2, 5, x, y);
       }
     }
 
-    const texture = maskToTexture(size, size, mask, "OverviewLayer");
-    this.textures.push(texture);
-    return texture;
+    return toTexture(
+      size,
+      size,
+      (pixels) => {
+        for (let i = 0; i < mask.length; i++) {
+          const o = i * 4;
+          pixels[o] = 255;
+          pixels[o + 1] = 255;
+          pixels[o + 2] = 255;
+          pixels[o + 3] = mask[i];
+        }
+      },
+      "Overview"
+    );
   }
 }
 
-/** Push a colour towards white or black. The cheapest possible shading ramp. */
-function shift(color: number, factor: number): number {
-  const clamp = (v: number) => (v < 0 ? 0 : v > 255 ? 255 : Math.round(v));
-  const r = clamp(((color >> 16) & 0xff) * factor);
-  const g = clamp(((color >> 8) & 0xff) * factor);
-  const b = clamp((color & 0xff) * factor);
-  return (r << 16) | (g << 8) | b;
+/** A stable number from a chapter id, so an island is the same island twice. */
+function seedOf(id: string): number {
+  let seed = 0x9e37;
+  for (let i = 0; i < id.length; i++) seed = (seed * 31 + id.charCodeAt(i)) >>> 0;
+  return seed;
 }
