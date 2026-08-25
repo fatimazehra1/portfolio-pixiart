@@ -69,7 +69,10 @@ const HUB_BUILDING_LIGHT: LightingState = {
  * `heightFactor` in `IsoTheme` is the aspiration; this is the ceiling it
  * always has to fit under first.
  */
-const BUILDING_WIDTH_FIT = 0.8;
+const BUILDING_WIDTH_FIT = 0.75;
+
+/** Same idea as `BUILDING_WIDTH_FIT`, for the five landmark-only chapters. */
+const LANDMARK_WIDTH_FIT = 0.75;
 
 /** Chronological order the dashed paths connect, exactly as authored. */
 const PATH_ORDER = [
@@ -143,6 +146,7 @@ export class OverviewLayer {
   private readonly landmarkArt = new LandmarkFactory();
   private readonly cloudTextures: Texture[] = [];
   private glowTexture: Texture | null = null;
+  private beamTexture: Texture | null = null;
 
   private readonly onHover: ((id: string | null) => void) | undefined;
   private readonly onSelect: ((id: string) => void) | undefined;
@@ -261,6 +265,8 @@ export class OverviewLayer {
     this.props.destroy();
     this.glowTexture?.destroy(true);
     this.glowTexture = null;
+    this.beamTexture?.destroy(true);
+    this.beamTexture = null;
     for (const texture of this.cloudTextures) texture.destroy(true);
     this.cloudTextures.length = 0;
     this.gradient.texture?.destroy(true);
@@ -506,8 +512,7 @@ export class OverviewLayer {
     const heightTargetScale = (topWidth * (theme.heightFactor ?? 1.05)) / renderer.height;
     const drawScale = Math.max(0.1, Math.min(widthFitScale, heightTargetScale));
 
-    const col = Math.round(island.topCenter.x);
-    const footY = island.surface[col] >= 0 ? island.surface[col] : island.topBounds.top;
+    const footY = footYFor(island, (renderer.width * drawScale) / 2);
 
     renderer.container.scale.set(drawScale);
     renderer.container.x = -(renderer.width * drawScale) / 2;
@@ -540,7 +545,12 @@ export class OverviewLayer {
     if (!art) return null;
 
     const theme = ISO_THEME[chapter.id] ?? DEFAULT_ISO_THEME;
-    const drawScale = Math.max(1, Math.round((island.topBounds.right - island.topBounds.left) / (art.width * 3)));
+    // Whole numbers only — a hand-plotted bitmap this small scaled by a
+    // fraction loses the crisp pixel grid. The old divisor (width * 3)
+    // targeted roughly a third of the island's width, which is why BBIT and
+    // the other landmark chapters read as undersized; this targets ~75%.
+    const topWidth = island.topBounds.right - island.topBounds.left;
+    const drawScale = Math.max(1, Math.round((topWidth * LANDMARK_WIDTH_FIT) / art.width));
 
     // One tone lighter than the shape's own shading calls for, and further
     // lifted by `lightBoost` where a bitmap is mostly its `#` (shadow) cells —
@@ -564,11 +574,35 @@ export class OverviewLayer {
       make(art.light, theme.topPalette[0])
     );
 
-    const col = Math.round(island.topCenter.x);
-    const footY = island.surface[col] >= 0 ? island.surface[col] : island.topBounds.top;
+    const footY = footYFor(island, (art.width * drawScale) / 2);
     container.x = -(art.width * drawScale) / 2;
     container.y = footY - island.topCenter.y - art.height * drawScale;
     body.addChild(container);
+
+    // Contact is the CTA — the one world every visitor should be able to
+    // pick out without reading the label. A beam is the one silhouette on
+    // the map that says so on its own.
+    if (chapter.id === "lighthouse") {
+      if (!this.beamTexture) this.beamTexture = this.bakeBeam(28, 64);
+      const beam = new Sprite(this.beamTexture);
+      beam.anchor.set(0.5, 1);
+      beam.tint = theme.topPalette[0];
+      beam.blendMode = "add";
+      beam.eventMode = "none";
+      // Sized off the structure's own rendered size, not the source
+      // texture's baked pixels — a fixed scale would make the beam dwarf a
+      // small island's lighthouse and undersize a large one's.
+      const structureWidth = art.width * drawScale;
+      const structureHeight = art.height * drawScale;
+      beam.width = structureWidth * 0.6;
+      beam.height = structureHeight * 1.7;
+      // The lamp sits at the very top of the bitmap — row 0 — so the beam's
+      // point anchors there rather than at the structure's true (much
+      // lower) baseline.
+      beam.position.set(structureWidth / 2, 0);
+      container.addChild(beam);
+    }
+
     return container.y;
   }
 
@@ -734,6 +768,72 @@ export class OverviewLayer {
       "Overview"
     );
   }
+
+  /**
+   * A soft beacon cone: narrow and bright at the source, widening and fading
+   * toward the far end. Anchored (0.5, 1) by the caller, so row `height - 1`
+   * (the narrow, bright end) renders at the anchor point and row `0` (the
+   * wide, faint end) reaches away from it.
+   */
+  private bakeBeam(width: number, height: number): Texture {
+    const mask = new Uint8Array(width * height);
+    const cx = width / 2;
+
+    for (let y = 0; y < height; y++) {
+      const fromSource = (height - 1 - y) / Math.max(1, height - 1);
+      const halfWidth = Math.max(0.6, fromSource * cx);
+      const alpha = Math.max(0, 1 - fromSource * 0.85) * 0.8;
+
+      for (let x = 0; x < width; x++) {
+        const dx = Math.abs(x + 0.5 - cx);
+        if (dx > halfWidth) continue;
+        const edge = 1 - dx / halfWidth;
+        mask[y * width + x] = ditherAlpha(alpha * (0.5 + 0.5 * edge), 5, x, y);
+      }
+    }
+
+    return toTexture(
+      width,
+      height,
+      (pixels) => {
+        for (let i = 0; i < mask.length; i++) {
+          const o = i * 4;
+          pixels[o] = 255;
+          pixels[o + 1] = 255;
+          pixels[o + 2] = 255;
+          pixels[o + 3] = mask[i];
+        }
+      },
+      "Overview"
+    );
+  }
+}
+
+/**
+ * Where a flat-bottomed thing of a given half-width should stand, centred on
+ * the island's own top-face centre.
+ *
+ * Sampling a single column (the old approach) put a building's centre
+ * exactly on the surface — correct at that one point — but these islands are
+ * organic blobs, not the old symmetric domes, and the terrain can slope
+ * noticeably across a building's actual footprint. A flat base sitting on a
+ * single sampled point then has one side buried in the rising ground and the
+ * other hanging over the falling side, and the falling side is what reads as
+ * "floating". Taking the *deepest* point across the footprint instead means
+ * every column under the building is at or above that line — never a gap.
+ */
+function footYFor(island: IsoIsland, halfWidth: number): number {
+  const cx = island.topCenter.x;
+  const left = Math.max(island.topBounds.left, Math.floor(cx - halfWidth));
+  const right = Math.min(island.topBounds.right, Math.ceil(cx + halfWidth));
+
+  let deepest = -1;
+  for (let x = left; x <= right; x++) {
+    const y = island.surface[x];
+    if (y > deepest) deepest = y;
+  }
+
+  return deepest >= 0 ? deepest : island.topBounds.top;
 }
 
 /** A stable number from a chapter id, so an island is the same island twice. */
