@@ -6,12 +6,13 @@ import { getWorld } from "@/components/world/worldHandle";
 import { useWorldStore } from "@/stores/worldStore";
 
 /**
- * The identity mark, the hint, and the way back.
+ * The hint and the way back.
  *
- * Three small things that share one file because they are one decision: how
- * much interface is allowed on screen at once. The answer is a name in one
- * corner, a hint in another, and a back button that only exists when there is
- * somewhere to go back to. Everything else is the world.
+ * Two small things that share one file because they are one decision: how
+ * much interface is allowed on screen at once. The identity mark used to live
+ * here too — it now lives in `Sidebar`, which owns the hub's left edge, so
+ * this file no longer has to fade in and out with it or fight it for the same
+ * corner.
  *
  * The hint earns its place — a map you can drag and zoom looks identical to a
  * static picture until you try, and a first-time visitor should not have to
@@ -31,27 +32,6 @@ export default function WorldControls() {
 
   return (
     <>
-      {/* Identity. Always present, deliberately quiet. */}
-      <motion.div
-        initial={{ opacity: 0, y: -8 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.4, ease: "easeOut" }}
-        className="absolute top-5 left-5 font-sans select-none"
-      >
-        <p
-          className="text-[0.9375rem] leading-none font-semibold tracking-tight"
-          style={{ color: "var(--ui-text)" }}
-        >
-          Fatima Shakeel
-        </p>
-        <p
-          className="mt-1.5 text-[0.75rem] leading-none"
-          style={{ color: "var(--ui-muted)" }}
-        >
-          Software engineer — a career, as a universe
-        </p>
-      </motion.div>
-
       {/* The way back. Only while there is somewhere to come back from. */}
       <AnimatePresence>
         {inside && (

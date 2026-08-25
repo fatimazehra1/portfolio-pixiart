@@ -2,7 +2,7 @@
 
 import dynamic from "next/dynamic";
 import ChapterOverlay from "@/components/ui/ChapterOverlay";
-import UniverseTimeline from "@/components/ui/UniverseTimeline";
+import Sidebar from "@/components/ui/Sidebar";
 import WorldControls from "@/components/ui/WorldControls";
 
 // The Pixi world is client-only (WebGL/DOM). Dynamic + ssr:false must live inside
@@ -30,7 +30,7 @@ export default function WorldStage() {
       <div className="ui-layer absolute inset-0 z-10">
         <ChapterOverlay />
         <WorldControls />
-        <UniverseTimeline />
+        <Sidebar />
       </div>
     </>
   );
