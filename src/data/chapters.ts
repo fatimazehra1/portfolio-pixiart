@@ -12,9 +12,13 @@
  *
  * # Screenshots
  * `screenshots` names files inside `public/screenshots/<id>/`. Drop the images
- * in, list the filenames here, and the card grows a gallery. An empty list (or
- * a missing folder) is a normal state, not a broken one — the gallery simply
- * does not render.
+ * in, list the filenames here, and the card grows a gallery:
+ *
+ *     screenshots: ["dashboard.png", "invoice.png"],
+ *
+ * Two to four reads best. An empty list, an empty folder, or a filename that
+ * does not exist are all normal states rather than broken ones — the gallery
+ * simply does not render. See `public/screenshots/README.md`.
  */
 
 /** How far along a chapter is. Drives the status dot. */

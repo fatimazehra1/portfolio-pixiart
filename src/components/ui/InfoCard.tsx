@@ -2,6 +2,7 @@
 
 import { PROFILE } from "@/data/chapters";
 import type { ChapterContent } from "@/data/chapters";
+import ScreenshotGallery from "./ScreenshotGallery";
 
 /**
  * One scene's information, in full: what it was, when, in what, and what came
@@ -95,6 +96,7 @@ export default function InfoCard({ content }: { content: ChapterContent }) {
         </ul>
       )}
 
+      <ScreenshotGallery id={content.id} files={content.screenshots} title={content.title} />
     </div>
   );
 }
