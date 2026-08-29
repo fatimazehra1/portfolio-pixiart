@@ -84,7 +84,7 @@ export default function WorldControls() {
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.4, delay: 0.6 }}
-            className="absolute right-5 bottom-5 font-sans text-[0.6875rem] tracking-wide select-none"
+            className="absolute bottom-5 left-1/2 -translate-x-1/2 font-sans text-[0.6875rem] tracking-wide select-none"
             style={{ color: "var(--ui-faint)" }}
           >
             Scroll to zoom · drag to pan · click a world to enter

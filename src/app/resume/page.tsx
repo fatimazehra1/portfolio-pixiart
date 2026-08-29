@@ -1,34 +1,162 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { CHAPTER_TIMELINE, PROFILE, STACK_COUNT } from "@/data/chapters";
 
-// A plain, server-rendered, SEO-visible resume. Content must work even if the
-// world canvas never loads (DESIGN.md §UI Principles). Reachable in one click.
+/**
+ * The resume: the same career, as a document.
+ *
+ * # Why this exists as its own route
+ * Everything the map says, said in a way that needs no WebGL, no fonts to
+ * settle and no pointer. It is the page a recruiter on a phone gets (see the
+ * redirect in `WorldStage`), the page that prints, and the page a crawler
+ * reads. So: server-rendered, no canvas, no client component, no animation —
+ * plain semantic HTML and a stylesheet, styled inline in one `<style>` block
+ * so the whole document is one request's worth of work.
+ *
+ * # It has no facts of its own
+ * Every line is read from `data/chapters.ts`, in the same timeline order the
+ * hub uses. Correcting the career corrects both.
+ */
+
 export const metadata: Metadata = {
-  title: "Resume — Fatima Shakeel",
-  description: "Software engineer. Resume and experience.",
+  title: `Resume — ${PROFILE.name}`,
+  description: `${PROFILE.name} — ${PROFILE.tagline}`,
 };
+
+/** The chapters, in order, with the contact marker held back for the footer. */
+const ENTRIES = CHAPTER_TIMELINE.filter((c) => c.id !== "lighthouse");
 
 export default function ResumePage() {
   return (
-    <div className="mx-auto max-w-2xl px-6 py-16">
-      <header className="mb-8">
-        <h1 className="font-display text-4xl text-[var(--ink)]">Fatima Shakeel</h1>
-        <p className="mt-1 font-sans text-[var(--ink)]/70">Software Engineer</p>
-        <Link
-          href="/"
-          className="mt-4 inline-block border-2 border-[var(--ink)] bg-[var(--parchment)] px-3 py-1.5 font-display text-sm shadow-[3px_3px_0_0_var(--ink)] hover:bg-[var(--accent)]"
-        >
-          ← Enter the Waterfront
-        </Link>
+    <main className="cv">
+      <style>{CSS}</style>
+
+      <header className="head">
+        <div>
+          <h1>{PROFILE.name}</h1>
+          <p className="tagline">{PROFILE.tagline}</p>
+        </div>
+        <ul className="contact">
+          {PROFILE.contact.map((link) => (
+            <li key={link.label}>
+              <a href={link.href}>{link.value}</a>
+            </li>
+          ))}
+        </ul>
       </header>
 
-      <section className="prose-none space-y-6 font-sans leading-7 text-[var(--ink)]">
-        <p>
-          Placeholder resume content. Replace with real experience, projects, and
-          skills. Keep it selectable, semantic, and fast — recruiters (especially
-          on mobile) should reach this instantly.
-        </p>
-      </section>
-    </div>
+      <p className="stats">
+        {PROFILE.stats.map((stat) => `${stat.value} ${stat.label.toLowerCase()}`).join(" · ")}
+        {` · ${STACK_COUNT} technologies`}
+      </p>
+
+      {ENTRIES.map((entry) => (
+        <section key={entry.id} className="entry">
+          <div className="entry-head">
+            <h2>
+              {entry.title} <span className="headline">— {entry.headline}</span>
+            </h2>
+            <span className="period">{entry.period}</span>
+          </div>
+
+          <p className="summary">{entry.summary}</p>
+
+          {entry.stack.length > 0 && (
+            <p className="stack">
+              {entry.stack.map((tech) => (
+                <span key={tech} className="tag">
+                  {tech}
+                </span>
+              ))}
+            </p>
+          )}
+
+          {entry.bullets.length > 0 && (
+            <ul className="bullets">
+              {entry.bullets.map((bullet) => (
+                <li key={bullet}>{bullet}</li>
+              ))}
+            </ul>
+          )}
+        </section>
+      ))}
+
+      <footer className="foot">
+        {/* The way back to the map. Not printed — a link to a canvas is no use
+            on paper, and the URL is already in the header of every printout. */}
+        <Link href="/" className="back">
+          ← Explore the interactive version
+        </Link>
+      </footer>
+    </main>
   );
 }
+
+/**
+ * The whole stylesheet, inline.
+ *
+ * Print rules included: a serif-free, ink-cheap document at a readable size,
+ * with entries kept off page breaks. `print-color-adjust` is deliberately not
+ * forced — a printed CV should come out black on white.
+ */
+const CSS = `
+.cv {
+  --paper: #ffffff;
+  --text: #14181f;
+  --soft: #55606e;
+  --line: #e2e6eb;
+  max-width: 46rem;
+  min-height: 100dvh;
+  margin: 0 auto;
+  padding: 3rem 1.5rem 4rem;
+  background: var(--paper);
+  color: var(--text);
+  font-family: var(--font-sans), system-ui, sans-serif;
+  font-size: 0.9375rem;
+  line-height: 1.55;
+}
+.cv a { color: inherit; }
+.head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem 2rem;
+  align-items: flex-start;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 1.25rem;
+}
+.head h1 { margin: 0; font-size: 1.75rem; letter-spacing: -0.02em; }
+.tagline { margin: 0.35rem 0 0; color: var(--soft); }
+.contact { margin: 0; padding: 0; list-style: none; font-size: 0.8125rem; text-align: right; }
+.contact li + li { margin-top: 0.15rem; }
+.stats { margin: 1rem 0 2rem; color: var(--soft); font-size: 0.8125rem; }
+.entry { margin-bottom: 1.75rem; break-inside: avoid; }
+.entry-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 1rem;
+  align-items: baseline;
+  justify-content: space-between;
+}
+.entry h2 { margin: 0; font-size: 1.0625rem; letter-spacing: -0.01em; }
+.headline { font-weight: 400; color: var(--soft); }
+.period { color: var(--soft); font-size: 0.8125rem; font-variant-numeric: tabular-nums; }
+.summary { margin: 0.4rem 0 0; }
+.stack { margin: 0.6rem 0 0; display: flex; flex-wrap: wrap; gap: 0.3rem; }
+.tag {
+  border: 1px solid var(--line);
+  border-radius: 0.25rem;
+  padding: 0.1rem 0.4rem;
+  font-size: 0.75rem;
+  color: var(--soft);
+}
+/* Tailwind's preflight strips list markers; a CV wants them back. */
+.bullets { margin: 0.6rem 0 0; padding-left: 1.1rem; list-style: disc; }
+.bullets li { margin-top: 0.25rem; }
+.foot { border-top: 1px solid var(--line); margin-top: 2.5rem; padding-top: 1.25rem; font-size: 0.875rem; }
+@media print {
+  .cv { padding: 0; font-size: 10.5pt; max-width: none; }
+  .foot { display: none; }
+  a { text-decoration: none; }
+}
+`;
