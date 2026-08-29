@@ -33,7 +33,8 @@ export default function PixiCanvas() {
     let world: World | null = null;
     let cancelled = false;
 
-    const { setCamera, setTimeSnapshot, setUniverse } = useWorldStore.getState();
+    const { setCamera, setLoadProgress, setTimeSnapshot, setUniverse } =
+      useWorldStore.getState();
 
     // DESIGN.md §Animation: calm by default, still when asked. 0 stops the drift
     // and makes time-of-day changes instant without flattening the art.
@@ -48,6 +49,7 @@ export default function PixiCanvas() {
         onCamera: setCamera,
         onTime: setTimeSnapshot,
         onUniverse: setUniverse,
+        onProgress: setLoadProgress,
       });
 
       if (cancelled) {
@@ -59,9 +61,16 @@ export default function PixiCanvas() {
       // Published for the React interface, which calls into it for world screen
       // positions. See `worldHandle` for why this is not context or store.
       setWorld(instance);
-      (window as unknown as Record<string, unknown>).__world = instance; // TEMP(verify)
+      // A handle on the engine from the console, for development only. The
+      // check is against a literal Next replaces at build time, so the whole
+      // branch is dropped from the production bundle rather than merely
+      // skipped at runtime.
+      if (process.env.NODE_ENV !== "production") {
+        (window as unknown as Record<string, unknown>).__world = instance;
+      }
       host.appendChild(instance.canvas);
       setViewport(instance.viewport);
+      setLoadProgress(1, "Ready");
       setReady(true);
     })();
 

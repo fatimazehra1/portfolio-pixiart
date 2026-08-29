@@ -5,6 +5,8 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import ChapterOverlay from "@/components/ui/ChapterOverlay";
 import Sidebar from "@/components/ui/Sidebar";
+import FirstVisitHint from "@/components/ui/FirstVisitHint";
+import LoadingScreen from "@/components/ui/LoadingScreen";
 import ResumeLink from "@/components/ui/ResumeLink";
 import WorldControls from "@/components/ui/WorldControls";
 
@@ -59,11 +61,13 @@ export default function WorldStage() {
   return (
     <>
       <PixiCanvas />
+      <LoadingScreen />
       <div className="ui-layer absolute inset-0 z-10">
         <ChapterOverlay />
         <WorldControls />
         <Sidebar />
         <ResumeLink />
+        <FirstVisitHint />
       </div>
     </>
   );

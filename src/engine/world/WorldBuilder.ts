@@ -62,6 +62,15 @@ export interface WorldOptions {
   onUniverse?: (state: UniverseState) => void;
   /** Which world to open on, if any. Defaults to the overview. */
   openChapter?: string;
+  /**
+   * Progress through startup, 0–1, with a label for what is happening.
+   *
+   * Three steps, because three is how many there honestly are: bringing up
+   * WebGL, then building the map (every island, building and prop texture is
+   * baked here, and it is by far the longest), then the first frame. A bar
+   * with more segments than the work has would be decoration.
+   */
+  onProgress?: (progress: number, label: string) => void;
 }
 
 /**
@@ -231,13 +240,23 @@ export class World {
 
   /** Create the engine and everything in it. */
   static async create(options: WorldOptions): Promise<World> {
+    options.onProgress?.(0.05, "Starting the engine");
     const engine = new Engine({
       host: options.host,
       onResize: (size) => options.onResize?.(size),
     });
     await engine.init();
 
+    options.onProgress?.(0.35, "Building the worlds");
+    // Yield once, so the label above is actually painted before the long
+    // synchronous bake below blocks the frame it was announced on. A timer,
+    // not requestAnimationFrame: a tab opened in the background never gets an
+    // animation frame, and waiting for one there would leave the world unbuilt
+    // until the visitor looked at it.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
     const world = new World(engine, options);
+    options.onProgress?.(0.9, "Framing the map");
     // Wired after construction so the handler can reach `world`.
     engine.setResizeHandler((size) => world.resize(size));
     return world;

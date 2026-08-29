@@ -31,6 +31,9 @@ import type {
 export interface WorldState {
   /** Engine initialised and the canvas is mounted. */
   isReady: boolean;
+  /** Startup progress, 0–1, and what is happening. Both stop mattering at 1. */
+  loadProgress: number;
+  loadLabel: string;
   /** Current CSS-pixel viewport size; updates on resize. */
   viewport: Size;
   /**
@@ -79,6 +82,7 @@ export interface WorldState {
   approach: number;
 
   setReady: (value: boolean) => void;
+  setLoadProgress: (progress: number, label: string) => void;
   setViewport: (size: Size) => void;
   setTimeOfDay: (timeOfDay: TimeOfDay) => void;
   setCamera: (cameraX: number, cameraZoom: number) => void;
@@ -91,6 +95,8 @@ export interface WorldState {
 
 export const useWorldStore = create<WorldState>((set) => ({
   isReady: false,
+  loadProgress: 0,
+  loadLabel: "",
   viewport: { width: 0, height: 0 },
   timeOfDay: DEFAULT_TIME_OF_DAY,
   cameraX: 0,
@@ -110,6 +116,7 @@ export const useWorldStore = create<WorldState>((set) => ({
   approach: 0,
 
   setReady: (isReady) => set({ isReady }),
+  setLoadProgress: (loadProgress, loadLabel) => set({ loadProgress, loadLabel }),
   setViewport: (viewport) => set({ viewport }),
   setTimeOfDay: (timeOfDay) => set({ timeOfDay }),
   setCamera: (cameraX, cameraZoom) => set({ cameraX, cameraZoom }),
