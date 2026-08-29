@@ -119,7 +119,13 @@ export const SCENES: readonly SceneConfig[] = [
     worldX: 7398,
     width: 540,
     status: "active",
+    rendererId: "bbit",
     chapterId: "bbit",
+    // The same reason Planet01 and NatureTech step back to 1x: 474 world
+    // pixels of tower at the default 2x loses the parapet, the clock and the
+    // crest off the top of the frame — and the whole argument of this building
+    // is the lit window *near the top* of it.
+    camera: { zoom: 1 },
     note: "Still studying, still building. Upright; a spire among the low roofs.",
   },
   {

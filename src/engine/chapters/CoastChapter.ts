@@ -8,6 +8,7 @@ import { Atmosphere } from "../atmosphere";
 import { Lighthouse } from "../lighthouse";
 import {
   AptechBuilding,
+  BbitBuilding,
   BuildingManager,
   CottageBuilding,
   IdeasTentBuilding,
@@ -42,6 +43,7 @@ import type { ChapterContext, ChapterWorld } from "../universe";
  */
 const RENDERERS: Record<string, (context: BuildingContext) => Building> = {
   aptech: (context) => new AptechBuilding(context),
+  bbit: (context) => new BbitBuilding(context),
   cottage: (context) => new CottageBuilding(context),
   ideastent: (context) => new IdeasTentBuilding(context),
   planet01: (context) => new Planet01Building(context),
