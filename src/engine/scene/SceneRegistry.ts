@@ -154,6 +154,7 @@ export const SCENES: readonly SceneConfig[] = [
     worldX: 9369,
     width: 378,
     status: "active",
+    rendererId: "ideastent",
     chapterId: "ideas",
     overrides: {
       // Ideas striking, not neglect. The lightning is the whole reading: this

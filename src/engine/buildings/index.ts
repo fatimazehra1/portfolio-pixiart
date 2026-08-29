@@ -40,6 +40,7 @@ export type { InteractionZoneOptions } from "./InteractionZone";
 // The landmarks themselves.
 export { AptechBuilding, AptechRenderer, APTECH } from "./aptech";
 export { CottageBuilding, CottageRenderer, COTTAGE } from "./cottage";
+export { IdeasTentBuilding, IdeasTentRenderer, IDEAS_TENT } from "./ideastent";
 export { Planet01Building, Planet01Renderer, PLANET01 } from "./planet01";
 export { VaultsysBuilding, VaultsysRenderer, VAULTSYS } from "./vaultsys";
 export { NatureTechBuilding, NatureTechRenderer, NATURETECH } from "./naturetech";
