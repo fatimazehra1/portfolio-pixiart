@@ -128,6 +128,7 @@ export const SCENES: readonly SceneConfig[] = [
     worldX: 8424,
     width: 432,
     status: "dormant",
+    rendererId: "workshop",
     chapterId: "workshop",
     zones: [
       {

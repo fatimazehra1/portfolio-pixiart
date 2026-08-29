@@ -13,6 +13,7 @@ import {
   NatureTechBuilding,
   Planet01Building,
   VaultsysBuilding,
+  WorkshopBuilding,
 } from "../buildings";
 import type { Building, BuildingContext } from "../buildings";
 import { WeatherSystem } from "../weather";
@@ -44,6 +45,7 @@ const RENDERERS: Record<string, (context: BuildingContext) => Building> = {
   planet01: (context) => new Planet01Building(context),
   vaultsys: (context) => new VaultsysBuilding(context),
   naturetech: (context) => new NatureTechBuilding(context),
+  workshop: (context) => new WorkshopBuilding(context),
   // The lighthouse is a scene with a `rendererId`, but it is not a Building —
   // it has no interaction and its own system owns it. Listed nowhere on
   // purpose; see the `Lighthouse` construction below.
