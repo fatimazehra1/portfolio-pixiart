@@ -1,8 +1,7 @@
 "use client";
 
-import { useMemo } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { CHAPTER_CONTENT, CHAPTER_TIMELINE } from "@/data/chapters";
+import { CHAPTER_TIMELINE, PROFILE, STACK_COUNT } from "@/data/chapters";
 import { getWorld } from "@/components/world/worldHandle";
 import { useWorldStore } from "@/stores/worldStore";
 
@@ -30,13 +29,10 @@ export default function Sidebar() {
   const view = useWorldStore((s) => s.view);
   const chapterId = useWorldStore((s) => s.chapterId);
 
-  const stats = useMemo(() => {
-    const projects = CHAPTER_CONTENT.reduce((sum, c) => sum + c.projects.length, 0);
-    const stacks = new Set(CHAPTER_CONTENT.flatMap((c) => c.stack));
-    const startYears = CHAPTER_CONTENT.map((c) => c.startYear).filter((y) => y < 2100);
-    const years = Math.max(1, new Date().getFullYear() - Math.min(...startYears));
-    return { projects, stacks: stacks.size, years };
-  }, []);
+  // Written, not counted. "15+ projects" and "3.5+ years" are claims about a
+  // career, and deriving them from however many bullets happen to be listed
+  // would make the sidebar quietly disagree with the resume.
+  const stats = [...PROFILE.stats, { label: "Stacks", value: String(STACK_COUNT) }];
 
   if (!isReady) return null;
 
@@ -64,19 +60,15 @@ export default function Sidebar() {
               className="text-[0.9375rem] leading-none font-semibold tracking-tight"
               style={{ color: "var(--ui-text)" }}
             >
-              Fatima Shakeel
+              {PROFILE.name}
             </p>
             <p className="mt-1.5 text-[0.75rem] leading-snug" style={{ color: "var(--ui-muted)" }}>
-              Software engineer — a career, as a universe
+              {PROFILE.tagline}
             </p>
           </div>
 
           <dl className="grid grid-cols-3 gap-2 border-y py-3" style={{ borderColor: "var(--ui-border)" }}>
-            {[
-              { label: "Projects", value: stats.projects },
-              { label: "Years", value: stats.years },
-              { label: "Stacks", value: stats.stacks },
-            ].map((stat) => (
+            {stats.map((stat) => (
               <div key={stat.label}>
                 <dt
                   className="text-[0.625rem] tracking-wide uppercase"

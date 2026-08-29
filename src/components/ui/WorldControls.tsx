@@ -2,6 +2,7 @@
 
 import { AnimatePresence, motion } from "framer-motion";
 import { contentFor } from "@/data/chapters";
+import InfoCard from "./InfoCard";
 import { getWorld } from "@/components/world/worldHandle";
 import { useWorldStore } from "@/stores/worldStore";
 
@@ -66,54 +67,14 @@ export default function WorldControls() {
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -8 }}
             transition={{ duration: 0.28, ease: "easeOut" }}
-            className="ui-panel absolute top-5 right-5 max-w-[16rem] px-3.5 py-2.5 font-sans"
+            // Tall content, a short screen: the panel scrolls inside itself
+            // rather than growing past the viewport it is floating over.
+            className="ui-panel absolute top-5 right-5 max-h-[calc(100dvh-2.5rem)] w-[19rem] overflow-y-auto px-3.5 py-3 font-sans"
           >
-            <div className="flex items-baseline justify-between gap-3">
-              <span className="text-[0.875rem] leading-none font-semibold tracking-tight">
-                {content.title}
-              </span>
-              <span
-                className="text-[0.6875rem] tabular-nums"
-                style={{ color: "var(--ui-faint)" }}
-              >
-                {content.period}
-              </span>
-            </div>
-            {content.stack.length > 0 && (
-              <div className="mt-2 flex flex-wrap gap-1">
-                {content.stack.map((tech) => (
-                  <span
-                    key={tech}
-                    className="rounded border px-1.5 py-0.5 text-[0.625rem] leading-none"
-                    style={{
-                      borderColor: "var(--ui-border)",
-                      color: "var(--ui-muted)",
-                    }}
-                  >
-                    {tech}
-                  </span>
-                ))}
-              </div>
-            )}
-            {content.projects.length > 0 && (
-              <ul
-                className="mt-2.5 space-y-1.5 border-t pt-2.5"
-                style={{ borderColor: "var(--ui-border)" }}
-              >
-                {content.projects.map((project) => (
-                  <li key={project.name} className="text-[0.75rem] leading-snug">
-                    <span style={{ color: "var(--ui-text)" }}>{project.name}</span>
-                    {project.summary && (
-                      <span style={{ color: "var(--ui-faint)" }}> — {project.summary}</span>
-                    )}
-                  </li>
-                ))}
-              </ul>
-            )}
+            <InfoCard content={content} />
           </motion.div>
         )}
       </AnimatePresence>
-
       {/* The hint. Overview only. */}
       <AnimatePresence>
         {view === "overview" && (

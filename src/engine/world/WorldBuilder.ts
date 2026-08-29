@@ -34,7 +34,7 @@ import type { Bounds, Size } from "../types";
  * couple the renderer to a component's markup, and re-framing the map every
  * time a React tree reflowed is far worse than being fifteen pixels out.
  */
-const BOTTOM_RESERVE = 28;
+const BOTTOM_RESERVE = 12;
 
 /**
  * Room kept clear at the left of the frame, in CSS pixels — the sidebar's own
@@ -178,6 +178,10 @@ export class World {
     engine.app.stage.addChild(this.overview.backdrop);
     engine.app.stage.addChild(engine.camera.container);
     engine.camera.container.addChild(this.overview.field);
+    // The vignette is the third space: screen again, but in *front* of the
+    // camera, so the frame's edges darken the worlds too and not just the sky
+    // behind them.
+    engine.app.stage.addChild(this.overview.overlay);
 
     this.chapters = new ChapterHost({
       engine,

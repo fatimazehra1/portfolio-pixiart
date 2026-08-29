@@ -46,7 +46,7 @@ export default function ChapterCard({
   onHover,
 }: ChapterCardProps) {
   const accent = STATUS_VAR[content.status];
-  const count = content.projects.length;
+  const count = content.bullets.length;
 
   return (
     <motion.button
@@ -56,7 +56,7 @@ export default function ChapterCard({
       onPointerLeave={() => onHover(false)}
       onFocus={() => onHover(true)}
       onBlur={() => onHover(false)}
-      className="ui-panel w-[13.5rem] cursor-pointer p-3 text-left font-sans"
+      className="ui-panel w-[15rem] cursor-pointer p-3 text-left font-sans"
       // The card is *placed* by the overlay every frame, imperatively, so it
       // must not animate its own position — only how present it is.
       initial={{ opacity: 0, scale: 0.96 }}
@@ -82,11 +82,39 @@ export default function ChapterCard({
       </div>
 
       <p
+        className="mt-1 text-[0.625rem] tracking-wide uppercase"
+        style={{ color: "var(--ui-faint)" }}
+      >
+        {content.headline}
+      </p>
+
+      <p
         className="mt-1.5 text-[0.75rem] leading-snug"
         style={{ color: "var(--ui-muted)" }}
       >
         {content.summary}
       </p>
+
+      {/* Three tags, not nine. The card is a signpost; the full stack is
+          inside the world, where there is room for it. */}
+      {content.stack.length > 0 && (
+        <ul className="mt-2 flex flex-wrap gap-1" aria-label="Tech used">
+          {content.stack.slice(0, 3).map((tech) => (
+            <li
+              key={tech}
+              className="rounded border px-1.5 py-0.5 text-[0.625rem] leading-none"
+              style={{ borderColor: "var(--ui-border)", color: "var(--ui-muted)" }}
+            >
+              {tech}
+            </li>
+          ))}
+          {content.stack.length > 3 && (
+            <li className="px-0.5 text-[0.625rem] leading-none" style={{ color: "var(--ui-faint)" }}>
+              +{content.stack.length - 3}
+            </li>
+          )}
+        </ul>
+      )}
 
       <div className="mt-2.5 flex items-center gap-2">
         <span
@@ -103,7 +131,7 @@ export default function ChapterCard({
         <span className="ml-auto text-[0.6875rem]" style={{ color: "var(--ui-faint)" }}>
           {/* A chapter with nothing documented shows its category rather than
               "0 projects", which reads as a gap rather than as a fact. */}
-          {count > 0 ? `${count} ${count === 1 ? "project" : "projects"}` : content.category}
+          {count > 0 ? `${count} ${count === 1 ? "highlight" : "highlights"}` : content.category}
         </span>
       </div>
 

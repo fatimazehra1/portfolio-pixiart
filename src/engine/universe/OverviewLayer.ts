@@ -29,8 +29,20 @@ import type { ResolvedChapter } from "./UniverseTypes";
  * island live there, so panning moves them together.
  */
 
-const VOID_TOP = 0xcdb7d6; // dusty lavender
-const VOID_BOTTOM = 0xf6dcc0; // pale peach
+// The sky between the worlds, top to bottom: a deep warm dusk, through peach,
+// into pale cream at the foot of the frame. Three stops rather than two — a
+// straight lerp from the deep tone to the pale one goes grey through the
+// middle, and grey is what this pass exists to get rid of.
+const VOID_TOP = 0xa88bb0; // deep dusty mauve
+const VOID_MID = 0xe3b79c; // warm peach
+const VOID_BOTTOM = 0xfaeacf; // pale cream
+
+/** How dark the frame's own edges go. */
+const VIGNETTE_COLOR = 0x4a3550;
+const VIGNETTE_ALPHA = 0.34;
+
+/** How much glow an island carries with nothing pointing at it. */
+const GLOW_REST = 0.24;
 
 const BOB_PIXELS = 2;
 const BOB_PERIOD = [16, 27] as const;
@@ -132,8 +144,13 @@ interface Marker {
 export class OverviewLayer {
   readonly backdrop = new Container();
   readonly field = new Container();
+  /** Screen space, in front of the camera: the vignette, and nothing else. */
+  readonly overlay = new Container();
 
   private readonly gradient = new Sprite();
+  private readonly vignette = new Sprite();
+  /** Purely scenic: far islands and drifting rocks, behind every real world. */
+  private readonly farField = new Container();
   private readonly cloudLayers: { sprite: TilingSprite; speed: number }[] = [];
   private readonly pathGraphics = new Graphics();
 
@@ -142,6 +159,14 @@ export class OverviewLayer {
   /** For the five chapters with no dedicated renderer — a small quiet silhouette. */
   private readonly landmarkArt = new LandmarkFactory();
   private readonly cloudTextures: Texture[] = [];
+  private readonly farTextures: Texture[] = [];
+  private readonly farViews: {
+    sprite: Sprite;
+    baseY: number;
+    rate: number;
+    amount: number;
+    phase: number;
+  }[] = [];
   private glowTexture: Texture | null = null;
 
   private readonly onHover: ((id: string | null) => void) | undefined;
@@ -167,9 +192,21 @@ export class OverviewLayer {
     this.field.label = "overview:field";
     this.field.eventMode = "static";
 
+    this.overlay.label = "overview:overlay";
+    this.overlay.eventMode = "none";
+
     this.gradient.eventMode = "none";
+    this.gradient.texture = this.bakeGradient();
     this.backdrop.addChild(this.gradient);
     this.buildClouds();
+
+    this.vignette.eventMode = "none";
+    this.vignette.texture = this.bakeVignette();
+    this.overlay.addChild(this.vignette);
+
+    this.farField.label = "overview:far";
+    this.farField.eventMode = "none";
+    this.field.addChild(this.farField);
 
     this.pathGraphics.eventMode = "none";
     this.field.addChild(this.pathGraphics);
@@ -186,6 +223,8 @@ export class OverviewLayer {
 
     this.backdrop.visible = on;
     this.field.visible = on;
+    this.overlay.visible = on;
+    this.overlay.alpha = this.presence * VIGNETTE_ALPHA;
     this.field.eventMode = on ? "static" : "none";
     this.backdrop.alpha = this.presence;
     this.field.alpha = this.presence;
@@ -220,13 +259,21 @@ export class OverviewLayer {
       }
     }
 
+    if (this.motionScale > 0) {
+      for (const far of this.farViews) {
+        far.sprite.y = far.baseY + Math.sin(this.elapsed * far.rate + far.phase) * far.amount;
+      }
+    }
+
     const t = 1 - Math.exp(-DETAIL_SMOOTHING * delta);
 
     for (const marker of this.markers.values()) {
       const before = marker.hover;
       marker.hover = before + (marker.target - before) * t;
       if (Math.abs(marker.target - marker.hover) < 0.002) marker.hover = marker.target;
-      marker.glow.alpha = marker.hover * 0.55;
+      // A standing glow, not a hover-only one: the tint is what separates an
+      // island from the backdrop at all. Hover only deepens what is there.
+      marker.glow.alpha = GLOW_REST + marker.hover * 0.34;
 
       if (this.motionScale > 0) {
         marker.body.y = Math.round(
@@ -245,6 +292,8 @@ export class OverviewLayer {
     this.viewport = size;
     this.gradient.width = size.width;
     this.gradient.height = size.height;
+    this.vignette.width = size.width;
+    this.vignette.height = size.height;
     this.layoutClouds(size);
 
     const next = Math.max(1, Math.round(pixelScale));
@@ -263,14 +312,18 @@ export class OverviewLayer {
     this.glowTexture = null;
     for (const texture of this.cloudTextures) texture.destroy(true);
     this.cloudTextures.length = 0;
+    for (const texture of this.farTextures) texture.destroy(true);
+    this.farTextures.length = 0;
     this.gradient.texture?.destroy(true);
+    this.vignette.texture?.destroy(true);
     this.backdrop.destroy({ children: true });
+    this.overlay.destroy({ children: true });
     this.field.destroy({ children: true });
   }
 
   // --- Internal: backdrop --------------------------------------------------
 
-  /** A warm vertical gradient — dusty lavender at the top, pale peach below. */
+  /** The vertical gradient: deep mauve overhead, peach, then pale cream. */
   private bakeGradient(): Texture {
     const h = 128;
     return toTexture(
@@ -278,15 +331,55 @@ export class OverviewLayer {
       h,
       (pixels) => {
         const lerp = (a: number, b: number, t: number) => Math.round(a + (b - a) * t);
-        const top = [(VOID_TOP >> 16) & 0xff, (VOID_TOP >> 8) & 0xff, VOID_TOP & 0xff];
-        const bot = [(VOID_BOTTOM >> 16) & 0xff, (VOID_BOTTOM >> 8) & 0xff, VOID_BOTTOM & 0xff];
+        const split = (c: number) => [(c >> 16) & 0xff, (c >> 8) & 0xff, c & 0xff];
+        const stops = [split(VOID_TOP), split(VOID_MID), split(VOID_BOTTOM)];
+        // The peach stop sits high, so the deep tone stays a band overhead
+        // rather than a wash over the whole frame.
+        const knee = 0.42;
         for (let y = 0; y < h; y++) {
           const t = y / (h - 1);
+          const low = t < knee;
+          const a = low ? stops[0] : stops[1];
+          const b = low ? stops[1] : stops[2];
+          const k = low ? t / knee : (t - knee) / (1 - knee);
           const o = y * 4;
-          pixels[o] = lerp(top[0], bot[0], t);
-          pixels[o + 1] = lerp(top[1], bot[1], t);
-          pixels[o + 2] = lerp(top[2], bot[2], t);
+          pixels[o] = lerp(a[0], b[0], k);
+          pixels[o + 1] = lerp(a[1], b[1], k);
+          pixels[o + 2] = lerp(a[2], b[2], k);
           pixels[o + 3] = 255;
+        }
+      },
+      "Overview"
+    );
+  }
+
+  /**
+   * The frame's own edges, darkened. Baked small and stretched: it is a
+   * falloff, not a picture, and 64x64 of dithered alpha survives the stretch
+   * without banding the way a smooth ramp would.
+   */
+  private bakeVignette(): Texture {
+    const n = 64;
+    const color = [(VIGNETTE_COLOR >> 16) & 0xff, (VIGNETTE_COLOR >> 8) & 0xff, VIGNETTE_COLOR & 0xff];
+
+    return toTexture(
+      n,
+      n,
+      (pixels) => {
+        for (let y = 0; y < n; y++) {
+          const dy = (y + 0.5) / n - 0.5;
+          for (let x = 0; x < n; x++) {
+            const dx = (x + 0.5) / n - 0.5;
+            // Elliptical, and wider than it is tall — the corners of a wide
+            // frame are further from the middle than its top edge is.
+            const d = Math.sqrt((dx / 0.62) ** 2 + (dy / 0.55) ** 2);
+            const a = Math.max(0, Math.min(1, (d - 0.55) / 0.7)) ** 1.6;
+            const o = (y * n + x) * 4;
+            pixels[o] = color[0];
+            pixels[o + 1] = color[1];
+            pixels[o + 2] = color[2];
+            pixels[o + 3] = Math.round(a * 255);
+          }
         }
       },
       "Overview"
@@ -348,10 +441,14 @@ export class OverviewLayer {
     // that reads as depth without a single extra draw call's worth of logic.
     // Each gets its own tile so the three don't read as one pattern at three
     // scales.
+    // Tinted, not white. Against the old flat cream these were white on white
+    // and read as nothing at all; each band now carries a little of the sky it
+    // sits in — mauve high up, warm peach lower down — so they stay
+    // low-contrast without disappearing.
     const bands = [
-      { seed: 0x9911, y: 0.14, alpha: 0.22, scale: 0.85, speed: 2.4 },
-      { seed: 0xa42c, y: 0.28, alpha: 0.32, scale: 1.15, speed: 4.1 },
-      { seed: 0xb0e7, y: 0.44, alpha: 0.26, scale: 1.4, speed: 6.3 },
+      { seed: 0x9911, y: 0.06, alpha: 0.3, scale: 0.75, speed: 1.6, tint: 0xe6d6ea },
+      { seed: 0xa42c, y: 0.26, alpha: 0.4, scale: 1.1, speed: 3.2, tint: 0xfaeaf0 },
+      { seed: 0xb0e7, y: 0.5, alpha: 0.34, scale: 1.5, speed: 5.4, tint: 0xfff2e0 },
     ];
 
     for (const band of bands) {
@@ -360,7 +457,7 @@ export class OverviewLayer {
       const sprite = new TilingSprite({ texture, width: 1, height: 1 });
       sprite.eventMode = "none";
       sprite.alpha = band.alpha;
-      sprite.tint = 0xffffff;
+      sprite.tint = band.tint;
       (sprite as unknown as { __band: typeof band }).__band = band;
       this.backdrop.addChild(sprite);
       this.cloudLayers.push({ sprite, speed: band.speed });
@@ -370,8 +467,10 @@ export class OverviewLayer {
   private layoutClouds(size: Size): void {
     for (const { sprite } of this.cloudLayers) {
       const band = (sprite as unknown as { __band: { y: number; scale: number } }).__band;
+      // Wider than the viewport by half, so the band keeps drifting past the
+      // edge rather than visibly wrapping inside the frame.
       sprite.width = size.width;
-      sprite.height = size.height * 0.3;
+      sprite.height = size.height * 0.34;
       sprite.y = size.height * band.y;
       sprite.tileScale.set(band.scale);
     }
@@ -398,6 +497,8 @@ export class OverviewLayer {
     const scale = this.pixelScaleValue;
     if (!this.glowTexture) this.glowTexture = this.bakeGlow(48);
 
+    this.buildFarField(scale);
+
     // Paths first, so the islands sit over them.
     this.pathGraphics.clear();
     this.drawPaths(scale);
@@ -420,9 +521,9 @@ export class OverviewLayer {
       const glow = new Sprite(this.glowTexture);
       glow.anchor.set(0.5);
       glow.tint = theme.topPalette[0];
-      glow.alpha = 0;
+      glow.alpha = GLOW_REST;
       glow.eventMode = "none";
-      glow.scale.set((island.width / 96) * 1.3);
+      glow.scale.set((island.width / 96) * 2.1);
       body.addChild(glow);
 
       const islandSprite = new Sprite(island.texture);
@@ -479,6 +580,84 @@ export class OverviewLayer {
           (BOB_PERIOD[0] + (chapter.overview.x % (BOB_PERIOD[1] - BOB_PERIOD[0]))),
         bobPhase: (chapter.overview.y % 100) / 16,
         visualTop: top,
+      });
+    }
+  }
+
+  /**
+   * Distance, faked the cheapest way there is: a handful of small islands and
+   * loose rocks, far too faint and far too small to be mistaken for a world
+   * you could visit, drifting on their own slow cycles. They take no pointer
+   * events and carry nothing — they exist so the space between the nine real
+   * worlds is a place rather than a gap.
+   */
+  private buildFarField(scale: number): void {
+    for (const child of this.farField.removeChildren()) child.destroy();
+    this.farViews.length = 0;
+    for (const texture of this.farTextures) texture.destroy(true);
+    this.farTextures.length = 0;
+
+    // Placed against the cluster's own extent, so adding a tenth world moves
+    // the far pieces with it instead of stranding them.
+    let left = Infinity;
+    let right = -Infinity;
+    let top = Infinity;
+    let bottom = -Infinity;
+    for (const chapter of this.chapters) {
+      left = Math.min(left, chapter.overview.x);
+      right = Math.max(right, chapter.overview.x);
+      top = Math.min(top, chapter.overview.y);
+      bottom = Math.max(bottom, chapter.overview.y);
+    }
+    if (!Number.isFinite(left)) return;
+
+    const w = right - left;
+    const h = bottom - top;
+    const at = (u: number, v: number) => ({ x: left + w * u, y: top + h * v });
+
+    // Fractions of the cluster, not pixels — the composition survives a
+    // re-spread of the real islands.
+    const specs = [
+      { at: at(0.08, 0.06), size: 22, alpha: 0.3, tone: 0xb9a3c4, rock: 0x8d7a99 },
+      { at: at(0.72, 0.02), size: 17, alpha: 0.24, tone: 0xc7b0c9, rock: 0x9a86a0 },
+      { at: at(0.5, 1.05), size: 26, alpha: 0.22, tone: 0xd9bda6, rock: 0xa88f7c },
+      { at: at(0.95, 0.84), size: 14, alpha: 0.2, tone: 0xd3bcb4, rock: 0xa08c88 },
+      // The loose rocks: the same generator, small enough to read as debris.
+      { at: at(0.3, 0.34), size: 6, alpha: 0.3, tone: 0xbca6b6, rock: 0x8f7d8c },
+      { at: at(0.63, 0.62), size: 5, alpha: 0.26, tone: 0xc6ae9f, rock: 0x977f74 },
+      { at: at(0.16, 0.78), size: 7, alpha: 0.24, tone: 0xbfa9b4, rock: 0x8c7a86 },
+      { at: at(0.88, 0.34), size: 5, alpha: 0.22, tone: 0xd2b6a4, rock: 0x9c8478 },
+    ];
+
+    const rand = createRandom(0x4f1c);
+    for (const spec of specs) {
+      const island = generateIsoIsland({
+        size: Math.max(4, Math.round(spec.size)),
+        // Two tones, flattened towards the sky: at this alpha the palette is
+        // reading as haze, and four steps of contrast would fight the near
+        // islands for attention.
+        topPalette: [spec.tone, spec.tone, spec.rock, spec.rock],
+        rockPalette: [spec.rock, spec.rock, spec.rock, spec.rock],
+        edgeSeed: rangeInt(rand, 1, 0xffff),
+        undersideLength: Math.max(4, Math.round(spec.size * 0.7)),
+      });
+      this.farTextures.push(island.texture);
+
+      const sprite = new Sprite(island.texture);
+      sprite.eventMode = "none";
+      sprite.alpha = spec.alpha;
+      sprite.anchor.set(0.5);
+      sprite.x = Math.round(spec.at.x / scale);
+      const baseY = Math.round(spec.at.y / scale);
+      sprite.y = baseY;
+      this.farField.addChild(sprite);
+
+      this.farViews.push({
+        sprite,
+        baseY,
+        rate: range(rand, 0.12, 0.3),
+        amount: range(rand, 1.5, 3.5),
+        phase: range(rand, 0, Math.PI * 2),
       });
     }
   }

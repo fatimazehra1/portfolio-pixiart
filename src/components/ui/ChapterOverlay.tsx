@@ -36,9 +36,13 @@ import { useWorldStore } from "@/stores/worldStore";
 
 /** Gap between a world's edge and its card, in CSS pixels. */
 const CARD_GAP = 20;
-/** The card's own size, for placement and edge-clamping. Matches the CSS. */
-const CARD_WIDTH = 216;
-const CARD_HEIGHT = 120;
+/**
+ * The card's width, matching its CSS. Its *height* is measured rather than
+ * declared — the card grew a headline and a row of tags, and a constant that
+ * disagrees with the real height clamps it to the wrong place near the edges.
+ */
+const CARD_WIDTH = 240;
+const CARD_FALLBACK_HEIGHT = 150;
 /** Rendered zoom at which labels and cards have fully faded. */
 const FADE_FROM = 1.2;
 const FADE_TO = 1.75;
@@ -122,8 +126,9 @@ export default function ChapterOverlay() {
             ? at.x - at.radius - CARD_GAP - CARD_WIDTH
             : at.x + at.radius + CARD_GAP;
           const cx = Math.round(Math.max(12, Math.min(width - CARD_WIDTH - 12, x)));
+          const cardHeight = card.current.offsetHeight || CARD_FALLBACK_HEIGHT;
           const cy = Math.round(
-            Math.max(12, Math.min(height - CARD_HEIGHT - 12, at.y - CARD_HEIGHT / 2))
+            Math.max(12, Math.min(height - cardHeight - 12, at.y - cardHeight / 2))
           );
 
           card.current.style.transform = `translate3d(${cx}px, ${cy}px, 0)`;
@@ -133,7 +138,7 @@ export default function ChapterOverlay() {
             // From the card's inner edge to the world's rim, not its centre — a
             // line running under the island would read as skewering it.
             line.current.setAttribute("x1", String(flip ? cx + CARD_WIDTH : cx));
-            line.current.setAttribute("y1", String(cy + CARD_HEIGHT / 2));
+            line.current.setAttribute("y1", String(cy + cardHeight / 2));
             line.current.setAttribute(
               "x2",
               String(Math.round(at.x + (flip ? at.radius * 0.45 : -at.radius * 0.45)))

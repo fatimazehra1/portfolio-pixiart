@@ -48,7 +48,7 @@ export const CHAPTERS: readonly ChapterConfig[] = [
         { bitmap: "flagpole", at: 0.42, scale: 2, tier: "mid" },
       ],
     },
-    overview: { x: 200, y: 550, radius: 95 },
+    overview: { x: 200, y: 566, radius: 95 },
     interior: { kind: "coast", scenes: ["aptech"] },
     note: "The first world. Low and west, so the eye starts there.",
   },
@@ -70,7 +70,7 @@ export const CHAPTERS: readonly ChapterConfig[] = [
     },
     // Above and just east of Aptech: the years overlap, and the map says so by
     // stacking the two rather than by sequencing them.
-    overview: { x: 420, y: 750, radius: 82 },
+    overview: { x: 420, y: 796, radius: 82 },
     interior: { kind: "coast", scenes: ["cottage"] },
     note: "Small, and still running. No end year and no company.",
   },
@@ -94,7 +94,7 @@ export const CHAPTERS: readonly ChapterConfig[] = [
     },
     // The biggest of the past worlds, and near the middle. Two years of the
     // densest work on the map should sit where the eye lands.
-    overview: { x: 750, y: 380, radius: 105 },
+    overview: { x: 750, y: 370, radius: 105 },
     interior: { kind: "coast", scenes: ["planet01"] },
     camera: { zoom: 1 },
     note: "A city world. Laravel, Vue, MERN, CTAWORLD, payments, mentoring.",
@@ -115,7 +115,7 @@ export const CHAPTERS: readonly ChapterConfig[] = [
         { bitmap: "aerial", at: 0.5, scale: 2, tier: "mid" },
       ],
     },
-    overview: { x: 940, y: 710, radius: 88 },
+    overview: { x: 940, y: 750, radius: 88 },
     interior: { kind: "coast", scenes: ["vaultsys"] },
     note: "Fintech. Java, Oracle SQL, payment infrastructure.",
   },
@@ -137,7 +137,7 @@ export const CHAPTERS: readonly ChapterConfig[] = [
       ],
     },
     // Current work: the largest world on the map, and the warmest.
-    overview: { x: 1300, y: 650, radius: 109 },
+    overview: { x: 1300, y: 681, radius: 109 },
     interior: { kind: "coast", scenes: ["naturetech"] },
     camera: { zoom: 1 },
     note: "Where the work is now. Enterprise ERP, Laravel, Next.js, NestJS.",
@@ -155,7 +155,7 @@ export const CHAPTERS: readonly ChapterConfig[] = [
       terrain: "spire",
       landmarks: [{ bitmap: "spire", at: 0, scale: 3, tier: "far" }],
     },
-    overview: { x: 1180, y: 140, radius: 84 },
+    overview: { x: 1180, y: 94, radius: 84 },
     interior: { kind: "coast", scenes: ["bbit"] },
     note: "The education that runs alongside the work, not after it.",
   },
@@ -177,7 +177,7 @@ export const CHAPTERS: readonly ChapterConfig[] = [
     },
     // Below the career band. It runs underneath all of it rather than after any
     // of it, and vertical distance is how the map says "this is not a job".
-    overview: { x: 380, y: 190, radius: 80 },
+    overview: { x: 380, y: 152, radius: 80 },
     interior: { kind: "coast", scenes: ["workshop"] },
     note: "Blender, Three.js, Figma, AI experiments. Some finished, most not.",
   },
@@ -194,7 +194,7 @@ export const CHAPTERS: readonly ChapterConfig[] = [
       terrain: "meadow",
       landmarks: [{ bitmap: "tent", at: 0, scale: 3, tier: "far" }],
     },
-    overview: { x: 560, y: 480, radius: 78 },
+    overview: { x: 560, y: 485, radius: 78 },
     interior: { kind: "coast", scenes: ["ideastent"] },
     note: "Hackathons, TapStore, AI ideas, the next thing.",
   },
@@ -213,7 +213,7 @@ export const CHAPTERS: readonly ChapterConfig[] = [
     },
     // Alone at the far east. The end of the map, and the one world meant to be
     // findable from anywhere on it.
-    overview: { x: 1470, y: 430, radius: 86 },
+    overview: { x: 1470, y: 428, radius: 86 },
     interior: { kind: "coast", scenes: ["lighthouse"] },
     note: "Contact. Always lit, at every hour and under every status.",
   },
@@ -229,7 +229,7 @@ export const CHAPTERS: readonly ChapterConfig[] = [
  * a margin sized for the old tight cluster was eating half the fitted frame
  * as empty space on every side.
  */
-export const UNIVERSE_MARGIN = 140;
+export const UNIVERSE_MARGIN = 100;
 
 /** How the camera treats a world that does not say. */
 export const DEFAULT_CHAPTER_CAMERA: ChapterCamera = {
