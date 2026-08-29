@@ -51,6 +51,7 @@ export const SCENES: readonly SceneConfig[] = [
     worldX: 2754,
     width: 432,
     status: "past",
+    rendererId: "cottage",
     chapterId: "freelance",
     note: "Where the freelance years happened. Finished, and behind you.",
   },

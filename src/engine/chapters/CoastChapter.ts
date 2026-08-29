@@ -9,6 +9,7 @@ import { Lighthouse } from "../lighthouse";
 import {
   AptechBuilding,
   BuildingManager,
+  CottageBuilding,
   NatureTechBuilding,
   Planet01Building,
   VaultsysBuilding,
@@ -39,6 +40,7 @@ import type { ChapterContext, ChapterWorld } from "../universe";
  */
 const RENDERERS: Record<string, (context: BuildingContext) => Building> = {
   aptech: (context) => new AptechBuilding(context),
+  cottage: (context) => new CottageBuilding(context),
   planet01: (context) => new Planet01Building(context),
   vaultsys: (context) => new VaultsysBuilding(context),
   naturetech: (context) => new NatureTechBuilding(context),
