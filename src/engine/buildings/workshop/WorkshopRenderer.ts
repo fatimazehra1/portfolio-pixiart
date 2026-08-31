@@ -14,10 +14,20 @@ import { createRandom } from "../../shared/random";
  *   3. an easel with a wireframe sketch on it — Figma, dim
  *   4. a server rack, lights blinking, warm light spilling out — the AI corner
  *
- * The first three are drawn in one cold, desaturated palette and lit by nothing
- * at all. The fourth carries every emissive layer in the file. Nothing else in
- * the composition is allowed to glow, because the moment a second thing glows
- * the story stops being *one* corner still in use.
+ * The first three are drawn in one cold, desaturated palette; the fourth
+ * carries every emissive layer in the file. Nothing else in the composition is
+ * allowed to *glow*, because the moment a second thing glows the story stops
+ * being one corner still in use.
+ *
+ * # Dim is not dark
+ * The dead bays are lit only by the ambient the scene gives them, and the
+ * workshop's own climate is fog, haze and a local light of 0.45 — so a palette
+ * chosen to read on a neutral background disappeared entirely under it. Every
+ * tone in the dead half is now a long step lighter than it looks like it should
+ * be, which is what it takes for the donut, the terminal and the easel to be
+ * legible through the murk. The contrast still lands: they are lit by *nothing*
+ * and the rack corner is lit by itself, and no amount of ambient closes that
+ * gap.
  *
  * That reading is the same one the scene itself makes: `workshop` is a
  * `dormant` scene with a single `active` zone sitting over its right-hand end
@@ -71,6 +81,17 @@ const FAN_SECONDS = 0.18;
 const DUST_FRAMES = 4;
 const DUST_SECONDS = 1.15;
 
+/**
+ * The shimmer over the dead bays.
+ *
+ * Deliberately out of step with the drift: the frames move a mote across the
+ * room every 1.15s and this fades the whole layer on a 2.6s cycle, so no mote
+ * ever brightens in the same place twice and the air reads as *moving* rather
+ * than as a texture being cross-faded.
+ */
+const SHIMMER_RATE = (Math.PI * 2) / 2.6;
+const SHIMMER_DEPTH = 0.45;
+
 // --- Materials ---------------------------------------------------------------
 
 /**
@@ -92,22 +113,30 @@ const MATERIALS: Record<string, LayerMaterial> = {
   roofLight: { color: 0x938b83 },
   roofDark: { color: 0x4f4a45 },
 
-  /** The dead half's interior. Cold, and darker than the shell around it. */
-  gloom: { color: 0x322e2c },
-  shelf: { color: 0x5c4f40 },
-  shelfDark: { color: 0x3c332a },
+  /** The dead half's interior. Still the darkest thing here, but a *room*. */
+  gloom: { color: 0x4f4843 },
+  shelf: { color: 0x8a7358 },
+  shelfDark: { color: 0x5d4d3c },
   /** Objects in the dead half: the donut, the terminal, the easel. */
-  cold: { color: 0x605a53 },
-  coldLight: { color: 0x7b746b },
-  coldDark: { color: 0x3d3934 },
+  cold: { color: 0x938a7e },
+  coldLight: { color: 0xb2a99b },
+  coldDark: { color: 0x625b52 },
   /** The donut's half-finished glaze — the one colour left in the dead half. */
-  glaze: { color: 0xa8617a },
+  glaze: { color: 0xc9819a },
   /** The wireframe on the easel, drawn rather than rendered. */
-  wire: { color: 0x9aa6ad },
-  paper: { color: 0xbdb5a4 },
+  wire: { color: 0xc2ccd2 },
+  paper: { color: 0xded6c3 },
   /** Cobwebs, and the dust hanging in the still air. */
-  web: { color: 0x9d978e },
-  dust: { color: 0xa9a49b },
+  web: { color: 0xc0b9ae },
+  /**
+   * Dust in the dead bays.
+   *
+   * Emissive, but only just: motes catch what little light there is rather than
+   * making any of their own, so this is set high by day and low at night — the
+   * opposite way round from the rack's glow, and the reason the two never read
+   * as the same kind of light.
+   */
+  dust: { color: 0xd8d2c6, emissive: true, dayAlpha: 0.55, nightAlpha: 0.22 },
 
   /** The live corner: rack, cage, cabling. */
   rack: { color: 0x4b5058 },
@@ -605,6 +634,13 @@ export class WorkshopRenderer extends BuildingRenderer {
       this.dustFrame = dust;
       this.setFrame("dust", dust);
     }
+
+    // The motes catch the light and lose it again. Never all the way off:
+    // dust that blinks out is a rendering fault, not still air.
+    this.setEmissiveScale(
+      "dust",
+      1 - SHIMMER_DEPTH * (0.5 + 0.5 * Math.sin(elapsed * SHIMMER_RATE))
+    );
 
     // The wash breathes with the load on the machine. Shallow: a room lit by a
     // rack does not pulse, it hums.

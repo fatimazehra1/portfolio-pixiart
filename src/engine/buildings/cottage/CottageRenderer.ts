@@ -69,29 +69,36 @@ const PASS_LENGTH = 0.7;
  * value to read as one roof from across the shore, and far enough apart in hue
  * to read as mismatched close up — which is how a roof patched five times
  * actually looks.
+ *
+ * All of it is pitched a long step lighter than a swatch would suggest. This
+ * house is small, it is the only thing in its frame, and under the scene's own
+ * ambient the first pass read as one flat silhouette with a roof-shaped lump on
+ * it — which loses the single idea the building exists to carry. Nothing here
+ * is emissive except the lamp: the whole facade still darkens with the hour,
+ * it just no longer bottoms out into a shape.
  */
 const MATERIALS: Record<string, LayerMaterial> = {
   /** Lime-washed plaster, sun-faded. */
-  wall: { color: 0xd8c8a6 },
-  wallLight: { color: 0xece0c2 },
-  wallDark: { color: 0xa8967a },
+  wall: { color: 0xe4d5b6 },
+  wallLight: { color: 0xf6ecd4 },
+  wallDark: { color: 0xbba98b },
   /** Where the plaster has come away and the brick underneath shows. */
-  brick: { color: 0xa8735a },
-  brickDark: { color: 0x83543f },
+  brick: { color: 0xc08a6e },
+  brickDark: { color: 0x9a6a52 },
 
   /** The four salvaged shingle tones — one per client, none of them matching. */
-  shingle0: { color: 0x9c7355 },
-  shingle1: { color: 0xab8a60 },
-  shingle2: { color: 0x7d6a58 },
-  shingle3: { color: 0xc0a173 },
+  shingle0: { color: 0xc08a63 },
+  shingle1: { color: 0xd0ab77 },
+  shingle2: { color: 0xa08a71 },
+  shingle3: { color: 0xe3c691 },
   /** Course shadows, the ridge cap, and the two gaps where shingles are gone. */
-  shingleDark: { color: 0x6a5540 },
-  ridge: { color: 0xd8c197 },
+  shingleDark: { color: 0x8a7053 },
+  ridge: { color: 0xf0dcb2 },
 
   /** Timber: the door, the frames, the shutter, the mailbox post. */
-  timber: { color: 0x7c5f43 },
-  timberLight: { color: 0x9d7d5c },
-  timberDark: { color: 0x543f2c },
+  timber: { color: 0x9a7853 },
+  timberLight: { color: 0xbe9a71 },
+  timberDark: { color: 0x6e5439 },
 
   /** Unlit glass, and the warm room behind it. */
   glass: { color: 0x4a5563 },
@@ -99,18 +106,24 @@ const MATERIALS: Record<string, LayerMaterial> = {
   /** The spill of that lamp onto the sill and the path outside. */
   spill: { color: 0xe8b877, emissive: true, dayAlpha: 0, nightAlpha: 0.65 },
 
-  /** The mailbox, and the paper stuffed into it. */
-  metal: { color: 0x7e8288 },
-  metalDark: { color: 0x585c62 },
-  paper: { color: 0xe6dcc6 },
-  paperDark: { color: 0xb3a88e },
+  /**
+   * The mailbox, and the paper stuffed into it.
+   *
+   * The scrolls are the content of this chapter and they are five pixels tall,
+   * so they are the palest thing on the building after the lamp — at anything
+   * darker they merge with the post they are standing over.
+   */
+  metal: { color: 0x9ba1a8 },
+  metalDark: { color: 0x74797f },
+  paper: { color: 0xf4ecd8 },
+  paperDark: { color: 0xc9bda1 },
 
   /** The path, and the stones the cottage sits on. */
-  stone: { color: 0xa39a8b },
-  stoneDark: { color: 0x77705f },
+  stone: { color: 0xb8ae9d },
+  stoneDark: { color: 0x8d8573 },
 
-  /** Woodsmoke. Faint by day, and never more than a thread. */
-  smoke: { color: 0xcfc7bd },
+  /** Woodsmoke. A thread, but one you can actually follow. */
+  smoke: { color: 0xeae4da },
 };
 
 const ORDER = [
@@ -486,10 +499,12 @@ export class CottageRenderer extends BuildingRenderer {
         if (y < 0) break;
         // A slow lean to the right, wandering as it climbs and thinning out.
         const lean = Math.round(Math.sin(phase + i * 0.5) * 1.4 + i * 0.22);
-        const alpha = Math.max(0, 150 - i * 12);
+        // The thread thins as it climbs, but it starts opaque enough to see:
+        // at the old ramp the whole column sat under the sky's own value.
+        const alpha = Math.max(0, 215 - i * 12);
         smoke.set(originX + lean, y, alpha);
         // The column widens as it cools, but only above the first few pixels.
-        if (i > 3 && i % 2 === 0) smoke.set(originX + lean + 1, y, Math.round(alpha * 0.6));
+        if (i > 3 && i % 2 === 0) smoke.set(originX + lean + 1, y, Math.round(alpha * 0.7));
       }
     }
   }
