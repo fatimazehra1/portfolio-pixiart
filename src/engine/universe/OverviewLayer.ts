@@ -201,6 +201,23 @@ const PATH_DAY = 0x4a3a2a;
 const PATH_NIGHT = 0xc8bce8;
 
 /**
+ * The opening: the route drawing itself, in the order it happened.
+ *
+ * Nine islands appearing at once is a picture. The same nine arriving along a
+ * line that starts at the first one and runs to the last is a *sequence*, and
+ * the sequence is the argument the whole map is making — this came before
+ * that, and that led here. Two and a half seconds is long enough to read as
+ * chronology and short enough that nobody who has seen it once resents it.
+ *
+ * Which is also why it runs once a session and not once a visit to the map:
+ * coming back out of a world is a return, and replaying the establishing shot
+ * on a return is the oldest mistake in interface animation.
+ */
+const INTRO_SECONDS = 2.5;
+/** How long an island takes to arrive once the line has reached it. */
+const INTRO_FADE = 0.14;
+
+/**
  * A building's width, as a fraction of its island's own top-face width.
  *
  * This is the hard constraint, not a fallback — the island is what exists
@@ -308,6 +325,25 @@ interface Marker {
   visualTop: number;
 }
 
+/**
+ * One leg of the route: two colourways of the same dashes, and the wipe that
+ * reveals them.
+ *
+ * The dashes are built once and never rebuilt. The opening used to redraw
+ * every curve every frame to show a growing portion of it, which is a thousand
+ * tessellated line segments per frame — the frame rate collapsed, and the
+ * animation, being time-based, simply crawled: two and a half seconds took
+ * fifteen. A mask sweeping along the leg costs one transform per frame and
+ * looks the same.
+ */
+interface PathLeg {
+  day: Graphics;
+  night: Graphics;
+  /** The wipe. Null once the opening is over and the mask has been dropped. */
+  wipe: Graphics | null;
+  container: Container;
+}
+
 /** One piece of dressing, and the zoom band it resolves across. */
 interface DetailPiece {
   node: Container;
@@ -343,9 +379,9 @@ export class OverviewLayer {
   /** Purely scenic: far islands, behind every real world. */
   private readonly farField = new Container();
   private readonly cloudLayers: { sprite: TilingSprite; speed: number; tint: number; alpha: number }[] = [];
-  private readonly pathGraphics = new Graphics();
-  /** The same dashes in a pale tone, faded up as the light goes. */
-  private readonly pathNight = new Graphics();
+  /** One entry per leg of the route. See buildPaths. */
+  private readonly pathField = new Container();
+  private readonly pathLegs: PathLeg[] = [];
 
   private readonly markers = new Map<string, Marker>();
   private readonly props = new PropFactory({ seed: 0x2a1f });
@@ -379,6 +415,9 @@ export class OverviewLayer {
   private night = 0;
   /** Last zoom the detail ramps were resolved at. See `applyDetail`. */
   private detailZoom = Number.NaN;
+  /** How far the opening has come, 0–1. Sits at 1 whenever it is not running. */
+  private introProgress = 1;
+  private introRunning = false;
   private vignetteAlpha = HUB_SKY[HUB_SKY_DEFAULT].vignetteAlpha;
 
   constructor(options: OverviewLayerOptions) {
@@ -417,11 +456,9 @@ export class OverviewLayer {
     this.farField.eventMode = "none";
     this.field.addChild(this.farField);
 
-    this.pathGraphics.eventMode = "none";
-    this.pathNight.eventMode = "none";
-    this.pathNight.alpha = 0;
-    this.field.addChild(this.pathGraphics);
-    this.field.addChild(this.pathNight);
+    this.pathField.label = "overview:paths";
+    this.pathField.eventMode = "none";
+    this.field.addChild(this.pathField);
 
     this.build();
     this.resize(this.viewport);
@@ -500,8 +537,10 @@ export class OverviewLayer {
     const ambient = applyAmbient(0xffffff, hub);
     this.farField.tint = ambient;
 
-    this.pathNight.alpha = this.night * 0.55;
-    this.pathGraphics.alpha = 1 - this.night * 0.7;
+    for (const leg of this.pathLegs) {
+      leg.night.alpha = this.night * 0.55;
+      leg.day.alpha = 1 - this.night * 0.7;
+    }
 
     for (const marker of this.markers.values()) {
       for (const child of marker.lit) child.tint = ambient;
@@ -516,6 +555,36 @@ export class OverviewLayer {
     }
   }
 
+  /**
+   * Draw the route in, and let the worlds arrive along it.
+   *
+   * Idempotent while running, and a no-op once finished — whoever calls this
+   * owns the "once per session" decision, not the map.
+   */
+  playIntro(): void {
+    if (this.introRunning || this.introProgress < 1) return;
+    this.introRunning = true;
+    this.introProgress = 0;
+    // The legs were built bare: the map does not carry nine stencil passes on
+    // the chance that somebody might ask for an opening later.
+    this.buildPaths(this.pixelScaleValue, true);
+    this.applyLighting(this.light);
+    this.applyIntro();
+  }
+
+  /** Land the opening immediately. Any click or key does this. */
+  skipIntro(): void {
+    if (!this.introRunning) return;
+    this.introRunning = false;
+    this.introProgress = 1;
+    this.applyIntro();
+  }
+
+  /** Whether the opening is still running, for whoever is listening for a skip. */
+  get introPlaying(): boolean {
+    return this.introRunning;
+  }
+
   setHover(id: string, hover: number): void {
     const marker = this.markers.get(id);
     if (marker) marker.target = hover < 0 ? 0 : hover > 1 ? 1 : hover;
@@ -527,6 +596,17 @@ export class OverviewLayer {
    * world's label above the actual structure, not just above the island's
    * own (much shorter) silhouette.
    */
+  /**
+   * How present a world is, 0–1.
+   *
+   * One during ordinary play; below it only while the opening is still
+   * drawing this world's leg of the route. The interface reads it so a label
+   * does not sit in mid-air over an island that has not arrived yet.
+   */
+  presenceOf(id: string): number {
+    return this.markers.get(id)?.body.alpha ?? 1;
+  }
+
   topOf(id: string): number | null {
     const marker = this.markers.get(id);
     if (!marker) return null;
@@ -537,6 +617,18 @@ export class OverviewLayer {
     if (delta <= 0) return;
 
     this.applyDetail(view.zoom);
+
+    if (this.introRunning) {
+      // Real seconds, not the motion scale: this is the establishing shot, and
+      // `prefers-reduced-motion` is answered by not playing it at all rather
+      // than by playing it at zero speed forever.
+      this.introProgress += delta / INTRO_SECONDS;
+      if (this.introProgress >= 1) {
+        this.introProgress = 1;
+        this.introRunning = false;
+      }
+      this.applyIntro();
+    }
 
     this.elapsed += delta * this.motionScale;
 
@@ -586,6 +678,38 @@ export class OverviewLayer {
    * separately how far away they were is nine ways for the map to disagree
    * with itself about one number.
    */
+  /**
+   * Put the map at a point in its own opening.
+   *
+   * The line's progress is measured across *segments* rather than across
+   * distance, so each leg of the journey takes the same time however far apart
+   * two worlds happen to sit on the map. Chronology is the subject here, not
+   * geography.
+   */
+  private applyIntro(): void {
+    const legs = Math.max(1, PATH_ORDER.length - 1);
+    const reached = this.introProgress * legs;
+
+    for (let i = 0; i < this.pathLegs.length; i++) {
+      const wipe = this.pathLegs[i].wipe;
+      if (wipe) wipe.scale.x = clamp01(reached - i);
+    }
+    if (this.introProgress >= 1) this.clearPathMasks();
+
+    for (let i = 0; i < PATH_ORDER.length; i++) {
+      const marker = this.markers.get(PATH_ORDER[i]);
+      if (!marker) continue;
+      // The first world is already there — the line starts at it. Every other
+      // arrives as the line finishes the leg that reaches it.
+      const arrival = i === 0 ? -INTRO_FADE : i - 1;
+      const alpha = clamp01((reached - arrival) / (INTRO_FADE * legs + 0.0001));
+      marker.body.alpha = alpha;
+      // Nothing is clickable before it has arrived. A world you cannot see is
+      // not a world you meant to enter.
+      marker.container.eventMode = alpha > 0.9 ? "static" : "none";
+    }
+  }
+
   private applyDetail(zoom: number): void {
     if (Math.abs(zoom - this.detailZoom) < 0.0005) return;
     this.detailZoom = zoom;
@@ -837,10 +961,9 @@ export class OverviewLayer {
 
     this.buildFarField(scale);
 
-    // Paths first, so the islands sit over them.
-    this.pathGraphics.clear();
-    this.pathNight.clear();
-    this.drawPaths(scale);
+    // Paths first, so the islands sit over them. Masked only while there is
+    // an opening left to run.
+    this.buildPaths(scale, this.introRunning);
 
     for (const chapter of this.chapters) {
       const theme = ISO_THEME[chapter.id] ?? DEFAULT_ISO_THEME;
@@ -1531,8 +1654,17 @@ export class OverviewLayer {
 
   // --- Internal: paths -------------------------------------------------------
 
-  /** Curved dashed lines through the chapters, in chronological order. */
-  private drawPaths(scale: number): void {
+  /**
+   * Curved dashed lines through the chapters, in chronological order.
+   *
+   * One container per leg, each holding the same dashes twice — dark for day,
+   * pale for night — and, while an opening is running, a rectangular wipe laid
+   * along the leg and grown from nothing. Built once; only the wipe moves.
+   */
+  private buildPaths(scale: number, masked: boolean): void {
+    for (const child of this.pathField.removeChildren()) child.destroy({ children: true });
+    this.pathLegs.length = 0;
+
     const points = PATH_ORDER.map((id) => this.chapters.find((c) => c.id === id)).filter(
       (c): c is ResolvedChapter => !!c
     );
@@ -1540,24 +1672,66 @@ export class OverviewLayer {
     for (let i = 0; i < points.length - 1; i++) {
       const a = points[i].overview;
       const b = points[i + 1].overview;
-      // Both layers take the same geometry. See `PATH_DAY` / `PATH_NIGHT`.
-      for (const into of [this.pathGraphics, this.pathNight]) {
-        this.strokeDashedCurve(
-          into,
-          { x: a.x / scale, y: a.y / scale },
-          { x: b.x / scale, y: b.y / scale },
-          i % 2 === 0 ? 1 : -1
-        );
-      }
-    }
+      const p0 = { x: a.x / scale, y: a.y / scale };
+      const p1 = { x: b.x / scale, y: b.y / scale };
+      const bend = i % 2 === 0 ? 1 : -1;
 
-    // Dark against the light backdrop, and heavy enough to actually read at
-    // hub scale — the first pass was both too pale and too thin to survive
-    // being drawn under nine islands.
-    this.pathGraphics.stroke({ width: 3, color: PATH_DAY, alpha: 0.6 });
-    this.pathNight.stroke({ width: 3, color: PATH_NIGHT, alpha: 0.85 });
+      const container = new Container();
+      container.eventMode = "none";
+
+      const day = new Graphics();
+      const night = new Graphics();
+      day.eventMode = "none";
+      night.eventMode = "none";
+      this.strokeDashedCurve(day, p0, p1, bend);
+      this.strokeDashedCurve(night, p0, p1, bend);
+      // Dark against the light backdrop, and heavy enough to actually read at
+      // hub scale — the first pass was both too pale and too thin to survive
+      // being drawn under nine islands.
+      day.stroke({ width: 3, color: PATH_DAY, alpha: 0.6 });
+      night.stroke({ width: 3, color: PATH_NIGHT, alpha: 0.85 });
+      night.alpha = 0;
+      container.addChild(day, night);
+
+      let wipe: Graphics | null = null;
+      if (masked) {
+        // A rectangle laid along the chord and tall enough to clear the bow,
+        // pivoted at its leading edge so growing its x scale walks it out from
+        // the world this leg starts at.
+        const dx = p1.x - p0.x;
+        const dy = p1.y - p0.y;
+        const dist = Math.max(1, Math.hypot(dx, dy));
+        const height = dist * 0.32 + 24;
+        wipe = new Graphics();
+        wipe.rect(0, 0, dist + 12, height).fill(0xffffff);
+        wipe.pivot.set(6, height / 2);
+        wipe.position.set(p0.x, p0.y);
+        wipe.rotation = Math.atan2(dy, dx);
+        wipe.scale.x = 0;
+        container.addChild(wipe);
+        container.mask = wipe;
+      }
+
+      this.pathField.addChild(container);
+      this.pathLegs.push({ day, night, wipe, container });
+    }
   }
 
+  /**
+   * Drop the wipes once the opening has landed.
+   *
+   * A mask is a stencil pass, and nine of them every frame for the rest of the
+   * session is a cost with nothing left to buy.
+   */
+  private clearPathMasks(): void {
+    for (const leg of this.pathLegs) {
+      if (!leg.wipe) continue;
+      leg.container.mask = null;
+      leg.container.removeChild(leg.wipe);
+      leg.wipe.destroy();
+      leg.wipe = null;
+    }
+  }
   private strokeDashedCurve(
     into: Graphics,
     p0: { x: number; y: number },

@@ -118,7 +118,10 @@ export default function ChapterOverlay() {
         )}px, 0) translate(-50%, -100%)`;
         // The hovered world's own label steps aside for its card.
         const shown = onScreen && current !== content.id;
-        label.style.opacity = String(shown ? fade : 0);
+        // Multiplied by the world's own presence, so during the opening a
+        // label arrives with its island rather than hanging over empty sky
+        // waiting for it.
+        label.style.opacity = String(shown ? fade * at.presence : 0);
 
         if (current === content.id && card.current) {
           const flip = at.x + at.radius + CARD_GAP + CARD_WIDTH > width;
@@ -132,7 +135,7 @@ export default function ChapterOverlay() {
           );
 
           card.current.style.transform = `translate3d(${cx}px, ${cy}px, 0)`;
-          card.current.style.opacity = String(onScreen ? fade : 0);
+          card.current.style.opacity = String(onScreen ? fade * at.presence : 0);
 
           if (line.current) {
             // From the card's inner edge to the world's rim, not its centre — a
@@ -144,7 +147,7 @@ export default function ChapterOverlay() {
               String(Math.round(at.x + (flip ? at.radius * 0.45 : -at.radius * 0.45)))
             );
             line.current.setAttribute("y2", String(Math.round(at.y)));
-            line.current.style.opacity = String(onScreen ? fade * 0.9 : 0);
+            line.current.style.opacity = String(onScreen ? fade * at.presence * 0.9 : 0);
           }
         }
       }

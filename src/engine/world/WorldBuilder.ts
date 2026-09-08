@@ -55,6 +55,15 @@ const OVERVIEW_MAX_ZOOM = 3;
  * how much further from the middle the runner-up has to be before we are
  * willing to call one of them dominant. See `World.dominantChapter`.
  */
+/**
+ * Where "the opening has been seen" is remembered.
+ *
+ * `sessionStorage`, not `localStorage`: a visitor coming back next week
+ * should get the establishing shot again, and one who opened the page ten
+ * minutes ago in another tab of the same session should not.
+ */
+const INTRO_SEEN_KEY = "universe:intro-seen";
+
 const EXPLORE_ZOOM = 1.2;
 const EXPLORE_COVERAGE = 0.42;
 const EXPLORE_MARGIN = 1.6;
@@ -153,6 +162,9 @@ export class World {
   private zoomedByHand = false;
   /** The input count when the map was last framed. See `watchManualZoom`. */
   private framedZoomInputs = 0;
+
+  /** Detaches the skip listeners once the opening is over. */
+  private stopIntroSkip: (() => void) | null = null;
 
   /** Where on the map the camera sat before it flew into a world. */
   private overviewReturn = { x: 0, y: 0, zoom: 1 };
@@ -336,6 +348,44 @@ export class World {
     return true;
   }
 
+  /**
+   * Play the map's opening, if this session has not already had it.
+   *
+   * Called by whoever knows the loading screen has gone, rather than from the
+   * constructor — the establishing shot is worth nothing behind a curtain.
+   *
+   * @returns whether it actually started.
+   */
+  playIntro(): boolean {
+    if (this.destroyed) return false;
+    if (this.universe.state.mode !== "overview") return false;
+    if ((this.options.motionScale ?? 1) === 0) return false;
+    if (readFlag(INTRO_SEEN_KEY)) return false;
+
+    writeFlag(INTRO_SEEN_KEY);
+    this.overview.playIntro();
+
+    // Any click, any key. An opening that cannot be interrupted is an opening
+    // that is in the way, and the second thing a returning visitor does is
+    // reach for the map.
+    const skip = () => this.skipIntro();
+    window.addEventListener("keydown", skip);
+    window.addEventListener("pointerdown", skip);
+    this.stopIntroSkip = () => {
+      window.removeEventListener("keydown", skip);
+      window.removeEventListener("pointerdown", skip);
+      this.stopIntroSkip = null;
+    };
+    this.unbind.push(() => this.stopIntroSkip?.());
+    return true;
+  }
+
+  /** Land the opening now. Wired to any click or keypress while it runs. */
+  skipIntro(): void {
+    this.overview.skipIntro();
+    this.stopIntroSkip?.();
+  }
+
   /** Pull back out of the world you are in, onto the map. */
   leaveChapter(): boolean {
     return this.universe.leave();
@@ -370,7 +420,9 @@ export class World {
    * to, and a card left hanging at the last place its world was is worse than
    * no card at all.
    */
-  chapterScreen(id: string): { x: number; y: number; radius: number; topY: number } | null {
+  chapterScreen(
+    id: string
+  ): { x: number; y: number; radius: number; topY: number; presence: number } | null {
     if (this.chapters.isOpen) return null;
 
     const chapter = chapterById(id);
@@ -390,6 +442,8 @@ export class World {
       y: point.y,
       radius: chapter.overview.radius * this.engine.camera.getZoom(),
       topY: topPoint.y,
+      // Below 1 only during the opening. See `OverviewLayer.presenceOf`.
+      presence: this.overview.presenceOf(id),
     };
   }
 
@@ -485,6 +539,9 @@ export class World {
     } else {
       this.watchManualZoom();
       this.updateOverview(delta, view);
+      // The opening can end by running out as easily as by being interrupted,
+      // and either way the two window listeners have no further business.
+      if (this.stopIntroSkip && !this.overview.introPlaying) this.stopIntroSkip();
     }
   }
 
@@ -740,5 +797,25 @@ export class World {
     const view = this.engine.camera.getView();
     this.chapters.onCamera(view, this.cameraCentreX());
     this.options.onCamera?.(view.viewLeft, view.zoom);
+  }
+}
+
+/** Read a session flag, tolerating a browser that refuses storage entirely. */
+function readFlag(key: string): boolean {
+  try {
+    return window.sessionStorage.getItem(key) === "1";
+  } catch {
+    // Private windows and blocked site data throw on access rather than
+    // returning null. A visitor who cannot be remembered gets the opening
+    // every time, which is the harmless side of this to fail on.
+    return false;
+  }
+}
+
+function writeFlag(key: string): void {
+  try {
+    window.sessionStorage.setItem(key, "1");
+  } catch {
+    // See `readFlag`.
   }
 }

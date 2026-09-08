@@ -32,6 +32,7 @@ export default function PixiCanvas() {
     // means cleanup never tears down a half-initialised world.
     let world: World | null = null;
     let cancelled = false;
+    let introTimer = 0;
 
     const { setCamera, setLoadProgress, setTimeSnapshot, setUniverse } =
       useWorldStore.getState();
@@ -72,10 +73,16 @@ export default function PixiCanvas() {
       setViewport(instance.viewport);
       setLoadProgress(1, "Ready");
       setReady(true);
+      // After the curtain, not before: the loading screen dissolves over about
+      // half a second, and an establishing shot played behind it is an
+      // establishing shot nobody establishes anything with. The world decides
+      // whether it has already been seen this session.
+      introTimer = window.setTimeout(() => instance.playIntro(), 380);
     })();
 
     return () => {
       cancelled = true;
+      window.clearTimeout(introTimer);
       setReady(false);
       setWorld(null);
       world?.destroy();
