@@ -4,6 +4,7 @@ import dynamic from "next/dynamic";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import ChapterOverlay from "@/components/ui/ChapterOverlay";
+import ExploreButton from "@/components/ui/ExploreButton";
 import Sidebar from "@/components/ui/Sidebar";
 import FirstVisitHint from "@/components/ui/FirstVisitHint";
 import LoadingScreen from "@/components/ui/LoadingScreen";
@@ -64,6 +65,7 @@ export default function WorldStage() {
       <LoadingScreen />
       <div className="ui-layer absolute inset-0 z-10">
         <ChapterOverlay />
+        <ExploreButton />
         <WorldControls />
         <Sidebar />
         <ResumeLink />

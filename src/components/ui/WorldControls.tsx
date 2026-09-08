@@ -87,7 +87,7 @@ export default function WorldControls() {
             className="absolute bottom-5 left-1/2 -translate-x-1/2 font-sans text-[0.6875rem] tracking-wide select-none"
             style={{ color: "var(--ui-faint)" }}
           >
-            Scroll to zoom · drag to pan · click a world to enter
+            Scroll or ± to zoom · drag or arrows to pan · click a world to enter
           </motion.p>
         )}
       </AnimatePresence>

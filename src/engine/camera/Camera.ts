@@ -136,6 +136,23 @@ export class Camera {
   }
 
   /**
+   * One art pixel, in world units. The grid every zoom level has to land on.
+   *
+   * Exposed so a caller can *choose* a zoom that survives the quantisation
+   * rather than asking for an arbitrary one and being silently rounded. The
+   * zoom levels that survive are exactly `k / pixelSize` for whole `k`, and
+   * that is the whole of what makes a stepped zoom grid-safe.
+   */
+  getPixelSize(): number {
+    return this.pixelSize;
+  }
+
+  /** The zoom the easing is heading for, before quantisation. */
+  getTargetZoom(): number {
+    return this.targetZoom;
+  }
+
+  /**
    * Everything a parallax layer needs to place itself *against this camera*.
    *
    * `screenX` is the transform actually applied, after snapping — not the ideal

@@ -23,6 +23,14 @@ import {
  */
 const DRAG_THRESHOLD = 4;
 
+/**
+ * Wheel delta that adds up to one zoom level.
+ *
+ * A little under one mouse notch (~100), so a deliberate click of the wheel
+ * always moves a level, and a trackpad has to be pushed rather than brushed.
+ */
+const WHEEL_STEP = 80;
+
 /** What a wheel gesture does. See `CameraControllerOptions.wheelMode`. */
 export type WheelMode = "pan" | "zoom";
 
@@ -83,13 +91,16 @@ export interface CameraControllerOptions {
  * target, which is why a flick of a trackpad glides instead of jumping.
  *
  * # Keys
- * `A`/`D` and `←`/`→` pan, `W`/`S` and `↑`/`↓` pan vertically, `-`/`=` zoom out
- * and in, `R` resets. Panning by hand while the camera is following something
- * suspends the follow rather than cancelling it, and `R` hands control back —
- * so a look around during development doesn't leave the camera unhitched.
+ * `A`/`D` and `←`/`→` pan, `W`/`S` and `↑`/`↓` pan vertically, `-`/`=` (with or
+ * without Ctrl) zoom out and in a level at a time, `R` resets. Panning by hand
+ * while the camera is following something suspends the follow rather than
+ * cancelling it, and `R` hands control back.
  *
- * The zoom and reset keys are development tooling. DESIGN.md §Camera reserves
- * zoom for interactions; the finished world gives the visitor no zoom control.
+ * # Zoom is stepped, and that is not a limitation
+ * Every zoom the visitor can reach is one whole screen pixel per art pixel.
+ * See `zoomStep`: a fractional zoom does not survive the camera's own
+ * quantisation, so offering one only means asking for a level that does not
+ * exist and landing on the one that does.
  *
  * # Usage
  * ```ts
@@ -146,6 +157,9 @@ export class CameraController {
    * requested one and every comparison reads as a change.
    */
   private zoomInputCount = 0;
+
+  /** Wheel delta banked toward the next whole zoom level. See `onWheel`. */
+  private wheelTravel = 0;
 
   private dragging = false;
   private dragPointer = -1;
@@ -309,7 +323,6 @@ export class CameraController {
   /** Advance input and easing. `delta` is in seconds. */
   update(delta: number): void {
     this.applyPan(delta);
-    this.applyZoom(delta);
 
     this.camera.update(delta);
 
@@ -373,38 +386,39 @@ export class CameraController {
     this.camera.panBy(x * step, y * step);
   }
 
-  /** Push the camera's target zoom by however far the held zoom keys ask for. */
-  private applyZoom(delta: number): void {
-    const direction = this.axis(ZOOM_OUT_KEYS, ZOOM_IN_KEYS);
+  /**
+   * Move the zoom by whole grid levels.
+   *
+   * The camera renders at `step / pixelSize` for a whole `step` — anything
+   * else is silently rounded to it. A continuous zoom therefore spends most of
+   * its travel asking for levels that do not exist and then landing on the one
+   * that does, which reads as the map sticking and jumping. Stepping through
+   * the levels themselves means every zoom the visitor asks for is a zoom they
+   * get, and every one of them is one whole screen pixel per art pixel.
+   *
+   * Anchored on a screen point where one is given — the thing under the cursor
+   * is the thing you arrive at, which is the interaction the map is built on.
+   */
+  zoomStep(direction: number, screenX?: number, screenY?: number): void {
     if (direction === 0) return;
+
+    const pixelSize = this.camera.getPixelSize();
+    const level = Math.max(1, Math.round(pixelSize * this.camera.getTargetZoom()));
+    const target = Math.max(1, level + Math.sign(direction)) / pixelSize;
+    // Already at the end of the ramp: don't count it as an input, or the map
+    // would stop re-fitting itself on resize because someone leant on a key.
+    if (Math.abs(target - this.camera.getTargetZoom()) < 1e-6) return;
+
     this.zoomInputCount++;
 
-    // Exponential, so zooming in for a second and back out for a second lands
-    // exactly where it started.
-    this.camera.zoomBy(Math.exp(direction * this.settings.zoomSpeed * delta));
-  }
+    if (screenX === undefined || screenY === undefined) {
+      this.camera.zoomTo(target);
+      return;
+    }
 
-  /**
-   * Zoom towards a point on screen, keeping the world under it in place.
-   *
-   * The difference between a map you *steer* and a map you merely scale. Zoom
-   * that pivots on the centre of the frame pushes whatever you were reaching
-   * for out to the edge, so you chase it: zoom, pan back, zoom, pan back.
-   * Anchoring on the pointer means the thing under the cursor is the thing you
-   * arrive at, which is the entire interaction the overview is built on.
-   *
-   * Worked in world space rather than screen space: convert the anchor to a
-   * world point at the old zoom, apply the zoom, then shift the target by
-   * however far that world point moved. Doing it in screen deltas instead is
-   * subtly wrong at the bounds, where the clamp eats part of the move.
-   */
-  zoomAt(factor: number, screenX: number, screenY: number): void {
     const local = this.local(screenX, screenY);
-
     const before = this.camera.screenToWorld(local);
-    this.camera.zoomBy(factor);
-    // The camera has not re-rendered yet, so ask where the anchor *will* be at
-    // the zoom now being eased towards, not the one still on screen.
+    this.camera.zoomTo(target);
     const after = this.camera.screenToWorld(local);
 
     this.takeManualControl();
@@ -442,6 +456,16 @@ export class CameraController {
     // the key happens to be down.
     if (RESET_KEYS.has(event.code)) {
       if (!event.repeat) this.camera.reset();
+      event.preventDefault();
+      return;
+    }
+
+    // Zoom is a step, not a state: one level per press, repeats included so a
+    // held key walks the ramp rather than sliding through zooms that do not
+    // exist. Ctrl is deliberately not excluded — Ctrl +/- is the zoom gesture
+    // every visitor already knows, and on this canvas it should zoom the map.
+    if (ZOOM_IN_KEYS.has(event.code) || ZOOM_OUT_KEYS.has(event.code)) {
+      this.zoomStep(ZOOM_IN_KEYS.has(event.code) ? 1 : -1);
       event.preventDefault();
       return;
     }
@@ -521,14 +545,22 @@ export class CameraController {
   }
 
   private readonly onWheel = (event: WheelEvent): void => {
-    if (this.wheelMode === "zoom") {
+    // Ctrl-wheel is the browser's own page zoom and a trackpad pinch. Both
+    // mean "closer", and on this canvas that is the map's business.
+    if (this.wheelMode === "zoom" || event.ctrlKey) {
       if (event.deltaY === 0) return;
-      // Exponential, so a scroll in and the same scroll back out land exactly
-      // where they started — the same rule the zoom keys follow.
-      this.zoomInputCount++;
-      const factor = Math.exp(-event.deltaY * this.settings.wheelZoomSensitivity);
-      this.zoomAt(factor, event.clientX, event.clientY);
       event.preventDefault();
+
+      // Accumulated rather than acted on per event: one mouse notch is around
+      // 100 units and one trackpad glide is thirty events of three, and a
+      // level per event would send a trackpad across the whole ramp at a
+      // touch. The remainder is kept, so slow scrolling still gets there.
+      this.wheelTravel += event.deltaY;
+      while (Math.abs(this.wheelTravel) >= WHEEL_STEP) {
+        const direction = this.wheelTravel > 0 ? -1 : 1;
+        this.wheelTravel -= Math.sign(this.wheelTravel) * WHEEL_STEP;
+        this.zoomStep(direction, event.clientX, event.clientY);
+      }
       return;
     }
 

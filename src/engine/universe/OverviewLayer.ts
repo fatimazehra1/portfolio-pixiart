@@ -119,6 +119,45 @@ const HUB_SKY_DEFAULT: TimePhase = "sunset";
 /** How much glow an island carries with nothing pointing at it. */
 const GLOW_REST = 0.24;
 
+/**
+ * Progressive detail, as two zoom ramps.
+ *
+ * The map is one set of textures at every distance — nothing here is re-baked
+ * as you push in, and nothing should be. What changes is how much of it is
+ * *shown*: the smallest pieces on an island are three or four pixels across,
+ * which at map scale is a speck and a pixel of noise, and at close range is a
+ * stack of papers on a crate.
+ *
+ * So the small stuff is held back rather than drawn faintly and hoped for.
+ * `DETAIL_SMALL` is the ramp the existing small dressing rides in on;
+ * `DETAIL_CLOSE` is a second scatter that does not exist at all until one
+ * island is most of the frame. Nothing structural is on either ramp — the
+ * building, the planting and the grounding at its foot are what the island
+ * *is*, and an island that loses its own trees when you stand back is an
+ * island that changes shape.
+ */
+const DETAIL_SMALL = { from: 0.55, to: 1.05, floor: 0.35 } as const;
+const DETAIL_CLOSE = { from: 1.15, to: 1.7, floor: 0 } as const;
+/** Anything drawn no taller than this is small enough to hold back. */
+const SMALL_PIECE_HEIGHT = 8;
+
+/**
+ * The second scatter, which only exists once one island is most of the frame.
+ *
+ * Everything here grows rather than being built, and everything here is three
+ * to six pixels: at map scale it would be dirt on the screen, and at close
+ * range it is the difference between ground and a place somebody walks. Drawn
+ * from the shore's own `PropFactory` so it is the same grass and the same
+ * stones the rest of the world is planted with.
+ */
+const CLOSE_DRESSING: readonly DressingEntry[] = [
+  { what: "tallGrass", zone: "rim", count: 4 },
+  { what: "flower", zone: "apron", count: 3 },
+  { what: "rock", zone: "rim", count: 2 },
+  { what: "tallGrass", zone: "path", count: 2 },
+  { what: "flower", zone: "path", count: 2 },
+];
+
 const BOB_PIXELS = 2;
 const BOB_PERIOD = [16, 27] as const;
 const DETAIL_SMOOTHING = 6;
@@ -246,6 +285,8 @@ interface Marker {
   body: Container;
   glow: Sprite;
   building: BuildingRenderer | null;
+  /** What fades in as the view pushes closer. See `DETAIL_SMALL`. */
+  detail: DetailPiece[];
   propViews: PropView[];
   /**
    * Everything on this island that takes the hour as a flat multiply — the
@@ -265,6 +306,15 @@ interface Marker {
   bobPhase: number;
   /** Marker-local y of whatever stands tallest — island, building, or landmark. */
   visualTop: number;
+}
+
+/** One piece of dressing, and the zoom band it resolves across. */
+interface DetailPiece {
+  node: Container;
+  from: number;
+  to: number;
+  /** Alpha below `from`. Zero for anything that simply is not there yet. */
+  floor: number;
 }
 
 /** Where whatever stands on an island meets its top face. */
@@ -327,6 +377,8 @@ export class OverviewLayer {
   private light: LightingState = HUB_FALLBACK_LIGHT;
   /** How far into the dark we are, 0–1. Drives the paths and the glow. */
   private night = 0;
+  /** Last zoom the detail ramps were resolved at. See `applyDetail`. */
+  private detailZoom = Number.NaN;
   private vignetteAlpha = HUB_SKY[HUB_SKY_DEFAULT].vignetteAlpha;
 
   constructor(options: OverviewLayerOptions) {
@@ -481,9 +533,10 @@ export class OverviewLayer {
     return marker.chapter.overview.y + marker.visualTop * this.pixelScaleValue;
   }
 
-  update(delta: number, _view: CameraView): void {
+  update(delta: number, view: CameraView): void {
     if (delta <= 0) return;
-    void _view;
+
+    this.applyDetail(view.zoom);
 
     this.elapsed += delta * this.motionScale;
 
@@ -522,6 +575,30 @@ export class OverviewLayer {
       }
 
       for (const view of marker.propViews) view.animate(this.elapsed);
+    }
+  }
+
+  /**
+   * Resolve the small dressing for how close the view is.
+   *
+   * Read off the camera rather than pushed in per chapter: how detailed the
+   * map looks is a property of *the view*, and nine chapters each told
+   * separately how far away they were is nine ways for the map to disagree
+   * with itself about one number.
+   */
+  private applyDetail(zoom: number): void {
+    if (Math.abs(zoom - this.detailZoom) < 0.0005) return;
+    this.detailZoom = zoom;
+
+    for (const marker of this.markers.values()) {
+      for (const piece of marker.detail) {
+        const t = clamp01((zoom - piece.from) / Math.max(0.0001, piece.to - piece.from));
+        const alpha = piece.floor + (1 - piece.floor) * t;
+        piece.node.alpha = alpha;
+        // A piece at zero alpha is still a sprite being transformed and
+        // batched every frame. Nine islands' worth is worth switching off.
+        piece.node.visible = alpha > 0.01;
+      }
     }
   }
 
@@ -737,6 +814,9 @@ export class OverviewLayer {
 
     this.release();
     this.build();
+    // The ramps are keyed on the last zoom they resolved at, and every node
+    // they were resolving is gone.
+    this.detailZoom = Number.NaN;
 
     for (const [id, hover] of state) {
       const marker = this.markers.get(id);
@@ -813,6 +893,7 @@ export class OverviewLayer {
       islandSprite.eventMode = "none";
       body.addChild(islandSprite);
       const lit: Container[] = [islandSprite];
+      const detail: DetailPiece[] = [];
 
       // Depth order inside an island is by baseline, not by insertion: a crate
       // in front of the building has to draw over it and a hedge behind it has
@@ -828,7 +909,23 @@ export class OverviewLayer {
       // Last of all, so the planting crosses in front of the building's lowest
       // rows rather than stopping politely at them.
       propViews.push(...this.scatterBase(chapter, island, foot, body));
-      propViews.push(...this.dressIsland(chapter, theme, island, foot, body, lit));
+      propViews.push(
+        ...this.dressIsland(chapter, theme, island, foot, body, lit, detail, {
+          plan: theme.dressing,
+          ramp: DETAIL_SMALL,
+          seed: 0x2d97,
+        })
+      );
+      // And again, closer in. A separate pass rather than a bigger first one
+      // because these have to be *absent* at map scale, not merely faint.
+      propViews.push(
+        ...this.dressIsland(chapter, theme, island, foot, body, lit, detail, {
+          plan: CLOSE_DRESSING,
+          ramp: DETAIL_CLOSE,
+          seed: 0x5f0b,
+          always: true,
+        })
+      );
       for (const view of propViews) lit.push(view.container);
 
       const container = new Container();
@@ -869,6 +966,7 @@ export class OverviewLayer {
         building,
         propViews,
         lit,
+        detail,
         target: 0,
         hover: 0,
         bobRate:
@@ -1102,13 +1200,21 @@ export class OverviewLayer {
     island: IsoIsland,
     foot: Foot,
     body: Container,
-    lit: Container[]
+    lit: Container[],
+    detail: DetailPiece[],
+    pass: {
+      plan: readonly DressingEntry[] | undefined;
+      ramp: { from: number; to: number; floor: number };
+      seed: number;
+      /** Put every piece on the ramp, whatever its size. */
+      always?: boolean;
+    }
   ): PropView[] {
     const views: PropView[] = [];
-    const plan = theme.dressing;
+    const plan = pass.plan;
     if (!plan || plan.length === 0) return views;
 
-    const rand = createRandom(seedOf(chapter.id) ^ 0x2d97);
+    const rand = createRandom(seedOf(chapter.id) ^ pass.seed);
     const { left, right } = island.topBounds;
     if (right <= left) return views;
 
@@ -1200,6 +1306,10 @@ export class OverviewLayer {
         const spot = place(entry, i, Math.max(1, pieceWidth >> 1), pieceHeight > 14);
         if (!spot) continue;
 
+        // Small enough to be noise at map scale, or on a pass that is close
+        // range by definition. Either way it rides in on a zoom ramp.
+        const ramped = pass.always || pieceHeight <= SMALL_PIECE_HEIGHT;
+
         const site = art ? this.siteArt.make(entry.what, accent) : null;
         if (site) {
           site.container.x = spot.x - island.topCenter.x - (site.width >> 1);
@@ -1207,6 +1317,7 @@ export class OverviewLayer {
           site.container.zIndex = spot.y;
           body.addChild(site.container);
           lit.push(site.container);
+          if (ramped) detail.push({ node: site.container, ...pass.ramp });
           continue;
         }
 
@@ -1215,6 +1326,7 @@ export class OverviewLayer {
           view.container.zIndex = spot.y;
           body.addChild(view.container);
           views.push(view);
+          if (ramped) detail.push({ node: view.container, ...pass.ramp });
         }
       }
     }

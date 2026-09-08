@@ -44,6 +44,21 @@ const BOTTOM_RESERVE = 12;
  */
 const LEFT_RESERVE = 280;
 
+/** How close the map may be pushed. A whole grid level, like every other. */
+const OVERVIEW_MAX_ZOOM = 3;
+
+/**
+ * When one world stops being a mark on a map and starts being a place.
+ *
+ * `EXPLORE_ZOOM` is how close you have to be at all; `EXPLORE_COVERAGE` is
+ * how much of the frame's half-span the world has to fill; `EXPLORE_MARGIN` is
+ * how much further from the middle the runner-up has to be before we are
+ * willing to call one of them dominant. See `World.dominantChapter`.
+ */
+const EXPLORE_ZOOM = 1.2;
+const EXPLORE_COVERAGE = 0.42;
+const EXPLORE_MARGIN = 1.6;
+
 export interface WorldOptions {
   host: HTMLElement;
   /** Starting time of day. */
@@ -402,7 +417,12 @@ export class World {
       // `showOverview`) so it has room to pan there, and fitting against that
       // padding would zoom the map out to make room for space nothing is
       // actually reserving.
-      this.camera.zoomTo(this.fitZoom(universeBounds()));
+      // Re-floored as well as re-framed: a taller window can earn a coarser
+      // pixel grid, and a floor computed against the old one is a floor on a
+      // level the camera can no longer render.
+      const fit = this.gridZoom(this.fitZoom(universeBounds()));
+      this.camera.setZoomRange(fit, OVERVIEW_MAX_ZOOM);
+      this.camera.zoomTo(fit);
       this.framedZoomInputs = this.camera.zoomInputs;
     }
     this.options.onResize?.(size);
@@ -570,11 +590,13 @@ export class World {
       width: bounds.width + LEFT_RESERVE / zoom,
       height: bounds.height + BOTTOM_RESERVE / zoom,
     });
-    // Below 1, so it is possible to stand far enough back to see the whole map.
-    // The floor has to clear `fitZoom` on a short, wide window — clamped above
-    // it, the opening frame is the clamp's, not the fit's, and the map opens
-    // with its outermost worlds cut off.
-    this.camera.setZoomRange(0.35, 3);
+    // The floor *is* the fit, snapped down to a whole grid level: there is no
+    // reason to stand further back than "the whole archipelago, framed", and
+    // letting the visitor do it is how a map gets lost in the middle of an
+    // empty screen. Snapped down rather than to nearest so the level is never
+    // tighter than the fit — and snapped at all because a fractional floor
+    // would be a fractional zoom, which is the one thing the grid forbids.
+    this.camera.setZoomRange(this.gridZoom(zoom), OVERVIEW_MAX_ZOOM);
     this.camera.setWheelMode("zoom");
     this.overview.setPresence(1);
     // A fresh arrival on the map is not a deliberate framing, so a resize may
@@ -584,7 +606,7 @@ export class World {
 
     if (opening) {
       const centre = universeCentre();
-      this.camera.zoomTo(zoom);
+      this.camera.zoomTo(this.gridZoom(zoom));
       this.framedZoomInputs = this.camera.zoomInputs;
       // Looking slightly left of and below the map's true centre — the
       // reserve is subtracted, not added, because a strip claimed on the
@@ -619,6 +641,82 @@ export class World {
     const usableWidth = Math.max(160, width - LEFT_RESERVE);
     const usableHeight = Math.max(120, height - BOTTOM_RESERVE);
     return Math.min(1, usableWidth / bounds.width, usableHeight / bounds.height);
+  }
+
+  /**
+   * The grid-safe zoom nearest `zoom`.
+   *
+   * See `CameraController.zoomStep` — the levels the camera can actually
+   * render are `k / pixelSize` for whole `k`, and a clamp that is not one of
+   * them is a clamp that puts the art off the pixel grid the moment you reach
+   * it.
+   *
+   * Nearest rather than rounded down, and that matters most for the floor. At
+   * a coarse grid the level below the fit can be half of it, and a floor there
+   * means the visitor can push the whole archipelago out to a smear in the
+   * middle of an empty screen. Nearest is also exactly what the camera already
+   * renders the fit as, so the opening frame is unchanged and the floor
+   * becomes "no further out than you started".
+   */
+  private gridZoom(zoom: number): number {
+    const pixelSize = Math.max(1, pixelScaleFor(this.engine.viewport.height));
+    return Math.max(1, Math.round(zoom * pixelSize)) / pixelSize;
+  }
+
+  /**
+   * The one world filling the frame, if exactly one is.
+   *
+   * The other half of "zoom toward a world and it resolves": past a certain
+   * closeness the map stops being a map and becomes a place you are standing
+   * in front of, and at that point the visitor should be offered the door
+   * rather than left to guess that the island is clickable.
+   *
+   * Three conditions, and all three are needed. Close enough that the map is
+   * no longer the subject; large enough in frame to be *the* subject; and
+   * clearly nearer the middle than whatever is second, because two islands
+   * abreast is a map, not an arrival.
+   *
+   * Returns screen coordinates, in CSS pixels from the canvas corner — the
+   * same currency `chapterScreen` deals in, and for the same reason: the
+   * interface draws the button, and the engine does not know it exists.
+   */
+  dominantChapter(): { id: string; x: number; y: number; radius: number } | null {
+    if (this.chapters.isOpen) return null;
+    if (this.universe.state.mode !== "overview") return null;
+
+    const zoom = this.camera.zoom;
+    if (zoom < EXPLORE_ZOOM) return null;
+
+    const { width, height } = this.engine.viewport;
+    const centreX = (width + LEFT_RESERVE) / 2;
+    const centreY = height / 2;
+    const reach = Math.min(width, height) / 2;
+
+    let best: { id: string; x: number; y: number; radius: number; distance: number } | null = null;
+    let runnerUp = Infinity;
+
+    for (const chapter of this.universe.all) {
+      const at = this.chapterScreen(chapter.id);
+      if (!at) continue;
+      // Big enough in frame to be the subject rather than one of nine.
+      if (at.radius < reach * EXPLORE_COVERAGE) continue;
+
+      const distance = Math.hypot(at.x - centreX, at.y - centreY);
+      if (!best || distance < best.distance) {
+        if (best) runnerUp = Math.min(runnerUp, best.distance);
+        best = { id: chapter.id, x: at.x, y: at.y, radius: at.radius, distance };
+      } else {
+        runnerUp = Math.min(runnerUp, distance);
+      }
+    }
+
+    if (!best) return null;
+    // Off-centre enough that it is not really what you are looking at.
+    if (best.distance > reach) return null;
+    // Something else is nearly as central: that is two worlds, not one.
+    if (runnerUp < best.distance * EXPLORE_MARGIN) return null;
+
+    return { id: best.id, x: best.x, y: best.y, radius: best.radius };
   }
 
   /** The world x at the middle of the view. */

@@ -54,22 +54,8 @@ export interface CameraSettings {
   followSmoothing: number;
   /** Multiplier on horizontal wheel deltas. */
   wheelSensitivity: number;
-  /**
-   * Multiplier on vertical wheel deltas when the wheel is zooming.
-   *
-   * Small, and it has to be: wheel deltas arrive in the dozens or hundreds and
-   * this is an exponent. What it buys is a map you approach by scrolling, which
-   * is how "zoom toward a world" reads on a trackpad.
-   */
-  wheelZoomSensitivity: number;
   /** How hard zoom chases its target. Slower than panning; zoom is a statement. */
   zoomSmoothing: number;
-  /**
-   * How fast a held zoom key travels, as an exponential rate. Zoom is
-   * multiplicative — 1 → 2 has to feel like 2 → 4 — so this is e^(rate·dt) per
-   * second rather than a flat number of zoom units.
-   */
-  zoomSpeed: number;
   minZoom: number;
   maxZoom: number;
   /**
@@ -84,9 +70,7 @@ export const CAMERA_SETTINGS: CameraSettings = {
   smoothing: 7.5,
   followSmoothing: 4.5,
   wheelSensitivity: 1,
-  wheelZoomSensitivity: 0.0016,
   zoomSmoothing: 5,
-  zoomSpeed: 1.1,
   /**
    * The floor is 0.5 rather than 1 now, and that is the overview's doing.
    *
