@@ -110,6 +110,14 @@ export interface IsoThemeEntry {
    * `PropFactory` second — see `OverviewLayer.dressIsland`.
    */
   dressing?: readonly DressingEntry[];
+  /**
+   * A second scatter, drawn only once one island is most of the frame.
+   *
+   * Kept per chapter rather than shared for the same reason `dressing` is: a
+   * handful of wildflowers is right on a meadow and wrong on an asphalt road,
+   * and the close view is precisely where that starts to be noticeable.
+   */
+  closeDressing?: readonly DressingEntry[];
 }
 
 /**
@@ -162,13 +170,22 @@ export const ISO_THEME: Readonly<Record<string, IsoThemeEntry>> = {
     heightFactor: 1.0,
     // A campus you are let into: a path to the door, seats beside it, and the
     // flag over the entrance the landmark always carried.
-    ground: { patches: 0.28, path: 5 },
+    // A courtyard, not a yard: brick underfoot and the beds planted rather
+    // than grown. Barely any bare earth — this is ground that was laid.
+    ground: {
+      patches: 0.08,
+      path: 7,
+      surface: "brick",
+      paving: [0xc98f6a, 0xb0764f, 0x91603f, 0x6d4730],
+      dirt: [0xd9c08a, 0xbfa471, 0xa08757, 0x7d6942],
+    },
     dressing: [
-      ...at("yard", ["flagpole", 1], ["bench", 2], ["bush", 2]),
-      ...at("path", ["bench", 1], ["bush", 2], ["flower", 2]),
-      ...at("apron", ["flower", 2], ["bush", 1]),
-      ...at("rim", ["bush", 3], ["tallGrass", 3]),
+      ...at("yard", ["flagpole", 1], ["noticeBoard", 1], ["bench", 1]),
+      ...at("path", ["bench", 1], ["planter", 1]),
+      ...at("apron", ["gardenPatch", 2], ["bench", 1]),
+      ...at("rim", ["hedge", 2], ["bush", 2], ["tallGrass", 2]),
     ],
+    closeDressing: [...at("apron", ["flower", 3]), ...at("rim", ["tallGrass", 3])],
   },
   freelance: {
     // A meadow desk — soft green, small.
@@ -190,19 +207,28 @@ export const ISO_THEME: Readonly<Record<string, IsoThemeEntry>> = {
     heightFactor: 0.95,
     // A desk somebody works from: a bed of vegetables, pots by the door, and
     // just enough fence to say the garden has an edge.
-    ground: { patches: 0.34, path: 4 },
+    // Grass, with a run of flagstones laid through it by somebody who was not
+    // a paver. The gaps in it are the point.
+    ground: {
+      patches: 0.14,
+      path: 5,
+      surface: "flagstone",
+      paving: [0xb9b3a4, 0x9d9686, 0x7e786a, 0x5e594e],
+      dirt: [0xb9c184, 0x9da76a, 0x818b53, 0x62693d],
+    },
     dressing: [
-      ...at("yard", ["pottedPlant", 2], ["gardenPatch", 1], ["bush", 1]),
-      ...at("path", ["fence", 2], ["flower", 2]),
-      ...at("apron", ["gardenPatch", 1], ["flower", 3], ["fence", 1]),
+      ...at("yard", ["pottedPlant", 2], ["washingLine", 1], ["gardenPatch", 1]),
+      ...at("path", ["picketFence", 2], ["flower", 2]),
+      ...at("apron", ["gardenPatch", 1], ["picketFence", 1], ["flower", 2]),
       ...at("rim", ["bush", 3], ["tallGrass", 3]),
     ],
+    closeDressing: [...at("apron", ["flower", 3]), ...at("rim", ["tallGrass", 3])],
   },
   planet01: {
-    // Warm city stone — the biggest world. Was a cool blue that read as
-    // water from a distance, top *and* underside; moved both onto the same
-    // rock/earth family as every other island.
-    topPalette: [0xd8cdb8, 0xbcae94, 0x9c8d72, 0x7c6e56],
+    // Poured concrete, not city stone. This is the one island whose ground is
+    // manufactured, and a warm sandstone under a steel-and-glass tower read as
+    // the same earth every other island is made of.
+    topPalette: [0xd6d4cd, 0xb6b3aa, 0x94908a, 0x726f6a],
     rockPalette: [0x8c8478, 0x6e675c, 0x534d44, 0x38332c],
     undersideLength: 60,
     elongation: 1.1,
@@ -228,13 +254,25 @@ export const ISO_THEME: Readonly<Record<string, IsoThemeEntry>> = {
     heightFactor: 1.35,
     // A city block: lamps along the kerb, planters between them, bollards
     // where the paving stops. Nothing grows here that was not planted.
-    ground: { patches: 0.2, path: 7 },
+    // A road, and that is the only word for it: asphalt with a broken centre
+    // line, kerbed on both sides. `paving` reads differently here than
+    // elsewhere — see the `asphalt` case in `IsoIslandFactory.surfaceColor`:
+    // the first entry is the *line*, the middle two the surface, the last the
+    // kerb.
+    ground: {
+      patches: 0.05,
+      path: 9,
+      surface: "asphalt",
+      paving: [0xf0ece0, 0x4c4c4f, 0x414144, 0x8e8b84],
+      dirt: [0xc4c1b8, 0xa8a49b, 0x8b877f, 0x6d6a64],
+    },
     dressing: [
-      ...at("yard", ["bollard", 3], ["planter", 1], ["streetLamp", 1]),
-      ...at("path", ["streetLamp", 1], ["planter", 1], ["bollard", 3]),
-      ...at("apron", ["bollard", 2], ["bench", 1]),
-      ...at("rim", ["bush", 2], ["planter", 1], ["rock", 2]),
+      ...at("yard", ["lampPost", 1], ["bollard", 3], ["planter", 1]),
+      ...at("path", ["roadSign", 1], ["lampPost", 1], ["bollard", 2]),
+      ...at("apron", ["parkedCar", 1], ["bollard", 2], ["planter", 1]),
+      ...at("rim", ["planter", 2], ["bollard", 2], ["hedge", 1]),
     ],
+    closeDressing: [...at("rim", ["bollard", 2]), ...at("path", ["planter", 1])],
   },
   // Matches `ChapterConfig.id` in the registry, which is spelled with one
   // "t" — a mismatch here silently falls back to `DEFAULT_ISO_THEME` (no
@@ -257,13 +295,22 @@ export const ISO_THEME: Readonly<Record<string, IsoThemeEntry>> = {
     lightBoost: 1.3,
     // Shut and formal: a paved forecourt, clipped hedges, and a line of
     // bollards making it clear where you may and may not drive.
-    ground: { patches: 0.14, path: 8 },
+    // Polished slabs, laid square, with almost nothing growing between them.
+    // The only island where the ground itself is trying to look expensive.
+    ground: {
+      patches: 0.04,
+      path: 8,
+      surface: "paving",
+      paving: [0xd2d6dc, 0xb4b9c1, 0x969ba4, 0x747982],
+      dirt: [0xbcc1c8, 0x9fa4ad, 0x848992, 0x686d76],
+    },
     dressing: [
-      ...at("yard", ["hedge", 2], ["bollard", 2], ["streetLamp", 1]),
-      ...at("path", ["bollard", 3], ["hedge", 1]),
-      ...at("apron", ["hedge", 1], ["bollard", 2]),
-      ...at("rim", ["hedge", 2], ["rock", 2], ["bush", 2]),
+      ...at("yard", ["hedge", 2], ["lampPost", 1], ["flagpole", 1]),
+      ...at("path", ["bollard", 3], ["barrierGate", 1]),
+      ...at("apron", ["hedge", 2], ["bollard", 2]),
+      ...at("rim", ["hedge", 3], ["lowWall", 1]),
     ],
+    closeDressing: [...at("rim", ["hedge", 1]), ...at("apron", ["bollard", 1])],
   },
   naturetech: {
     // Green construction earth — the current work, warm and active.
@@ -291,17 +338,28 @@ export const ISO_THEME: Readonly<Record<string, IsoThemeEntry>> = {
     heightFactor: 1.15,
     // A live site: pallets and stacked materials where the work is, cones and
     // fencing where it is not, and one machine parked half in the way.
-    ground: { patches: 0.42, path: 6 },
+    // Churned dirt with gravel run over it, which is what ground looks like
+    // while it is being built on rather than after.
+    ground: {
+      patches: 0.52,
+      path: 7,
+      surface: "gravel",
+      paving: [0xa39a86, 0x877e6c, 0x6b6354, 0x4e483d],
+      dirt: [0xa8a06c, 0x8b8456, 0x6f6942, 0x524d30],
+    },
     dressing: [
-      ...at("yard", ["pallet", 2], ["materialStack", 1], ["crate", 2], ["cone", 2]),
-      ...at("path", ["cone", 2], ["fence", 2], ["crate", 1]),
-      ...at("apron", ["machine", 1], ["pallet", 1], ["cone", 2], ["fence", 2]),
-      ...at("rim", ["fence", 2], ["bush", 2], ["tallGrass", 3], ["rock", 2]),
+      ...at("yard", ["scaffold", 1], ["pallet", 2], ["cone", 2], ["materialStack", 1]),
+      ...at("path", ["cone", 2], ["siteFence", 2], ["crate", 1]),
+      ...at("apron", ["cementMixer", 1], ["floodlight", 1], ["pallet", 1], ["cone", 1]),
+      ...at("rim", ["siteFence", 2], ["tallGrass", 3], ["bush", 2]),
     ],
+    closeDressing: [...at("path", ["cone", 2]), ...at("rim", ["tallGrass", 2])],
   },
   bbit: {
-    // Purple stone — study, upright, quiet.
-    topPalette: [0xd6c6e6, 0xb9a0cf, 0x9a7fb2, 0x7c6194],
+    // Pale purple-grey. The old palette was a lavender strong enough to be the
+    // loudest thing on the board, on the one island whose whole argument is
+    // that it is quiet.
+    topPalette: [0xd8d2e2, 0xbcb4cc, 0x9d95b0, 0x7e7692],
     rockPalette: [0x6f6178, 0x584d61, 0x413849, 0x2c2632],
     undersideLength: 40,
     elongation: 0.7,
@@ -322,12 +380,22 @@ export const ISO_THEME: Readonly<Record<string, IsoThemeEntry>> = {
     // and the one thing about this island worth reading; a full yard of hedges
     // and walls around it turned into a dark ring competing with it. A path, a
     // bench at the door, three hedges. That is the whole campus.
-    ground: { patches: 0.16, path: 5 },
+    // Stone paving, older and softer than Vaultsys's, and a good deal more of
+    // it left alone.
+    ground: {
+      patches: 0.08,
+      path: 6,
+      surface: "paving",
+      paving: [0xc9c3d2, 0xaba4b8, 0x8d869c, 0x6d667c],
+      dirt: [0xc0b9cc, 0xa39bb0, 0x867e94, 0x685f78],
+    },
     dressing: [
-      ...at("yard", ["bench", 1], ["hedge", 1]),
-      ...at("path", ["hedge", 1]),
-      ...at("rim", ["hedge", 1], ["tallGrass", 2]),
+      ...at("yard", ["bench", 1], ["campusLamp", 1]),
+      ...at("path", ["hedge", 1], ["lowWall", 1]),
+      ...at("apron", ["bench", 1], ["hedge", 1]),
+      ...at("rim", ["hedge", 2], ["tallGrass", 2]),
     ],
+    closeDressing: [...at("rim", ["tallGrass", 2]), ...at("apron", ["flower", 1])],
   },
   workshop: {
     // Dark earth and rust — a bench, half-finished.
@@ -346,13 +414,22 @@ export const ISO_THEME: Readonly<Record<string, IsoThemeEntry>> = {
     heightFactor: 0.85,
     // A yard that has been added to more than once: a bench outside because
     // the bay is full, a rack of tools, and everything else in a pile.
-    ground: { patches: 0.46, path: 5 },
+    // Packed dirt with gravel trodden into it, which is what a yard becomes
+    // when nobody has ever decided what it is.
+    ground: {
+      patches: 0.44,
+      path: 6,
+      surface: "gravel",
+      paving: [0xa89880, 0x8a7a63, 0x6d5f4c, 0x4e4335],
+      dirt: [0xbba178, 0x9c8460, 0x7d6a4b, 0x5c4d36],
+    },
     dressing: [
-      ...at("yard", ["workbench", 1], ["toolRack", 1], ["crate", 2], ["stool", 1]),
-      ...at("path", ["crate", 1], ["scrapPile", 1], ["papers", 1]),
-      ...at("apron", ["scrapPile", 1], ["pallet", 1], ["crate", 1]),
-      ...at("rim", ["rock", 3], ["bush", 2], ["tallGrass", 2]),
+      ...at("yard", ["workbench", 1], ["toolRack", 1], ["cableSpool", 1], ["crate", 2]),
+      ...at("path", ["crate", 1], ["scrapPile", 1], ["tarp", 1]),
+      ...at("apron", ["scrapPile", 1], ["pallet", 1], ["cableSpool", 1]),
+      ...at("rim", ["rock", 3], ["tallGrass", 2]),
     ],
+    closeDressing: [...at("path", ["papers", 2]), ...at("rim", ["rock", 2])],
   },
   ideas: {
     // Dark earth, warmer — a tent, arrivals unannounced.
@@ -374,13 +451,21 @@ export const ISO_THEME: Readonly<Record<string, IsoThemeEntry>> = {
     heightFactor: 0.9,
     // Somebody camped here this morning: stools pulled up, crates for a
     // table, paper everywhere, and a second sign nobody has read.
-    ground: { patches: 0.4, path: 4 },
+    // Rough dirt and nothing else. No surface was ever laid here; the path is
+    // where people walked, and that is the whole of the groundworks.
+    ground: {
+      patches: 0.48,
+      path: 4,
+      surface: "dirt",
+      dirt: [0xc9a670, 0xab8a56, 0x8a6e42, 0x66502f],
+    },
     dressing: [
-      ...at("yard", ["stool", 2], ["crate", 2], ["papers", 2]),
-      ...at("path", ["papers", 2], ["signPost", 1], ["crate", 1]),
-      ...at("apron", ["papers", 1], ["stool", 1], ["signPost", 1]),
-      ...at("rim", ["tallGrass", 3], ["bush", 2], ["flower", 2]),
+      ...at("yard", ["sack", 2], ["ropeCoil", 1], ["oilLantern", 1], ["stool", 1]),
+      ...at("path", ["stake", 2], ["handSign", 1]),
+      ...at("apron", ["sack", 1], ["stake", 2], ["papers", 1]),
+      ...at("rim", ["tallGrass", 3], ["bush", 2]),
     ],
+    closeDressing: [...at("path", ["papers", 2]), ...at("rim", ["tallGrass", 3])],
   },
   lighthouse: {
     // Pale stone — the beacon, always lit.
@@ -410,13 +495,21 @@ export const ISO_THEME: Readonly<Record<string, IsoThemeEntry>> = {
     lightBoost: 1.35,
     // A shore, not a garden: rock, coarse grass, and a run of jetty posts
     // coming up out of the ground toward the door.
-    ground: { patches: 0.36, path: 5 },
+    // A shore: bleached rock, coarse grass, and a jetty coming up out of the
+    // water toward the door. Nothing here was laid, only weathered.
+    ground: {
+      patches: 0.32,
+      path: 5,
+      surface: "dirt",
+      dirt: [0xcfc7b3, 0xb2ab98, 0x948e7d, 0x726d5f],
+    },
     dressing: [
-      ...at("yard", ["jettyPost", 2], ["rock", 2], ["crate", 1]),
-      ...at("path", ["jettyPost", 3], ["rock", 2], ["driftwood", 1]),
-      ...at("apron", ["rock", 2], ["driftwood", 1], ["tallGrass", 2]),
-      ...at("rim", ["rock", 3], ["tallGrass", 3], ["bush", 2]),
+      ...at("yard", ["jettyPost", 2], ["buoy", 1], ["rock", 2]),
+      ...at("path", ["jetty", 1], ["jettyPost", 3], ["rock", 1]),
+      ...at("apron", ["buoy", 1], ["driftwood", 2], ["rock", 2]),
+      ...at("rim", ["rock", 3], ["tallGrass", 3]),
     ],
+    closeDressing: [...at("rim", ["tallGrass", 3], ["rock", 2])],
   },
 };
 

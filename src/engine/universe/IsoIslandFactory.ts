@@ -136,9 +136,44 @@ export interface IsoGround {
   dirt?: readonly number[];
   /** How much of the cap goes to dirt patches, 0–1. */
   patches?: number;
-  /** A worn path from the front edge up to the middle, and how wide it runs. */
+  /** A route from the front edge up to the middle, and how wide it runs. */
   path?: number;
+  /**
+   * What that route is made of.
+   *
+   * The single strongest per-island cue there is, and the cheapest. Nine
+   * islands each with a worn dirt track read as nine of the same place
+   * whatever is standing on them; a brick walk, a road with a centre line and
+   * a run of flagstones read as a campus, a city and a garden before you have
+   * looked at the building at all.
+   */
+  surface?: GroundSurface;
+  /** The route's own palette, light to dark. Falls back to `dirt`. */
+  paving?: readonly number[];
 }
+
+/**
+ * What a route across an island is made of.
+ *
+ * Each is drawn into the cap by `paintGround`, out of the same palette and on
+ * the same pixel grid as everything else — these are patterns in the surface,
+ * not textures laid over it.
+ */
+export type GroundSurface =
+  /** Worn earth. The original, and still right for anything unmade. */
+  | "dirt"
+  /** Loose stone: two tones, scattered per pixel. */
+  | "gravel"
+  /** Regular rectangular slabs with joints. Civic. */
+  | "paving"
+  /** Staggered courses, half-offset row to row. */
+  | "brick"
+  /** Dark, near-flat, with a dashed centre line. A road. */
+  | "asphalt"
+  /** Irregular flags of varying tone. A garden walk. */
+  | "flagstone"
+  /** Near-flat with expansion joints. A plaza. */
+  | "concrete";
 
 /** Light comes from the upper-left, consistently, across every island. */
 const LIGHT_X = -1;
@@ -375,6 +410,83 @@ export function generateIsoIsland(params: IsoIslandParams): IsoIsland {
   const dirt = ground?.dirt ?? topPalette.map((c) => mixColor(c, 0x8a7256, 0.55));
   const patchAmount = ground?.patches ?? 0;
   const pathWidth = ground?.path ?? 0;
+  const pathSurface: GroundSurface = ground?.surface ?? "dirt";
+  const paving = ground?.paving ?? dirt;
+
+  /** A stable 0–1 hash for a cell, so a flagstone is the same flagstone twice. */
+  const cellNoise = (a: number, b: number): number => {
+    const n = Math.sin(a * 127.1 + b * 311.7 + edgeSeed * 0.0007) * 43758.5453;
+    return n - Math.floor(n);
+  };
+
+  /**
+   * One pixel of the route, by what the route is made of.
+   *
+   * `depth` runs 0 at the back of the cap to 1 at the front, and `across` is
+   * -1 to 1 over the width of the route — the two coordinates every surface
+   * here needs, and neither of them the texture's own. Working in the route's
+   * frame rather than the island's is what lets brick courses stay square to
+   * the walk and a centre line stay in the centre of it, on a path that bends.
+   */
+  const surfaceColor = (
+    x: number,
+    y: number,
+    across: number,
+    edge: boolean
+  ): number => {
+    const last = paving.length - 1;
+    switch (pathSurface) {
+      case "gravel": {
+        // Loose stone: no structure at all, just size. Four tones scattered
+        // per pixel, which at this scale is the difference between gravel and
+        // a flat grey stripe.
+        const n = cellNoise(x, y);
+        return paving[Math.min(last, Math.floor(n * paving.length))];
+      }
+      case "paving": {
+        // Slabs five across and three deep, with a joint on two sides.
+        const joint = x % 5 === 0 || y % 3 === 0;
+        if (joint) return paving[last];
+        return paving[cellNoise(Math.floor(x / 5), Math.floor(y / 3)) > 0.6 ? 1 : 0];
+      }
+      case "brick": {
+        // Courses two deep, half-offset row to row. The offset is the whole
+        // read: without it this is paving with a finer joint.
+        const course = Math.floor(y / 2);
+        const shift = (course % 2) * 2;
+        const joint = y % 2 === 0 || (x + shift) % 4 === 0;
+        if (joint) return paving[last];
+        return paving[cellNoise(Math.floor((x + shift) / 4), course) > 0.5 ? 1 : 0];
+      }
+      case "asphalt": {
+        // Dark and near-flat, and then the one thing that makes it a road: a
+        // broken centre line. Three on, three off.
+        if (Math.abs(across) < 0.12 && y % 6 < 3) return paving[0];
+        if (edge) return paving[last];
+        return paving[cellNoise(x, y) > 0.82 ? 2 : 1];
+      }
+      case "flagstone": {
+        // Irregular: cells of four by three, each its own tone, with gaps
+        // wide enough for something to grow in.
+        const cx0 = Math.floor(x / 4);
+        const cy0 = Math.floor(y / 3);
+        const n = cellNoise(cx0, cy0);
+        if (n > 0.78) return paving[last]; // a gap where no flag was laid
+        if (x % 4 === 0 || y % 3 === 0) return paving[last];
+        return paving[n > 0.45 ? 1 : 0];
+      }
+      case "concrete": {
+        // Almost nothing, which is the point: a poured slab with expansion
+        // joints, and no texture between them.
+        if (x % 9 === 0 || y % 7 === 0) return paving[Math.min(last, 2)];
+        return paving[cellNoise(x, y) > 0.94 ? 1 : 0];
+      }
+      default: {
+        const worn = edge ? 2 : ditherIndex(0.62, paving.length, x, y);
+        return paving[Math.min(last, worn)];
+      }
+    }
+  };
 
   const inCap = (x: number, y: number): boolean =>
     x >= left && x <= right && topTop[x] >= 0 && y >= topTop[x] && y <= topBottom[x];
@@ -422,17 +534,21 @@ export function generateIsoIsland(params: IsoIslandParams): IsoIsland {
           }
         }
 
-        // The path: a band up the middle of the cap from the front edge,
-        // bent a little so it reads as walked rather than surveyed. It stops
+        // The route: a band up the middle of the cap from the front edge,
+        // bent a little so it reads as laid rather than surveyed. It stops
         // short of the back rim — a path that runs off the far edge of an
         // island in the sky is a path to nowhere.
+        //
+        // Made ones do not wander. A brick walk or a road bends because the
+        // ground did, not because somebody wore it in, so anything but dirt
+        // and gravel takes a fraction of the bend and holds a steadier width.
         if (pathWidth > 0 && depth > 0.12) {
-          const bend = pathBend * Math.sin(depth * Math.PI) * halfSpan * 0.18;
-          const half = pathWidth * (0.55 + 0.45 * depth);
+          const laid = pathSurface !== "dirt" && pathSurface !== "gravel";
+          const bend = pathBend * Math.sin(depth * Math.PI) * halfSpan * (laid ? 0.06 : 0.18);
+          const half = pathWidth * (laid ? 0.85 + 0.15 * depth : 0.55 + 0.45 * depth);
           const offset = Math.abs(x - cx - bend);
           if (offset <= half) {
-            const worn = offset > half - 1 ? 2 : ditherIndex(0.62, dirt.length, x, y);
-            set(x, y, dirt[Math.min(dirt.length - 1, worn)]);
+            set(x, y, surfaceColor(x, y, (x - cx - bend) / half, offset > half - 1));
           }
         }
 

@@ -67,6 +67,41 @@ const MATERIALS = {
   cone: { base: 0xe89a5e, light: 0xf7bd8a, dark: 0xbb6f3a, trim: 0xf7f1e4 },
   machine: { base: 0xe8bd63, light: 0xf7d894, dark: 0xb58c38, trim: 0x6c7c88 },
   mast: { base: 0x8b8680, light: 0xa8a39b, dark: 0x66625b, trim: "accent" },
+
+  // --- Materials that belong to one era and not the others ------------------
+  //
+  // The list above is what any island might have lying about. These are what
+  // separates a 2021 campus from a 2023 city block: painted softwood and
+  // pinned paper against brushed steel and safety glass. An island's era is
+  // carried by what its dressing is *made of* at least as much as by what
+  // shape the dressing is.
+
+  /** Notice boards and their pinned paper. */
+  board: { base: 0xb5936a, light: 0xd0b189, dark: 0x8a6a4a, trim: 0xf0e9d6 },
+  /** Tarpaulin, and anything else stretched over something else. */
+  canvas: { base: 0x6f8f96, light: 0x92b0b6, dark: 0x50686e, trim: 0xb5936a },
+  /** Hemp. Old, and the only thing holding half of Ideas together. */
+  rope: { base: 0xc9ab77, light: 0xe2c79c, dark: 0x9a7e52, trim: 0x8a6a4a },
+  /** Weathered softwood with paint on it, applied by hand and some time ago. */
+  handmade: { base: 0xb09a76, light: 0xcbb897, dark: 0x87755a, trim: 0xd8734f },
+  /** Sacking. */
+  sack: { base: 0xc4ab7e, light: 0xdcc79e, dark: 0x94805a, trim: 0x8a8272 },
+  /** Lamp brass, with a flame for a trim. */
+  brass: { base: 0xc9a44e, light: 0xe6c47a, dark: 0x94742f, trim: 0xffd9a0 },
+  /** Painted softwood: fences, posts, anything domestic. */
+  paintedWood: { base: 0xe4dccc, light: 0xfaf4e6, dark: 0xb0a897, trim: 0xc9ab77 },
+  /** Steel and safety glass. The modern lamp, and nothing before 2020. */
+  steel: { base: 0x98a2ac, light: 0xc2cad2, dark: 0x6c747d, trim: 0xffe9a8 },
+  /** Signage: enamelled panel, white legend. */
+  signage: { base: 0x3f6fa0, light: 0x6c99c6, dark: 0x2c4e73, trim: 0xf7f1e4 },
+  /** Hazard paint on a barrier arm. */
+  barrier: { base: 0xe8e2d4, light: 0xfdf8ee, dark: 0xb0aa9c, trim: 0xd8734f },
+  /** A work light, and the only genuinely white light on the board. */
+  floodlight: { base: 0x8b8680, light: 0xa8a39b, dark: 0x66625b, trim: 0xfff2c0 },
+  /** Automotive paint and window glass. */
+  car: { base: 0xc25b52, light: 0xdd8079, dark: 0x8e3d36, trim: 0x9fd0e0 },
+  /** Marine paint, the loudest thing on the coast. */
+  marine: { base: 0xd8734f, light: 0xea9670, dark: 0xa45234, trim: 0xf0e9d6 },
 } satisfies Record<string, SiteMaterial>;
 
 type MaterialName = keyof typeof MATERIALS;
@@ -176,6 +211,108 @@ export const SITE: Record<string, SitePiece> = {
   jettyPost: {
     material: "driftwood",
     rows: ["oo#", "###", "oX#", "oX#", "oX#", "oX#", "###"],
+  },
+
+  // --- A campus, 2021 ------------------------------------------------------
+  noticeBoard: {
+    material: "board",
+    rows: ["ooooooo#", "o*****X#", "o**.**X#", "o*****X#", "oXXXXXX#", "########", ".oX#oX#.", ".##.##.."],
+  },
+
+  // --- A workshop ----------------------------------------------------------
+  cableSpool: {
+    material: "timber",
+    rows: [".oooo#.", "o*XX*#.", "oX**X##", "o*XX*#.", ".####.."],
+  },
+  tarp: {
+    material: "canvas",
+    rows: ["...ooo..", "..oXXX#.", ".oXXXX##", "oXXXXX##", "########"],
+  },
+
+  // --- Ideas: old, handmade, and nothing later than a paraffin lamp --------
+  stake: {
+    material: "driftwood",
+    rows: [".o#", ".X#", "*X*", ".X#", ".X#", ".X#", ".##"],
+  },
+  ropeCoil: {
+    material: "rope",
+    rows: [".oooo#.", "o*XX*#.", "o#XX##.", ".o**#..", ".####.."],
+  },
+  handSign: {
+    material: "handmade",
+    rows: ["oooooo#", "o****X#", "o*XX*X#", "oXXXXX#", "###X###", "...X...", "..oX#..", "..###.."],
+  },
+  sack: {
+    material: "sack",
+    rows: ["..oo#..", ".oXXX#.", "oXXXX##", "oXXXX##", "o####X#", "#######"],
+  },
+  oilLantern: {
+    material: "brass",
+    rows: [".o#.", "o**#", "o**#", "oXX#", "####"],
+  },
+
+  // --- A house somebody works from, 2022 -----------------------------------
+  picketFence: {
+    material: "paintedWood",
+    rows: [".o.o.o.o.", "oXoXoXoX#", "*********", "oXoXoXoX#", "#.#.#.#.#"],
+  },
+  washingLine: {
+    material: "paintedWood",
+    rows: ["o*******#", "oX.oX.oX.", "oX.oX.oX.", "##.##.##.", "o#.....o#", "o#.....o#", "###...###"],
+  },
+
+  // --- A city block, 2023 --------------------------------------------------
+  lampPost: {
+    material: "steel",
+    rows: ["..oo*#", "..o**#", "...X#.", "...X#.", "...X#.", "...X#.", "...X#.", "..oX#.", "..###."],
+  },
+  roadSign: {
+    material: "signage",
+    rows: [".oooo#.", ".o**X#.", ".oXXX#.", ".#####.", "...X...", "...X...", "..oX#..", "..###.."],
+  },
+  parkedCar: {
+    material: "car",
+    rows: ["...oooo....", "..o****#...", ".oXXXXXX#..", "oXXXXXXXX#.", "###########", ".o#....o#..", ".##....##.."],
+  },
+
+  // --- A vault, and the ground it will not let you drive over --------------
+  barrierGate: {
+    material: "barrier",
+    rows: ["oo#.........", "o*#*X*X*X*X#", "oX##########", "oX#.........", "oX#.........", "###........."],
+  },
+
+  // --- A campus with older stone, and lamps to match -----------------------
+  campusLamp: {
+    material: "iron",
+    rows: [".o*#.", "o***#", "o*X*#", ".oX#.", ".oX#.", ".oX#.", "oXX#.", "####."],
+  },
+
+  // --- A live site -------------------------------------------------------
+  scaffold: {
+    material: "steel",
+    rows: ["o#o#o#o#", "########", "oX.X.X.X", "oX.X.X.X", "o#o#o#o#", "########", "oX.X.X.X", "########"],
+  },
+  siteFence: {
+    material: "iron",
+    rows: ["oooooooo#", "oX#X#X#X#", "o#X#X#X##", "oX#X#X#X#", "#########", ".o#....o#", ".##....##"],
+  },
+  floodlight: {
+    material: "floodlight",
+    rows: [".o***#..", ".o***#..", ".o###...", "...X....", "...X....", "..oX#...", "..###..."],
+  },
+  cementMixer: {
+    material: "machine",
+    rows: ["...oo#...", "..o**X#..", ".oX***X#.", ".oXXXXX#.", "..o###...", "..oX#....", "o#####o#.", "##...###."],
+  },
+
+  // --- A shore -------------------------------------------------------------
+  buoy: {
+    material: "marine",
+    rows: ["..o#..", ".o**#.", "o****#", "oXXXX#", ".o##..", "..##.."],
+  },
+  jetty: {
+    material: "driftwood",
+    rows: ["ooooooooo", "#########", "oXXXXXXX#", "#########", ".o#...o#.", ".##...##."],
   },
 } as const;
 

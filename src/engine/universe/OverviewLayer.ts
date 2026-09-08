@@ -143,26 +143,23 @@ const GLOW_REST = 0.24;
  * *is*, and an island that loses its own trees when you stand back is an
  * island that changes shape.
  */
-const DETAIL_SMALL = { from: 0.55, to: 1.05, floor: 0.35 } as const;
+const DETAIL_SMALL = { from: 0.55, to: 1.05, floor: 0.6 } as const;
 const DETAIL_CLOSE = { from: 1.15, to: 1.7, floor: 0 } as const;
 /** Anything drawn no taller than this is small enough to hold back. */
 const SMALL_PIECE_HEIGHT = 8;
 
 /**
- * The second scatter, which only exists once one island is most of the frame.
+ * The fallback second scatter, for a chapter that names none of its own.
  *
- * Everything here grows rather than being built, and everything here is three
- * to six pixels: at map scale it would be dirt on the screen, and at close
- * range it is the difference between ground and a place somebody walks. Drawn
- * from the shore's own `PropFactory` so it is the same grass and the same
- * stones the rest of the world is planted with.
+ * Everything here is three to six pixels: at map scale it would be dirt on the
+ * screen, and at close range it is the difference between ground and a place
+ * somebody walks. A chapter's `closeDressing` overrides it, and most do —
+ * wildflowers are right on a meadow and wrong on a road, and the close view is
+ * exactly where that starts to show.
  */
 const CLOSE_DRESSING: readonly DressingEntry[] = [
-  { what: "tallGrass", zone: "rim", count: 4 },
-  { what: "flower", zone: "apron", count: 3 },
-  { what: "rock", zone: "rim", count: 2 },
-  { what: "tallGrass", zone: "path", count: 2 },
-  { what: "flower", zone: "path", count: 2 },
+  { what: "tallGrass", zone: "rim", count: 3 },
+  { what: "flower", zone: "apron", count: 2 },
 ];
 
 const BOB_PIXELS = 2;
@@ -1050,7 +1047,7 @@ export class OverviewLayer {
       // because these have to be *absent* at map scale, not merely faint.
       propViews.push(
         ...this.dressIsland(chapter, theme, island, foot, body, lit, detail, {
-          plan: CLOSE_DRESSING,
+          plan: theme.closeDressing ?? CLOSE_DRESSING,
           ramp: DETAIL_CLOSE,
           seed: 0x5f0b,
           always: true,
