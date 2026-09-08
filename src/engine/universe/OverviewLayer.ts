@@ -59,54 +59,61 @@ interface HubSky {
 }
 
 const HUB_SKY: Record<TimePhase, HubSky> = {
+  // Soft pink, with the night still draining out of the top of the frame.
   dawn: {
-    top: 0x6f6f9e,
-    mid: 0xd9a0a8,
-    bottom: 0xf6d9c0,
-    cloud: 0xf0d2da,
-    vignette: 0x3a3560,
-    vignetteAlpha: 0.32,
+    top: 0x4e5892,
+    mid: 0xdf8b9c,
+    bottom: 0xf6d3ad,
+    cloud: 0xf3ccd4,
+    vignette: 0x35315e,
+    vignetteAlpha: 0.3,
   },
+  // Pale gold at the horizon, climbing into the blue the day will settle at.
   morning: {
-    top: 0x8fb6d8,
-    mid: 0xcfe0ea,
-    bottom: 0xf7f1de,
-    cloud: 0xffffff,
-    vignette: 0x3a4a60,
-    vignetteAlpha: 0.24,
+    top: 0x6c9fd6,
+    mid: 0xb9d6ec,
+    bottom: 0xf7e3bc,
+    cloud: 0xeef2fb,
+    vignette: 0x3a4a68,
+    vignetteAlpha: 0.26,
   },
+  // The ordinary state, and the one the islands are painted for: a clear,
+  // saturated blue. Deliberately the most colour in the loop rather than the
+  // washed-out cream a "neutral" daylight would default to — a sky that is
+  // merely bright reads as an absence, and this one has to read as weather.
   noon: {
-    top: 0x7fb2e0,
-    mid: 0xbcd9ee,
-    bottom: 0xf2f4e6,
-    cloud: 0xffffff,
-    vignette: 0x38506a,
+    top: 0x3d85d9,
+    mid: 0x73b4e9,
+    bottom: 0xcfe7f4,
+    // Not white. White cloud on a saturated blue is the one combination in
+    // the loop with enough contrast to show the tile repeating and the dither
+    // that made it — over the old cream sky neither was visible at all.
+    cloud: 0xd9ebfb,
+    vignette: 0x2f5a80,
     vignetteAlpha: 0.2,
   },
+  // Late afternoon: warm yellow-gold across the middle, blue still overhead.
   sunset: {
-    top: 0xa88bb0,
-    mid: 0xe3b79c,
-    bottom: 0xfaeacf,
-    cloud: 0xffe9d6,
-    vignette: 0x4a3550,
-    vignetteAlpha: 0.34,
+    top: 0x7ba4cf,
+    mid: 0xf0c46e,
+    bottom: 0xfaeab6,
+    cloud: 0xfff0c9,
+    vignette: 0x4a4030,
+    vignetteAlpha: 0.28,
   },
+  // Orange running down into deep coral, under a sky already going purple.
   dusk: {
-    top: 0x5a4a7a,
-    mid: 0xb07f96,
-    bottom: 0xe8bfa4,
-    cloud: 0xdcc0cc,
-    vignette: 0x2e2445,
-    vignetteAlpha: 0.4,
+    top: 0x5c4478,
+    mid: 0xe0713f,
+    bottom: 0xf59f68,
+    cloud: 0xf0ae8e,
+    vignette: 0x35223f,
+    vignetteAlpha: 0.36,
   },
   night: {
     top: 0x231e40,
     mid: 0x3a3566,
     bottom: 0x5f5989,
-    // Barely above the sky it sits in. Higher and the bands stop reading as
-    // cloud and start reading as the Bayer pattern they are dithered with —
-    // a mask that is invisible over a pale sky is a chequerboard over a dark
-    // one, because contrast, not alpha, is what gives a dither away.
     cloud: 0x3a3563,
     vignette: 0x141230,
     vignetteAlpha: 0.42,
@@ -114,7 +121,7 @@ const HUB_SKY: Record<TimePhase, HubSky> = {
 };
 
 /** The phase the map is baked and framed against before the clock speaks. */
-const HUB_SKY_DEFAULT: TimePhase = "sunset";
+const HUB_SKY_DEFAULT: TimePhase = "noon";
 
 /** How much glow an island carries with nothing pointing at it. */
 const GLOW_REST = 0.24;
@@ -178,14 +185,14 @@ const HUB_TINT_CEILING = 0.34;
 /** The light the map falls back to before the clock has said anything. */
 const HUB_FALLBACK_LIGHT: LightingState = {
   ambientIntensity: 1.1,
-  ambientTint: 0xfff3d6,
-  tintStrength: 0.1,
+  ambientTint: 0xf4f8ff,
+  tintStrength: 0.06,
   shadowStrength: 0.6,
   highlightStrength: 0.6,
   bloomMultiplier: 0.2,
-  localLightMultiplier: 0.35,
-  fromPhase: "sunset",
-  toPhase: "sunset",
+  localLightMultiplier: 0,
+  fromPhase: "noon",
+  toPhase: "noon",
   blend: 0,
 };
 
@@ -900,9 +907,9 @@ export class OverviewLayer {
     // sits in — mauve high up, warm peach lower down — so they stay
     // low-contrast without disappearing.
     const bands = [
-      { seed: 0x9911, y: 0.06, alpha: 0.3, scale: 0.75, speed: 1.6, tint: 0xe6d6ea },
-      { seed: 0xa42c, y: 0.26, alpha: 0.4, scale: 1.1, speed: 3.2, tint: 0xfaeaf0 },
-      { seed: 0xb0e7, y: 0.5, alpha: 0.34, scale: 1.5, speed: 5.4, tint: 0xfff2e0 },
+      { seed: 0x9911, y: 0.06, alpha: 0.24, scale: 0.75, speed: 1.6, tint: 0xe6dcee },
+      { seed: 0xa42c, y: 0.26, alpha: 0.32, scale: 1.1, speed: 3.2, tint: 0xf6eef4 },
+      { seed: 0xb0e7, y: 0.5, alpha: 0.28, scale: 1.5, speed: 5.4, tint: 0xfdf4e8 },
     ];
 
     for (const band of bands) {

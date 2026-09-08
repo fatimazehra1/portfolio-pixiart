@@ -25,8 +25,11 @@ import type { TimePhase } from "../time";
  * not the air. Lamps are still worth something at this hour.
  */
 const DAWN: LightPreset = {
-  ambientIntensity: 0.42,
-  ambientTint: 0xd99a8e,
+  ambientIntensity: 0.44,
+  // Soft pink rather than the old dusty rose: dawn and dusk are the two
+  // phases most easily mistaken for each other, and the difference between
+  // them is that one is pink going gold and the other is orange going purple.
+  ambientTint: 0xe89aa6,
   tintStrength: 0.3,
   shadowStrength: 0.4,
   highlightStrength: 0.45,
@@ -36,9 +39,10 @@ const DAWN: LightPreset = {
 
 /** Morning — bright, clean and barely tinted. Shadows are back but still soft. */
 const MORNING: LightPreset = {
-  ambientIntensity: 0.88,
-  ambientTint: 0xffe9c4,
-  tintStrength: 0.16,
+  ambientIntensity: 0.9,
+  // Pale gold, on its way to the blue of noon.
+  ambientTint: 0xffe6b4,
+  tintStrength: 0.15,
   shadowStrength: 0.55,
   highlightStrength: 0.6,
   bloomMultiplier: 0.25,
@@ -62,32 +66,39 @@ const NOON: LightPreset = {
 };
 
 /**
- * Sunset — the warmest light of the day, and the longest shadows.
+ * Sunset — late afternoon: warm yellow-gold, and the longest shadows.
  *
- * The hour the town starts to glow: lanterns come on and windows go warm
- * (ART_DIRECTION.md §Sunset), so local lights already carry real weight here
- * even though the ambient is still high.
+ * Gold rather than orange, and that is the whole of what separates this from
+ * `DUSK`. The two used to sit within a hue of each other, which collapsed the
+ * evening into one long orange smear; the light now goes gold, *then* orange,
+ * *then* coral, and there are three looks in the descent instead of one.
+ *
+ * The hour the town starts to glow, so local lights already carry real weight
+ * here even though the ambient is still high (ART_DIRECTION.md §Sunset).
  */
 const SUNSET: LightPreset = {
-  ambientIntensity: 0.66,
-  ambientTint: 0xff9e5e,
-  tintStrength: 0.34,
+  ambientIntensity: 0.78,
+  ambientTint: 0xffc978,
+  tintStrength: 0.3,
   shadowStrength: 0.62,
   highlightStrength: 0.75,
-  bloomMultiplier: 0.55,
-  localLightMultiplier: 0.45,
+  bloomMultiplier: 0.5,
+  localLightMultiplier: 0.32,
 };
 
 /**
- * Dusk — the light going violet and losing its direction.
+ * Dusk — orange going deep coral, and the light losing its direction.
  *
- * Shadows soften towards nothing because there is no longer a source casting
- * them, and everything artificial starts to take over.
+ * Warm rather than violet. The violet belongs to the *sky* at this hour, and
+ * the sky has it; the last direct light on the ground is the reddest of the
+ * day, and a world lit violet under an orange sky reads as two unrelated
+ * pictures. Shadows soften towards nothing because there is no longer much of
+ * a source casting them, and everything artificial starts to take over.
  */
 const DUSK: LightPreset = {
-  ambientIntensity: 0.3,
-  ambientTint: 0x8a6a9e,
-  tintStrength: 0.32,
+  ambientIntensity: 0.38,
+  ambientTint: 0xef7a4c,
+  tintStrength: 0.36,
   shadowStrength: 0.28,
   highlightStrength: 0.3,
   bloomMultiplier: 0.8,

@@ -12,36 +12,39 @@ import type { TimeOfDay } from "../sky";
  * Starts are normalized (0 = midnight) and listed in order; each phase runs
  * until the next one begins, and `night` wraps back around through midnight.
  *
- * | phase   | share | what it is                  |
- * |---------|-------|-----------------------------|
- * | dawn    | 15%   | the morning transition      |
- * | morning | 15%   | full colour                 |
- * | noon    | 40%   | full colour                 |
- * | sunset  | 7.5%  | the evening transition      |
- * | dusk    | 7.5%  | the evening transition      |
- * | night   | 15%   | lit windows, never black    |
+ * | phase   | share |  at 180s | what it looks like            |
+ * |---------|-------|----------|-------------------------------|
+ * | dawn    |  8%   |   14.4s  | soft pink                     |
+ * | morning |  8%   |   14.4s  | pale gold climbing into blue  |
+ * | noon    | 55%   |   99.0s  | clear saturated blue          |
+ * | sunset  |  9%   |   16.2s  | warm yellow-gold              |
+ * | dusk    |  8%   |   14.4s  | orange into deep coral        |
+ * | night   | 12%   |   21.6s  | deep blue-purple, lit windows |
  *
- * Which is: **day 55%, the two transitions 30% between them, night 15%.**
+ * Which is: **blue day 55%, the two transitions 33% between them, night 12%.**
  *
- * # Why it is weighted this way and not evenly
- * This is a portfolio, and the work on these islands is drawn in full colour.
- * An even six-way split would spend nearly half of every loop in states that
- * hide it. Day dominates because day is when the world is legible; the
- * transitions get nearly a third between them because they are the best the
- * world looks; and night is short and bright, because night is the only phase
- * that can make a visitor think the page failed to load.
+ * # Why `noon` alone carries the 55%
+ * An earlier pass spent the 55% on `morning` *plus* `noon` and left the blue
+ * itself at 40%. In a three-minute loop that is the difference between a world
+ * whose ordinary state is a clear blue sky and one that is always on its way
+ * somewhere — and the ordinary state is the one the work is drawn to be seen
+ * in. `morning` is a transition and is now weighted like one.
+ *
+ * # Why night is short
+ * Night is the only phase that can make a visitor think the page failed to
+ * load. It gets long enough to be a phase and no longer.
  *
  * Dawn is one phase and dusk is two (`sunset` into `dusk`), which is not an
- * asymmetry — evening light *is* two looks where morning light is one, and
- * both sides get the same 15% of the loop.
+ * asymmetry — evening light *is* two looks where morning light is one, and the
+ * two sides come out within a percent of each other.
  */
 export const PHASE_SPANS: readonly PhaseSpan[] = [
-  { phase: "dawn", start: 0.075 },
-  { phase: "morning", start: 0.225 },
-  { phase: "noon", start: 0.375 },
-  { phase: "sunset", start: 0.775 },
-  { phase: "dusk", start: 0.85 },
-  { phase: "night", start: 0.925 },
+  { phase: "dawn", start: 0.06 },
+  { phase: "morning", start: 0.14 },
+  { phase: "noon", start: 0.22 },
+  { phase: "sunset", start: 0.77 },
+  { phase: "dusk", start: 0.86 },
+  { phase: "night", start: 0.94 },
 ];
 
 /** The phases in order, for cycling and for the dev shortcuts. */
@@ -84,18 +87,20 @@ export interface TimeSettings {
 
 export const TIME_SETTINGS: TimeSettings = {
   dayDuration: 180,
-  // Sunset: the project's visual identity, and where the world currently opens.
-  // The top of the evening transition. Most visitors stay under three
-  // minutes, so the opening state is the one they will actually see, and it
-  // opens on the best-looking stretch of the loop rather than in the middle of
-  // a flat noon. From here the loop runs sunset, dusk, night, dawn, day.
-  startTime: 0.775,
+  // Early in the blue day, and that is a correction. Opening at the top of the
+  // evening put night twenty-seven seconds after load and the blue day nearly
+  // two minutes after it — so the state most visitors actually saw was the
+  // dark one, and the sky they never reached was the one the islands are
+  // painted for. From here the loop runs day, gold, coral, night, dawn, day,
+  // and every one of them lands inside three minutes.
+  startTime: 0.3,
   startPaused: false,
-  // Nine seconds of the three-minute loop, and comfortably inside the
-  // shortest phase (sunset and dusk, at 0.075). Wide enough that a hand-over
-  // is a change you watch rather than one you catch out of the corner of your
-  // eye, which is the whole of "dawn and dusk must not flash past".
-  transitionWidth: 0.05,
+  // Seven seconds of the three-minute loop, and inside the shortest phase
+  // (dawn, morning and dusk, at 0.08) with room to spare. Wide enough that a
+  // hand-over is a change you watch rather than one you catch out of the
+  // corner of your eye; narrow enough that each phase still has a settled
+  // stretch of its own to be looked at in.
+  transitionWidth: 0.04,
   publishThreshold: 0.001,
 };
 
