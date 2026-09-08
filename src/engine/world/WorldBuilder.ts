@@ -153,7 +153,16 @@ export class World {
 
     this.time = new TimeManager({ onChange: options.onTime });
     this.dayNight = new DayNightManager({ time: this.time.time });
-    this.lighting = new LightingManager({ dayNight: this.dayNight });
+    // The map takes the hour too. It is the landing screen and it used to be
+    // the one surface in this world with no clock in it — see
+    // `OverviewLayer.applyLighting`. Wired here rather than inside the map
+    // because the map does not get to know where the light comes from.
+    this.lighting = new LightingManager({
+      dayNight: this.dayNight,
+      // Guarded because the cycle publishes immediately on subscribe, and on
+      // that first push the map has not been built yet.
+      onChange: (state) => this.overview?.applyLighting(state),
+    });
     // Built with no climate at all. There is no world open yet, and the overview
     // has no weather in it — the grade's local half arrives when a world does.
     this.grade = new GradeManager({ lighting: this.lighting });
@@ -180,6 +189,12 @@ export class World {
         if (!this.camera.wasDragged) this.enterChapter(id);
       },
     });
+
+    // The cycle published once during construction above, before the map
+    // existed to hear it. Catching up here rather than waiting for the clock to
+    // tick again is the difference between opening at dusk and opening at noon
+    // for a fifth of a second first.
+    if (this.lighting.state) this.overview.applyLighting(this.lighting.state);
 
     // Two spaces, two mounts. The void is screen space and goes behind the
     // camera; the worlds are somewhere and go inside it.

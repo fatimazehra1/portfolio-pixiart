@@ -10,7 +10,10 @@ import { KIND_TONES, PETALS, PROP_MATERIALS, PropFactory } from "../environment"
 import type { PropKind, PropView } from "../environment";
 import type { BuildingRenderer } from "../buildings";
 import type { CameraView } from "../camera/Camera";
+import { applyAmbient } from "../lighting";
 import type { LightingState } from "../lighting";
+import { lerpColor } from "../sky";
+import type { TimePhase } from "../time";
 import type { Size } from "../types";
 import type { ResolvedChapter } from "./UniverseTypes";
 
@@ -30,17 +33,88 @@ import type { ResolvedChapter } from "./UniverseTypes";
  * island live there, so panning moves them together.
  */
 
-// The sky between the worlds, top to bottom: a deep warm dusk, through peach,
-// into pale cream at the foot of the frame. Three stops rather than two — a
-// straight lerp from the deep tone to the pale one goes grey through the
-// middle, and grey is what this pass exists to get rid of.
-const VOID_TOP = 0xa88bb0; // deep dusty mauve
-const VOID_MID = 0xe3b79c; // warm peach
-const VOID_BOTTOM = 0xfaeacf; // pale cream
+/**
+ * The sky between the worlds, at each phase of the loop.
+ *
+ * Three stops rather than two — a straight lerp from a deep tone to a pale one
+ * goes grey through the middle, and grey is what this palette exists to avoid.
+ * The cloud tone and the vignette come with each phase for the same reason:
+ * three separately-tuned constants that all describe "how dark it is" is three
+ * chances for one of them to be left behind at a retune.
+ *
+ * Night is the only entry with a rule attached to it. This is the landing
+ * screen, and a landing screen that opens black is a landing screen that
+ * failed to load. Deep blue-purple, and the foot of the frame stays light
+ * enough to read an island's silhouette against.
+ */
+interface HubSky {
+  top: number;
+  mid: number;
+  bottom: number;
+  /** What the drifting cloud bands are tinted by, on top of their own tone. */
+  cloud: number;
+  /** The frame's own darkened edges, and how far they close in. */
+  vignette: number;
+  vignetteAlpha: number;
+}
 
-/** How dark the frame's own edges go. */
-const VIGNETTE_COLOR = 0x4a3550;
-const VIGNETTE_ALPHA = 0.34;
+const HUB_SKY: Record<TimePhase, HubSky> = {
+  dawn: {
+    top: 0x6f6f9e,
+    mid: 0xd9a0a8,
+    bottom: 0xf6d9c0,
+    cloud: 0xf0d2da,
+    vignette: 0x3a3560,
+    vignetteAlpha: 0.32,
+  },
+  morning: {
+    top: 0x8fb6d8,
+    mid: 0xcfe0ea,
+    bottom: 0xf7f1de,
+    cloud: 0xffffff,
+    vignette: 0x3a4a60,
+    vignetteAlpha: 0.24,
+  },
+  noon: {
+    top: 0x7fb2e0,
+    mid: 0xbcd9ee,
+    bottom: 0xf2f4e6,
+    cloud: 0xffffff,
+    vignette: 0x38506a,
+    vignetteAlpha: 0.2,
+  },
+  sunset: {
+    top: 0xa88bb0,
+    mid: 0xe3b79c,
+    bottom: 0xfaeacf,
+    cloud: 0xffe9d6,
+    vignette: 0x4a3550,
+    vignetteAlpha: 0.34,
+  },
+  dusk: {
+    top: 0x5a4a7a,
+    mid: 0xb07f96,
+    bottom: 0xe8bfa4,
+    cloud: 0xdcc0cc,
+    vignette: 0x2e2445,
+    vignetteAlpha: 0.4,
+  },
+  night: {
+    top: 0x231e40,
+    mid: 0x3a3566,
+    bottom: 0x5f5989,
+    // Barely above the sky it sits in. Higher and the bands stop reading as
+    // cloud and start reading as the Bayer pattern they are dithered with —
+    // a mask that is invisible over a pale sky is a chequerboard over a dark
+    // one, because contrast, not alpha, is what gives a dither away.
+    cloud: 0x3a3563,
+    vignette: 0x141230,
+    vignetteAlpha: 0.42,
+  },
+};
+
+/** The phase the map is baked and framed against before the clock speaks. */
+const HUB_SKY_DEFAULT: TimePhase = "sunset";
 
 /** How much glow an island carries with nothing pointing at it. */
 const GLOW_REST = 0.24;
@@ -50,26 +124,42 @@ const BOB_PERIOD = [16, 27] as const;
 const DETAIL_SMOOTHING = 6;
 
 /**
- * There is no day/night cycle between the worlds — see `OverviewLayer`'s own
- * doc comment on why props are lit from the flat material table instead of
- * the clock. Buildings need the same treatment: without *some* lighting
- * state, `BuildingRenderer` falls back to each material's raw colour, and a
- * few of those (Vaultsys's stone, the lighthouse's shadow tone) were
- * authored to be lit rather than to stand alone. `lightBoost` in `IsoTheme`
- * multiplies this further for the two that still read dark under it.
+ * The floor under the hub's own ambient light, and the ceiling on its cast.
+ *
+ * The map is the landing screen and the nine islands on it are the whole of
+ * what it has to say, so it is lit a stop above the worlds you can walk into:
+ * deep night on a shore is a mood, and deep night on a menu is a fault. The
+ * windows still light, the sky still goes blue-purple, and nothing goes to a
+ * silhouette you cannot read.
  */
-const HUB_BUILDING_LIGHT: LightingState = {
-  ambientIntensity: 1.15,
+const HUB_AMBIENT_FLOOR = 0.54;
+const HUB_AMBIENT_GAIN = 1.08;
+const HUB_TINT_CEILING = 0.34;
+
+/** The light the map falls back to before the clock has said anything. */
+const HUB_FALLBACK_LIGHT: LightingState = {
+  ambientIntensity: 1.1,
   ambientTint: 0xfff3d6,
   tintStrength: 0.1,
   shadowStrength: 0.6,
   highlightStrength: 0.6,
   bloomMultiplier: 0.2,
-  localLightMultiplier: 0,
-  fromPhase: "noon",
-  toPhase: "noon",
+  localLightMultiplier: 0.35,
+  fromPhase: "sunset",
+  toPhase: "sunset",
   blend: 0,
 };
+
+/**
+ * The dashed connectors, by day and by night.
+ *
+ * Two strokes cross-faded rather than one restroked: the paths are nine bezier
+ * curves chopped into dashes, and rebuilding that geometry five times a second
+ * to change its colour is work the alpha channel will do for free. Dark earth
+ * against a bright sky, pale lilac against a dark one.
+ */
+const PATH_DAY = 0x4a3a2a;
+const PATH_NIGHT = 0xc8bce8;
 
 /**
  * A building's width, as a fraction of its island's own top-face width.
@@ -157,6 +247,18 @@ interface Marker {
   glow: Sprite;
   building: BuildingRenderer | null;
   propViews: PropView[];
+  /**
+   * Everything on this island that takes the hour as a flat multiply — the
+   * island itself, its planting, its dressing.
+   *
+   * A list rather than one container, because depth order inside an island is
+   * by baseline and a building sits *between* its props. Gathering the tinted
+   * things under one parent would put every crate either in front of the
+   * building or behind it, and the interleaving is the whole reason the yard
+   * reads as a yard. The building is not here: it is lit properly, through
+   * `applyLighting`, so its windows can burn while its walls go dark.
+   */
+  lit: Container[];
   target: number;
   hover: number;
   bobRate: number;
@@ -183,12 +285,17 @@ export class OverviewLayer {
   /** Screen space, in front of the camera: the vignette, and nothing else. */
   readonly overlay = new Container();
 
+  /** The phase we are in, and the one we are crossing to, cross-faded. */
   private readonly gradient = new Sprite();
+  private readonly gradientNext = new Sprite();
+  private readonly skyTextures = new Map<TimePhase, Texture>();
   private readonly vignette = new Sprite();
   /** Purely scenic: far islands, behind every real world. */
   private readonly farField = new Container();
-  private readonly cloudLayers: { sprite: TilingSprite; speed: number }[] = [];
+  private readonly cloudLayers: { sprite: TilingSprite; speed: number; tint: number; alpha: number }[] = [];
   private readonly pathGraphics = new Graphics();
+  /** The same dashes in a pale tone, faded up as the light goes. */
+  private readonly pathNight = new Graphics();
 
   private readonly markers = new Map<string, Marker>();
   private readonly props = new PropFactory({ seed: 0x2a1f });
@@ -216,6 +323,11 @@ export class OverviewLayer {
   private viewport: Size;
   private elapsed = 0;
   private presence = 1;
+  /** The hour, as the map reads it. See `applyLighting`. */
+  private light: LightingState = HUB_FALLBACK_LIGHT;
+  /** How far into the dark we are, 0–1. Drives the paths and the glow. */
+  private night = 0;
+  private vignetteAlpha = HUB_SKY[HUB_SKY_DEFAULT].vignetteAlpha;
 
   constructor(options: OverviewLayerOptions) {
     this.chapters = options.chapters;
@@ -234,8 +346,15 @@ export class OverviewLayer {
     this.overlay.eventMode = "none";
 
     this.gradient.eventMode = "none";
-    this.gradient.texture = this.bakeGradient();
+    this.gradientNext.eventMode = "none";
+    this.gradientNext.alpha = 0;
+    for (const phase of Object.keys(HUB_SKY) as TimePhase[]) {
+      this.skyTextures.set(phase, this.bakeGradient(HUB_SKY[phase]));
+    }
+    this.gradient.texture = this.skyTextures.get(HUB_SKY_DEFAULT)!;
+    this.gradientNext.texture = this.gradient.texture;
     this.backdrop.addChild(this.gradient);
+    this.backdrop.addChild(this.gradientNext);
     this.buildClouds();
 
     this.vignette.eventMode = "none";
@@ -247,7 +366,10 @@ export class OverviewLayer {
     this.field.addChild(this.farField);
 
     this.pathGraphics.eventMode = "none";
+    this.pathNight.eventMode = "none";
+    this.pathNight.alpha = 0;
     this.field.addChild(this.pathGraphics);
+    this.field.addChild(this.pathNight);
 
     this.build();
     this.resize(this.viewport);
@@ -262,10 +384,84 @@ export class OverviewLayer {
     this.backdrop.visible = on;
     this.field.visible = on;
     this.overlay.visible = on;
-    this.overlay.alpha = this.presence * VIGNETTE_ALPHA;
+    this.overlay.alpha = this.presence * this.vignetteAlpha;
     this.field.eventMode = on ? "static" : "none";
     this.backdrop.alpha = this.presence;
     this.field.alpha = this.presence;
+  }
+
+  /**
+   * Put the map at an hour.
+   *
+   * The map used to be the one thing in this world with no clock in it, lit by
+   * a constant so that buildings authored to be lit had something to be lit by.
+   * That was defensible while it was scenery and indefensible now that it is
+   * the landing screen: nine islands frozen at one hour, in front of nine
+   * interiors that visibly move through the day, said the hub was a picture of
+   * the world rather than part of it.
+   *
+   * Four things move, and they are all one number apart:
+   *
+   *  - the sky, as a cross-fade between two baked gradients
+   *  - the frame's edges, tinted and closed in by the phase
+   *  - every island, its planting and its dressing, as a flat multiply
+   *  - every building, properly lit — which is what lights the windows
+   *
+   * The last is the reason islands and buildings are handled differently. A
+   * flat multiply over a building would dim its lit windows along with its
+   * walls, and a lit window that gets darker at midnight is not a lit window.
+   */
+  applyLighting(state: LightingState): void {
+    // A stop above the worlds you can walk into. See `HUB_AMBIENT_FLOOR`.
+    const hub: LightingState = {
+      ...state,
+      ambientIntensity: Math.max(HUB_AMBIENT_FLOOR, state.ambientIntensity * HUB_AMBIENT_GAIN),
+      tintStrength: Math.min(HUB_TINT_CEILING, state.tintStrength),
+    };
+    this.light = hub;
+    this.night = clamp01((0.78 - state.ambientIntensity) / 0.58);
+
+    const from = HUB_SKY[state.fromPhase as TimePhase] ?? HUB_SKY[HUB_SKY_DEFAULT];
+    const to = HUB_SKY[state.toPhase as TimePhase] ?? from;
+    const blend = state.blend;
+
+    // The sky: two sprites, the far one faded up across the hand-over.
+    this.gradient.texture = this.skyTextures.get(state.fromPhase as TimePhase) ?? this.gradient.texture;
+    this.gradientNext.texture = this.skyTextures.get(state.toPhase as TimePhase) ?? this.gradient.texture;
+    this.gradientNext.alpha = blend;
+
+    this.vignette.tint = lerpColor(from.vignette, to.vignette, blend);
+    this.vignetteAlpha = from.vignetteAlpha + (to.vignetteAlpha - from.vignetteAlpha) * blend;
+    this.overlay.alpha = this.presence * this.vignetteAlpha;
+
+    const cloud = lerpColor(from.cloud, to.cloud, blend);
+    for (const { sprite, tint, alpha } of this.cloudLayers) {
+      sprite.tint = multiply(tint, cloud);
+      // Thinner after dark. These are dithered alpha masks, and a dither that
+      // is barely visible over a pale sky is a visible chequerboard over a
+      // deep one — the pattern reads long before the cloud does.
+      sprite.alpha = alpha * (1 - this.night * 0.72);
+    }
+
+    // One multiply, shared by every island on the board: the ambient applied
+    // to plain white is exactly "what colour is white here now".
+    const ambient = applyAmbient(0xffffff, hub);
+    this.farField.tint = ambient;
+
+    this.pathNight.alpha = this.night * 0.55;
+    this.pathGraphics.alpha = 1 - this.night * 0.7;
+
+    for (const marker of this.markers.values()) {
+      for (const child of marker.lit) child.tint = ambient;
+      const theme = ISO_THEME[marker.chapter.id] ?? DEFAULT_ISO_THEME;
+      const boost = theme.lightBoost ?? 1;
+      marker.building?.applyLighting({
+        ...hub,
+        ambientIntensity: hub.ambientIntensity * boost,
+      });
+      // What is left of the glow takes the hour like everything else.
+      marker.glow.tint = multiply(theme.topPalette[0], ambient);
+    }
   }
 
   setHover(id: string, hover: number): void {
@@ -311,7 +507,12 @@ export class OverviewLayer {
       if (Math.abs(marker.target - marker.hover) < 0.002) marker.hover = marker.target;
       // A standing glow, not a hover-only one: the tint is what separates an
       // island from the backdrop at all. Hover only deepens what is there.
-      marker.glow.alpha = GLOW_REST + marker.hover * 0.34;
+      // Faded out after dark rather than up. The glow is a dithered alpha
+      // disc, and a dither is given away by contrast: the same 24% that is
+      // invisible over a bright sky is a chequerboard the size of an island
+      // over a deep blue one. At night the lit windows do this job instead,
+      // and they do it better.
+      marker.glow.alpha = GLOW_REST * (1 - this.night * 0.8) + marker.hover * 0.34;
 
       if (this.motionScale > 0) {
         marker.body.y = Math.round(
@@ -330,6 +531,8 @@ export class OverviewLayer {
     this.viewport = size;
     this.gradient.width = size.width;
     this.gradient.height = size.height;
+    this.gradientNext.width = size.width;
+    this.gradientNext.height = size.height;
     this.vignette.width = size.width;
     this.vignette.height = size.height;
     this.layoutClouds(size);
@@ -353,7 +556,8 @@ export class OverviewLayer {
     this.cloudTextures.length = 0;
     for (const texture of this.farTextures) texture.destroy(true);
     this.farTextures.length = 0;
-    this.gradient.texture?.destroy(true);
+    for (const texture of this.skyTextures.values()) texture.destroy(true);
+    this.skyTextures.clear();
     this.vignette.texture?.destroy(true);
     this.backdrop.destroy({ children: true });
     this.overlay.destroy({ children: true });
@@ -362,8 +566,15 @@ export class OverviewLayer {
 
   // --- Internal: backdrop --------------------------------------------------
 
-  /** The vertical gradient: deep mauve overhead, peach, then pale cream. */
-  private bakeGradient(): Texture {
+  /**
+   * One phase's vertical gradient, baked once and kept.
+   *
+   * Six textures of 1x128 rather than one re-baked as the light moves: the
+   * hand-over between two phases is a cross-fade between two sprites, which is
+   * the same machinery the sky and the sea inside a world already use, and it
+   * costs nothing per frame.
+   */
+  private bakeGradient(sky: HubSky): Texture {
     const h = 128;
     return toTexture(
       1,
@@ -371,7 +582,7 @@ export class OverviewLayer {
       (pixels) => {
         const lerp = (a: number, b: number, t: number) => Math.round(a + (b - a) * t);
         const split = (c: number) => [(c >> 16) & 0xff, (c >> 8) & 0xff, c & 0xff];
-        const stops = [split(VOID_TOP), split(VOID_MID), split(VOID_BOTTOM)];
+        const stops = [split(sky.top), split(sky.mid), split(sky.bottom)];
         // The peach stop sits high, so the deep tone stays a band overhead
         // rather than a wash over the whole frame.
         const knee = 0.42;
@@ -399,7 +610,10 @@ export class OverviewLayer {
    */
   private bakeVignette(): Texture {
     const n = 64;
-    const color = [(VIGNETTE_COLOR >> 16) & 0xff, (VIGNETTE_COLOR >> 8) & 0xff, VIGNETTE_COLOR & 0xff];
+    // Baked white and tinted per phase, so the frame's edges darken toward the
+    // colour of the sky they are closing in on rather than toward one authored
+    // mauve that only ever suited dusk.
+    const color = [255, 255, 255];
 
     return toTexture(
       n,
@@ -499,7 +713,7 @@ export class OverviewLayer {
       sprite.tint = band.tint;
       (sprite as unknown as { __band: typeof band }).__band = band;
       this.backdrop.addChild(sprite);
-      this.cloudLayers.push({ sprite, speed: band.speed });
+      this.cloudLayers.push({ sprite, speed: band.speed, tint: band.tint, alpha: band.alpha });
     }
   }
 
@@ -530,6 +744,11 @@ export class OverviewLayer {
       marker.hover = hover;
       marker.target = hover;
     }
+
+    // Freshly baked islands are painted at full daylight and know nothing of
+    // the hour. Without this a resize that earns a new pixel scale would put
+    // the map back to noon mid-way through a night.
+    this.applyLighting(this.light);
   }
 
   private build(): void {
@@ -540,6 +759,7 @@ export class OverviewLayer {
 
     // Paths first, so the islands sit over them.
     this.pathGraphics.clear();
+    this.pathNight.clear();
     this.drawPaths(scale);
 
     for (const chapter of this.chapters) {
@@ -592,6 +812,7 @@ export class OverviewLayer {
       islandSprite.y = -island.topCenter.y;
       islandSprite.eventMode = "none";
       body.addChild(islandSprite);
+      const lit: Container[] = [islandSprite];
 
       // Depth order inside an island is by baseline, not by insertion: a crate
       // in front of the building has to draw over it and a hedge behind it has
@@ -607,7 +828,8 @@ export class OverviewLayer {
       // Last of all, so the planting crosses in front of the building's lowest
       // rows rather than stopping politely at them.
       propViews.push(...this.scatterBase(chapter, island, foot, body));
-      propViews.push(...this.dressIsland(chapter, theme, island, foot, body));
+      propViews.push(...this.dressIsland(chapter, theme, island, foot, body, lit));
+      for (const view of propViews) lit.push(view.container);
 
       const container = new Container();
       container.label = `chapter:${chapter.id}`;
@@ -646,6 +868,7 @@ export class OverviewLayer {
         glow,
         building,
         propViews,
+        lit,
         target: 0,
         hover: 0,
         bobRate:
@@ -771,8 +994,8 @@ export class OverviewLayer {
 
     const boost = theme.lightBoost ?? 1;
     renderer.applyLighting({
-      ...HUB_BUILDING_LIGHT,
-      ambientIntensity: HUB_BUILDING_LIGHT.ambientIntensity * boost,
+      ...this.light,
+      ambientIntensity: this.light.ambientIntensity * boost,
     });
     // Each of these was drawn for its own side-on scene, in its own palette.
     // On the hub they stand on ground that shares none of it, which is half of
@@ -878,7 +1101,8 @@ export class OverviewLayer {
     theme: IsoThemeEntry,
     island: IsoIsland,
     foot: Foot,
-    body: Container
+    body: Container,
+    lit: Container[]
   ): PropView[] {
     const views: PropView[] = [];
     const plan = theme.dressing;
@@ -982,6 +1206,7 @@ export class OverviewLayer {
           site.container.y = spot.y - island.topCenter.y - site.height;
           site.container.zIndex = spot.y;
           body.addChild(site.container);
+          lit.push(site.container);
           continue;
         }
 
@@ -1203,20 +1428,26 @@ export class OverviewLayer {
     for (let i = 0; i < points.length - 1; i++) {
       const a = points[i].overview;
       const b = points[i + 1].overview;
-      this.strokeDashedCurve(
-        { x: a.x / scale, y: a.y / scale },
-        { x: b.x / scale, y: b.y / scale },
-        i % 2 === 0 ? 1 : -1
-      );
+      // Both layers take the same geometry. See `PATH_DAY` / `PATH_NIGHT`.
+      for (const into of [this.pathGraphics, this.pathNight]) {
+        this.strokeDashedCurve(
+          into,
+          { x: a.x / scale, y: a.y / scale },
+          { x: b.x / scale, y: b.y / scale },
+          i % 2 === 0 ? 1 : -1
+        );
+      }
     }
 
     // Dark against the light backdrop, and heavy enough to actually read at
     // hub scale — the first pass was both too pale and too thin to survive
     // being drawn under nine islands.
-    this.pathGraphics.stroke({ width: 3, color: 0x4a3a2a, alpha: 0.6 });
+    this.pathGraphics.stroke({ width: 3, color: PATH_DAY, alpha: 0.6 });
+    this.pathNight.stroke({ width: 3, color: PATH_NIGHT, alpha: 0.85 });
   }
 
   private strokeDashedCurve(
+    into: Graphics,
     p0: { x: number; y: number },
     p1: { x: number; y: number },
     bend: number
@@ -1247,7 +1478,7 @@ export class OverviewLayer {
 
       travelled += segLen;
       if (drawing) {
-        this.pathGraphics.moveTo(prev.x, prev.y).lineTo(x, y);
+        into.moveTo(prev.x, prev.y).lineTo(x, y);
       }
       if (travelled >= (drawing ? dash : gap)) {
         travelled = 0;
@@ -1327,6 +1558,14 @@ function seedOf(id: string): number {
   let seed = 0x9e37;
   for (let i = 0; i < id.length; i++) seed = (seed * 31 + id.charCodeAt(i)) >>> 0;
   return seed;
+}
+
+const clamp01 = (v: number) => (v < 0 ? 0 : v > 1 ? 1 : v);
+
+/** Multiply two colours channel by channel. A tint standing on another tint. */
+function multiply(a: number, b: number): number {
+  const ch = (shift: number) => (((a >> shift) & 0xff) * ((b >> shift) & 0xff)) / 255;
+  return (Math.round(ch(16)) << 16) | (Math.round(ch(8)) << 8) | Math.round(ch(0));
 }
 
 /** Multiply a colour's channels by `factor`, clamped. The cheapest brighten. */

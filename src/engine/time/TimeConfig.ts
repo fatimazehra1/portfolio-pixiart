@@ -6,33 +6,42 @@ import type { TimeOfDay } from "../sky";
  */
 
 /**
- * The day, carved into six phases.
+ * The day, carved into six phases, weighted for a visitor rather than for a
+ * planet.
  *
  * Starts are normalized (0 = midnight) and listed in order; each phase runs
  * until the next one begins, and `night` wraps back around through midnight.
- * In wall-clock terms:
  *
- * | phase   | from  | to    |
- * |---------|-------|-------|
- * | dawn    | 05:17 | 07:12 |
- * | morning | 07:12 | 10:34 |
- * | noon    | 10:34 | 17:17 |
- * | sunset  | 17:17 | 19:12 |
- * | dusk    | 19:12 | 21:07 |
- * | night   | 21:07 | 05:17 |
+ * | phase   | share | what it is                  |
+ * |---------|-------|-----------------------------|
+ * | dawn    | 15%   | the morning transition      |
+ * | morning | 15%   | full colour                 |
+ * | noon    | 40%   | full colour                 |
+ * | sunset  | 7.5%  | the evening transition      |
+ * | dusk    | 7.5%  | the evening transition      |
+ * | night   | 15%   | lit windows, never black    |
  *
- * The two long phases are `noon` and `night`, and the four short ones are all
- * transitions. That's on purpose: the interesting light is at the edges of the
- * day, and a world that spent equal time in each phase would spend most of it
- * somewhere unremarkable.
+ * Which is: **day 55%, the two transitions 30% between them, night 15%.**
+ *
+ * # Why it is weighted this way and not evenly
+ * This is a portfolio, and the work on these islands is drawn in full colour.
+ * An even six-way split would spend nearly half of every loop in states that
+ * hide it. Day dominates because day is when the world is legible; the
+ * transitions get nearly a third between them because they are the best the
+ * world looks; and night is short and bright, because night is the only phase
+ * that can make a visitor think the page failed to load.
+ *
+ * Dawn is one phase and dusk is two (`sunset` into `dusk`), which is not an
+ * asymmetry — evening light *is* two looks where morning light is one, and
+ * both sides get the same 15% of the loop.
  */
 export const PHASE_SPANS: readonly PhaseSpan[] = [
-  { phase: "dawn", start: 0.22 },
-  { phase: "morning", start: 0.3 },
-  { phase: "noon", start: 0.44 },
-  { phase: "sunset", start: 0.72 },
-  { phase: "dusk", start: 0.8 },
-  { phase: "night", start: 0.88 },
+  { phase: "dawn", start: 0.075 },
+  { phase: "morning", start: 0.225 },
+  { phase: "noon", start: 0.375 },
+  { phase: "sunset", start: 0.775 },
+  { phase: "dusk", start: 0.85 },
+  { phase: "night", start: 0.925 },
 ];
 
 /** The phases in order, for cycling and for the dev shortcuts. */
@@ -40,12 +49,17 @@ export const PHASE_ORDER: readonly TimePhase[] = PHASE_SPANS.map((span) => span.
 
 export interface TimeSettings {
   /**
-   * Real seconds for one full in-world day.
+   * Real seconds for one full loop of the day.
    *
-   * Short by default because this is a development tool as much as a clock —
-   * five minutes is long enough that a phase change reads as a change rather
-   * than a flicker, and short enough that you can watch a whole day without
-   * losing interest. A shipped world would want this far longer.
+   * Three minutes, and it is an accelerated loop rather than a clock: this
+   * world has never read the visitor's real time of day and does not start
+   * doing so here. A page that opens in the dark because the visitor happens
+   * to be up late is a page that hides the work for the length of the visit,
+   * and the visitor cannot tell that from a bug.
+   *
+   * Three minutes is chosen against how long anyone actually stays. Much
+   * shorter and the sky is visibly racing, which reads as a screensaver; much
+   * longer and most visitors would see one phase and leave.
    */
   dayDuration: number;
   /** Where the clock starts, normalized. */
@@ -69,12 +83,19 @@ export interface TimeSettings {
 }
 
 export const TIME_SETTINGS: TimeSettings = {
-  dayDuration: 300,
+  dayDuration: 180,
   // Sunset: the project's visual identity, and where the world currently opens.
-  startTime: 0.75,
+  // The top of the evening transition. Most visitors stay under three
+  // minutes, so the opening state is the one they will actually see, and it
+  // opens on the best-looking stretch of the loop rather than in the middle of
+  // a flat noon. From here the loop runs sunset, dusk, night, dawn, day.
+  startTime: 0.775,
   startPaused: false,
-  // ~0.7 of an hour. Comfortably inside the shortest phase (dawn, at 0.08).
-  transitionWidth: 0.03,
+  // Nine seconds of the three-minute loop, and comfortably inside the
+  // shortest phase (sunset and dusk, at 0.075). Wide enough that a hand-over
+  // is a change you watch rather than one you catch out of the corner of your
+  // eye, which is the whole of "dawn and dusk must not flash past".
+  transitionWidth: 0.05,
   publishThreshold: 0.001,
 };
 
