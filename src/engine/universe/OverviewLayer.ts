@@ -3,8 +3,9 @@ import { createRandom, ditherAlpha, range, rangeInt, toTexture } from "../shared
 import { generateIsoIsland } from "./IsoIslandFactory";
 import type { IsoIsland } from "./IsoIslandFactory";
 import { DEFAULT_ISO_THEME, ISO_THEME } from "./IsoTheme";
-import type { IsoThemeEntry } from "./IsoTheme";
+import type { DressingEntry, IsoThemeEntry } from "./IsoTheme";
 import { LandmarkFactory } from "./LandmarkFactory";
+import { SiteFactory } from "./SiteFactory";
 import { KIND_TONES, PETALS, PROP_MATERIALS, PropFactory } from "../environment";
 import type { PropKind, PropView } from "../environment";
 import type { BuildingRenderer } from "../buildings";
@@ -80,8 +81,31 @@ const HUB_BUILDING_LIGHT: LightingState = {
  * reads as a building floating beside its island rather than standing on it.
  * `heightFactor` in `IsoTheme` is the aspiration; this is the ceiling it
  * always has to fit under first.
+ *
+ * Set so the top face is always at least 1.6x the building's own width: at the
+ * old 0.8 a building filled its whole surface, and an island you cannot see
+ * any ground on is a plinth, not a place.
  */
-const BUILDING_WIDTH_FIT = 0.8;
+const BUILDING_WIDTH_FIT = 0.625; // top face is at least 1.6x the building it carries
+
+/**
+ * Grounding — what makes a building stand on its island rather than sit in
+ * front of it.
+ *
+ * Two cues, both of them made of things this world already draws. Planting
+ * along the foot, so the join is crossed by tufts and stones instead of being
+ * a clean horizontal line; and a small pull of the building's own materials
+ * toward its island's surface tones, so the two share a colour family.
+ *
+ * No shadow, and nothing soft. A contact shadow is a gradient, and a gradient
+ * over pixel art is the fastest way to give away that the pixel art is a
+ * costume (CLAUDE.md §Pixel Art Rules) — dithering it does not save it at
+ * this size, it only turns a soft blob into a hard one.
+ */
+const BASE_PROPS: readonly PropKind[] = ["tallGrass", "rock", "tallGrass", "bush"];
+const BASE_PROP_COUNT = [2, 4] as const;
+/** How far a building's materials are pulled toward its island's surface tone. */
+const GROUND_BLEND = 0.16;
 
 /** Chronological order the dashed paths connect, exactly as authored. */
 const PATH_ORDER = [
@@ -98,14 +122,14 @@ const PATH_ORDER = [
 
 /** What grows where, keyed by `identity.terrain` — same idea the coast uses. */
 const PLANTING: Record<string, { kinds: readonly PropKind[]; count: [number, number] }> = {
-  campus: { kinds: ["tree", "bush", "flower", "tallGrass"], count: [4, 6] },
-  city: { kinds: ["rock", "bush", "tallGrass"], count: [2, 4] },
-  vault: { kinds: ["rock", "rock", "bush"], count: [2, 3] },
-  forge: { kinds: ["tree", "rock", "bush", "tallGrass"], count: [3, 5] },
-  shore: { kinds: ["rock", "driftwood", "tallGrass"], count: [2, 4] },
-  spire: { kinds: ["bush", "tallGrass"], count: [2, 4] },
-  workshop: { kinds: ["rock", "bush"], count: [2, 4] },
-  meadow: { kinds: ["flower", "tallGrass", "bush"], count: [4, 6] },
+  campus: { kinds: ["tree", "bush", "flower", "tallGrass"], count: [2, 3] },
+  city: { kinds: ["rock", "bush", "tallGrass"], count: [1, 2] },
+  vault: { kinds: ["rock", "rock", "bush"], count: [1, 2] },
+  forge: { kinds: ["tree", "rock", "bush", "tallGrass"], count: [2, 3] },
+  shore: { kinds: ["rock", "driftwood", "tallGrass"], count: [1, 2] },
+  spire: { kinds: ["bush", "tallGrass"], count: [1, 2] },
+  workshop: { kinds: ["rock", "bush"], count: [1, 2] },
+  meadow: { kinds: ["flower", "tallGrass", "bush"], count: [2, 3] },
 };
 const DEFAULT_PLANTING = PLANTING.shore;
 
@@ -141,6 +165,18 @@ interface Marker {
   visualTop: number;
 }
 
+/** Where whatever stands on an island meets its top face. */
+interface Foot {
+  /** Marker-local y of the top face under the island's centre column. */
+  y: number;
+  /** The standing thing's own drawn width. Zero until something is planted. */
+  width: number;
+  /** Marker-local x of the top face's midpoint — where a building is centred. */
+  centerX: number;
+  /** The island's top-face width — the ceiling on how far the planting spreads. */
+  topWidth: number;
+}
+
 export class OverviewLayer {
   readonly backdrop = new Container();
   readonly field = new Container();
@@ -149,15 +185,17 @@ export class OverviewLayer {
 
   private readonly gradient = new Sprite();
   private readonly vignette = new Sprite();
-  /** Purely scenic: far islands and drifting rocks, behind every real world. */
+  /** Purely scenic: far islands, behind every real world. */
   private readonly farField = new Container();
   private readonly cloudLayers: { sprite: TilingSprite; speed: number }[] = [];
   private readonly pathGraphics = new Graphics();
 
   private readonly markers = new Map<string, Marker>();
   private readonly props = new PropFactory({ seed: 0x2a1f });
-  /** For the five chapters with no dedicated renderer — a small quiet silhouette. */
+  /** For any chapter with no dedicated renderer — a small quiet silhouette. */
   private readonly landmarkArt = new LandmarkFactory();
+  /** Crates, cones, hedges, bollards: the ground dressing the shore does not grow. */
+  private readonly siteArt = new SiteFactory();
   private readonly cloudTextures: Texture[] = [];
   private readonly farTextures: Texture[] = [];
   private readonly farViews: {
@@ -308,6 +346,7 @@ export class OverviewLayer {
   destroy(): void {
     this.release();
     this.props.destroy();
+    this.siteArt.destroy();
     this.glowTexture?.destroy(true);
     this.glowTexture = null;
     for (const texture of this.cloudTextures) texture.destroy(true);
@@ -505,13 +544,35 @@ export class OverviewLayer {
 
     for (const chapter of this.chapters) {
       const theme = ISO_THEME[chapter.id] ?? DEFAULT_ISO_THEME;
-      const size = Math.max(10, Math.round(chapter.overview.radius / scale));
+      // `size` is divided by the elongation so `overview.radius` keeps meaning
+      // "half the island's horizontal extent" for every chapter — otherwise a
+      // long, narrow island would quietly overrun the spacing and the bounds
+      // the whole cluster is derived from.
+      const elongation = theme.elongation ?? 1;
+      const size = Math.max(10, Math.round(chapter.overview.radius / scale / elongation));
       const island = generateIsoIsland({
         size,
         topPalette: theme.topPalette,
         rockPalette: theme.rockPalette,
         edgeSeed: seedOf(chapter.id),
         undersideLength: Math.max(8, Math.round(theme.undersideLength / scale)),
+        elongation,
+        aspect: theme.aspect,
+        roughness: theme.roughness,
+        wallRatio: theme.wallRatio,
+        undersideTaper: theme.undersideTaper,
+        secondaryRock: theme.secondaryRock,
+        strata: theme.rockStrata,
+        // Scaled with the grid like every other vertical measure here, and
+        // floored at one pixel: a step rounded away to nothing is a flat
+        // island, which is a quieter failure than a step half a pixel tall.
+        steps: theme.steps?.map((step) => ({
+          at: step.at,
+          rise: Math.max(1, Math.round(step.rise * (3 / scale))),
+        })),
+        vines: theme.vines,
+        vineTones: theme.vineTones,
+        ground: theme.ground,
       });
 
       const body = new Container();
@@ -532,9 +593,21 @@ export class OverviewLayer {
       islandSprite.eventMode = "none";
       body.addChild(islandSprite);
 
-      const building = this.plantBuilding(theme, island, body);
-      const landmarkTop = building ? null : this.plantLandmark(chapter, island, body);
-      const propViews = this.scatterProps(chapter, island, body);
+      // Depth order inside an island is by baseline, not by insertion: a crate
+      // in front of the building has to draw over it and a hedge behind it has
+      // to draw under it, and the same loop places both.
+      body.sortableChildren = true;
+      glow.zIndex = -2;
+      islandSprite.zIndex = -1;
+
+      const foot = footOf(island);
+      const building = this.plantBuilding(theme, island, foot, body);
+      const landmarkTop = building ? null : this.plantLandmark(chapter, island, foot, body);
+      const propViews = this.scatterProps(chapter, island, foot, body);
+      // Last of all, so the planting crosses in front of the building's lowest
+      // rows rather than stopping politely at them.
+      propViews.push(...this.scatterBase(chapter, island, foot, body));
+      propViews.push(...this.dressIsland(chapter, theme, island, foot, body));
 
       const container = new Container();
       container.label = `chapter:${chapter.id}`;
@@ -585,11 +658,17 @@ export class OverviewLayer {
   }
 
   /**
-   * Distance, faked the cheapest way there is: a handful of small islands and
-   * loose rocks, far too faint and far too small to be mistaken for a world
-   * you could visit, drifting on their own slow cycles. They take no pointer
-   * events and carry nothing — they exist so the space between the nine real
-   * worlds is a place rather than a gap.
+   * Distance, faked the cheapest way there is: a handful of small islands far
+   * too faint and far too small to be mistaken for a world you could visit,
+   * drifting on their own slow cycles. They take no pointer events and carry
+   * nothing — they exist so the space between the nine real worlds is a place
+   * rather than a gap.
+   *
+   * The four loose *rocks* that used to sit alongside them are gone. At five
+   * to seven pixels with a two-tone palette they never resolved into anything
+   * — they read as grey smudges dropped in the void, which is precisely what a
+   * stray shadow would look like and exactly the wrong thing to have floating
+   * near an island.
    */
   private buildFarField(scale: number): void {
     for (const child of this.farField.removeChildren()) child.destroy();
@@ -622,11 +701,6 @@ export class OverviewLayer {
       { at: at(0.72, 0.02), size: 17, alpha: 0.24, tone: 0xc7b0c9, rock: 0x9a86a0 },
       { at: at(0.5, 1.05), size: 26, alpha: 0.22, tone: 0xd9bda6, rock: 0xa88f7c },
       { at: at(0.95, 0.84), size: 14, alpha: 0.2, tone: 0xd3bcb4, rock: 0xa08c88 },
-      // The loose rocks: the same generator, small enough to read as debris.
-      { at: at(0.3, 0.34), size: 6, alpha: 0.3, tone: 0xbca6b6, rock: 0x8f7d8c },
-      { at: at(0.63, 0.62), size: 5, alpha: 0.26, tone: 0xc6ae9f, rock: 0x977f74 },
-      { at: at(0.16, 0.78), size: 7, alpha: 0.24, tone: 0xbfa9b4, rock: 0x8c7a86 },
-      { at: at(0.88, 0.34), size: 5, alpha: 0.22, tone: 0xd2b6a4, rock: 0x9c8478 },
     ];
 
     const rand = createRandom(0x4f1c);
@@ -666,6 +740,7 @@ export class OverviewLayer {
   private plantBuilding(
     theme: IsoThemeEntry,
     island: IsoIsland,
+    foot: Foot,
     body: Container
   ): BuildingRenderer | null {
     if (!theme.building) return null;
@@ -685,12 +760,13 @@ export class OverviewLayer {
     const heightTargetScale = (topWidth * (theme.heightFactor ?? 1.05)) / renderer.height;
     const drawScale = Math.max(0.1, Math.min(widthFitScale, heightTargetScale));
 
-    const col = Math.round(island.topCenter.x);
-    const footY = island.surface[col] >= 0 ? island.surface[col] : island.topBounds.top;
-
     renderer.container.scale.set(drawScale);
-    renderer.container.x = -(renderer.width * drawScale) / 2;
-    renderer.container.y = footY - island.topCenter.y;
+    renderer.container.x = foot.centerX - (renderer.width * drawScale) / 2;
+    // Plus whatever slack the renderer left under its own baseline: the sprite
+    // is anchored to the bitmap's bottom edge, and on the hub a bare isometric
+    // top face shows the difference as a building hovering over its island.
+    renderer.container.y = foot.y + renderer.baselineGap * drawScale;
+    renderer.container.zIndex = island.topCenter.y + foot.y;
     body.addChild(renderer.container);
 
     const boost = theme.lightBoost ?? 1;
@@ -698,7 +774,13 @@ export class OverviewLayer {
       ...HUB_BUILDING_LIGHT,
       ambientIntensity: HUB_BUILDING_LIGHT.ambientIntensity * boost,
     });
+    // Each of these was drawn for its own side-on scene, in its own palette.
+    // On the hub they stand on ground that shares none of it, which is half of
+    // why they read as pasted on. A nudge toward the island's own surface tone
+    // is enough — far enough to share a family, not far enough to repaint.
+    renderer.blendToward(theme.topPalette[1], GROUND_BLEND);
 
+    foot.width = renderer.width * drawScale;
     return renderer;
   }
 
@@ -710,6 +792,7 @@ export class OverviewLayer {
   private plantLandmark(
     chapter: ResolvedChapter,
     island: IsoIsland,
+    foot: Foot,
     body: Container
   ): number | null {
     const spec = chapter.identity.landmarks[0];
@@ -719,7 +802,13 @@ export class OverviewLayer {
     if (!art) return null;
 
     const theme = ISO_THEME[chapter.id] ?? DEFAULT_ISO_THEME;
-    const drawScale = Math.max(1, Math.round((island.topBounds.right - island.topBounds.left) / (art.width * 3)));
+    // A whole-number scale, as always, aimed at the same 1.6x top face every
+    // *building* gets rather than at half of it. Aiming smaller is what left
+    // the five landmark islands reading as blobs: at a third of the top face a
+    // shed rounded down to scale 2 and lost its own doorway. Floored rather
+    // than rounded, so the fit is a floor and never a ceiling.
+    const topWidth = island.topBounds.right - island.topBounds.left;
+    const drawScale = Math.max(1, Math.floor((topWidth * BUILDING_WIDTH_FIT) / art.width));
 
     // One tone lighter than the shape's own shading calls for, and further
     // lifted by `lightBoost` where a bitmap is mostly its `#` (shadow) cells —
@@ -727,9 +816,9 @@ export class OverviewLayer {
     // against the hub's bright sky; there is no clock here to light them
     // properly, so the flat lift stands in for it.
     const boost = theme.lightBoost ?? 1;
-    const make = (texture: Texture, tint: number) => {
+    const make = (texture: Texture, tint: number, ownBoost = boost) => {
       const sprite = new Sprite(texture);
-      sprite.tint = lift(tint, boost);
+      sprite.tint = lift(tint, ownBoost);
       sprite.eventMode = "none";
       sprite.scale.set(drawScale);
       return sprite;
@@ -738,21 +827,303 @@ export class OverviewLayer {
     const container = new Container();
     container.eventMode = "none";
     container.addChild(
+      // Outline first, in the island's darkest rock and deliberately *not*
+      // lifted — the shed and the tent are earth-toned things standing on
+      // earth, and without a hard edge between them the silhouette the whole
+      // drawing is carrying simply is not there at hub scale.
+      make(art.outline, theme.rockPalette[3], 1),
       make(art.base, theme.rockPalette[0]),
       make(art.dark, theme.rockPalette[2]),
-      make(art.light, theme.topPalette[0])
+      make(art.light, theme.topPalette[0]),
+      // The lit cells: the chapter's own accent, flat and at full strength.
+      // A window that reads as lit is worth more here than three more rows of
+      // architecture, and it is the only warm thing on a cool island.
+      make(art.lit, chapter.identity.accent, 1)
     );
 
-    const col = Math.round(island.topCenter.x);
-    const footY = island.surface[col] >= 0 ? island.surface[col] : island.topBounds.top;
-    container.x = -(art.width * drawScale) / 2;
-    container.y = footY - island.topCenter.y - art.height * drawScale;
+    // Centred on the drawing's *anchor* column rather than on its bitmap
+    // width: the lighthouse carries a beam out to one side, and centring the
+    // bounding box put the tower itself off the edge of the island while the
+    // beam sat over the middle of it.
+    container.x = foot.centerX - art.anchorX * drawScale;
+    container.y = foot.y - art.height * drawScale;
+    container.zIndex = island.topCenter.y + foot.y;
     body.addChild(container);
+
+    foot.width = art.width * drawScale;
     return container.y;
   }
 
-  /** Scatter this chapter's planting across its island's top face. */
-  private scatterProps(chapter: ResolvedChapter, island: IsoIsland, body: Container): PropView[] {
+  /**
+   * Everything on the ground that is not the building.
+   *
+   * # Arrangement is the whole job
+   * Nine islands each carrying one building and a ring of evenly spaced bushes
+   * read as nine plots, not nine places. What separates a used yard from a
+   * decorated one is where things end up: gathered at the door, strung along
+   * the way in, dropped out on the open ground, and banked up at the edges.
+   * `IsoTheme.dressing` says what and which of those four; this decides where
+   * inside them, against the island's own per-column footprint so nothing ever
+   * stands off the land.
+   *
+   * # Two sources, one loop
+   * A name is looked up in `SiteFactory` first and the shore's `PropFactory`
+   * second. Crates and cones come from the former because the coast has no
+   * reason to grow them; bushes, benches and lamps come from the latter
+   * because it already does, and a second bush drawn to a second rule is how
+   * a scene starts looking assembled from parts.
+   */
+  private dressIsland(
+    chapter: ResolvedChapter,
+    theme: IsoThemeEntry,
+    island: IsoIsland,
+    foot: Foot,
+    body: Container
+  ): PropView[] {
+    const views: PropView[] = [];
+    const plan = theme.dressing;
+    if (!plan || plan.length === 0) return views;
+
+    const rand = createRandom(seedOf(chapter.id) ^ 0x2d97);
+    const { left, right } = island.topBounds;
+    if (right <= left) return views;
+
+    const axis = island.topCenter.x + foot.centerX;
+    const footHalf = Math.max(6, foot.width / 2);
+    const pathHalf = (theme.ground?.path ?? 0) / 2;
+    const accent = chapter.identity.accent;
+
+    /**
+     * A column and a depth for one piece, or null if the land says no.
+     *
+     * `half` is the piece's own half-width, and every column it would cover is
+     * tested rather than only the one it stands on. Testing the centre alone
+     * is what left crates hanging over the rim with a third of themselves in
+     * open sky — at the ends of a cap two pixels deep, most of a sprite is
+     * outside the column it is standing in.
+     */
+    const place = (
+      entry: DressingEntry,
+      index: number,
+      half: number,
+      tall: boolean
+    ): { x: number; y: number } | null => {
+      const onLand = (column: number, y: number): boolean => {
+        for (let c = column - half; c <= column + half; c++) {
+          if (c < left || c > right) return false;
+          const top = island.surface[c];
+          const bottom = island.capBottom[c];
+          if (top < 0 || y < top || y > bottom) return false;
+        }
+        return true;
+      };
+
+      for (let attempt = 0; attempt < 14; attempt++) {
+        const side = index % 2 === 0 ? -1 : 1;
+        let column: number;
+        let depth: number;
+
+        switch (entry.zone) {
+          case "yard":
+            column = Math.round(axis + side * range(rand, footHalf * 0.7, footHalf * 1.7));
+            depth = range(rand, 0.42, 0.86);
+            break;
+          case "path":
+            column = Math.round(axis + side * range(rand, pathHalf + 2, pathHalf + 8));
+            depth = range(rand, 0.4, 0.94);
+            break;
+          case "apron":
+            column = Math.round(axis + range(rand, -1, 1) * foot.topWidth * 0.34);
+            depth = range(rand, 0.72, 0.95);
+            break;
+          default:
+            // Banked against the perimeter, front and back both. This is the
+            // half of "define the edges" the island cannot bake itself: the
+            // rim tone draws the line, and these stand on it. Inset from the
+            // very ends, where the cap is too shallow to stand anything in.
+            column = rangeInt(rand, left + 3, right - 3);
+            // Anything tall goes to the *back* rim only. A tree on the front
+            // rim is drawn in front of the building and is taller than it —
+            // which is how Aptech ended up behind a hedge of its own planting.
+            depth = tall || rand() < 0.5 ? range(rand, 0.06, 0.2) : range(rand, 0.82, 0.96);
+            break;
+        }
+
+        const top = island.surface[column];
+        const bottom = island.capBottom[column];
+        if (top < 0 || bottom <= top) continue;
+
+        const y = Math.round(top + (bottom - top) * depth);
+        if (!onLand(column, y)) continue;
+        // Never under the building itself — a crate behind a wall is a crate
+        // nobody sees, and one in front of the door is worse.
+        if (entry.zone !== "rim" && Math.abs(column - axis) < footHalf * 0.62) continue;
+        return { x: column, y };
+      }
+      return null;
+    };
+
+    for (const entry of plan) {
+      for (let i = 0; i < entry.count; i++) {
+        // Resolved before placing, because how wide a thing is decides where
+        // it will fit.
+        const art = this.siteArt.textures(entry.what);
+        const grown = art ? null : this.props.textures(entry.what as PropKind, 0);
+        const pieceWidth = art?.width ?? grown?.width ?? 0;
+        if (pieceWidth === 0) continue;
+
+        const pieceHeight = art?.height ?? grown?.height ?? 0;
+        const spot = place(entry, i, Math.max(1, pieceWidth >> 1), pieceHeight > 14);
+        if (!spot) continue;
+
+        const site = art ? this.siteArt.make(entry.what, accent) : null;
+        if (site) {
+          site.container.x = spot.x - island.topCenter.x - (site.width >> 1);
+          site.container.y = spot.y - island.topCenter.y - site.height;
+          site.container.zIndex = spot.y;
+          body.addChild(site.container);
+          continue;
+        }
+
+        const view = this.growProp(entry.what as PropKind, rand, island, spot);
+        if (view) {
+          view.container.zIndex = spot.y;
+          body.addChild(view.container);
+          views.push(view);
+        }
+      }
+    }
+
+    return views;
+  }
+
+  /** One of the shore's own props, bound at a spot on this island's cap. */
+  private growProp(
+    kind: PropKind,
+    rand: () => number,
+    island: IsoIsland,
+    spot: { x: number; y: number }
+  ): PropView | null {
+    const variant = rangeInt(rand, 0, 3);
+    const textures = this.props.textures(kind, variant);
+    if (!textures) return null;
+
+    const view = this.props.acquire();
+    view.bind(
+      {
+        kind,
+        variant,
+        x: spot.x - island.topCenter.x - (textures.width >> 1),
+        y: spot.y - island.topCenter.y,
+        band: "backVerge",
+        dy: 0,
+        flip: rand() < 0.5,
+        scale: 1,
+        motion: "sway",
+        phase: range(rand, 0, Math.PI * 2),
+        swayRate: range(rand, 0.3, 0.5),
+        swayAmount: 1,
+      },
+      textures,
+      null
+    );
+
+    const tones = KIND_TONES[kind];
+    view.setTones(
+      PROP_MATERIALS[tones.base],
+      PROP_MATERIALS[tones.light],
+      PROP_MATERIALS[tones.dark]
+    );
+    return view;
+  }
+
+  /**
+   * Tufts, stones and small bushes along the foot, straddling the bottom edge.
+   *
+   * The seam a building makes with the top face it stands on is a clean
+   * horizontal line, and a clean line between two separately drawn things is
+   * exactly what says they were drawn separately. Breaking it costs four to
+   * six of the shore's own props, sat a pixel or two below the baseline so
+   * their tops overlap the wall — the same planting already scattered across
+   * the rest of the island, just aimed at the join.
+   */
+  private scatterBase(
+    chapter: ResolvedChapter,
+    island: IsoIsland,
+    foot: Foot,
+    body: Container
+  ): PropView[] {
+    const views: PropView[] = [];
+    if (foot.width <= 0) return views;
+
+    const rand = createRandom(seedOf(chapter.id) ^ 0x71c3);
+    const count = rangeInt(rand, BASE_PROP_COUNT[0], BASE_PROP_COUNT[1]);
+    const half = Math.min(foot.width, foot.topWidth) / 2;
+
+    for (let i = 0; i < count; i++) {
+      const kind = BASE_PROPS[rangeInt(rand, 0, BASE_PROPS.length - 1)];
+      const variant = rangeInt(rand, 0, 3);
+      const textures = this.props.textures(kind, variant);
+
+      // Along the foot rather than under the middle of it — a prop behind the
+      // building is a prop nobody sees — and out past the corners a little,
+      // so the silhouette's ends are broken up too.
+      const side = rand() < 0.5 ? -1 : 1;
+      const x = Math.round(foot.centerX + side * range(rand, half * 0.55, half * 1.05));
+      const column = Math.round(x + island.topCenter.x);
+      if (column < 0 || column >= island.width || island.surface[column] < 0) continue;
+
+      const view = this.props.acquire();
+      view.bind(
+        {
+          kind,
+          variant,
+          x: x - (textures.width >> 1),
+          y: foot.y + rangeInt(rand, 0, 2),
+          band: "backVerge",
+          dy: 0,
+          flip: rand() < 0.5,
+          scale: 1,
+          motion: "sway",
+          phase: range(rand, 0, Math.PI * 2),
+          swayRate: range(rand, 0.3, 0.5),
+          swayAmount: 1,
+        },
+        textures,
+        null
+      );
+
+      const tones = KIND_TONES[kind];
+      view.setTones(
+        PROP_MATERIALS[tones.base],
+        PROP_MATERIALS[tones.light],
+        PROP_MATERIALS[tones.dark]
+      );
+
+      view.container.zIndex = island.topCenter.y + foot.y + rangeInt(rand, 0, 2);
+      body.addChild(view.container);
+      views.push(view);
+    }
+
+    return views;
+  }
+
+  /**
+   * Scatter this chapter's planting across its island's top face.
+   *
+   * Everything here is drawn *after* whatever stands on the island, so a tuft
+   * that lands on the centre column lands in front of the building — which is
+   * how the cottage ended up behind a meadow and the lighthouse behind its own
+   * shore grass. The planting keeps clear of the standing thing's own width
+   * and grows on the ground around it instead; the deliberate overlap at the
+   * seam is `scatterBase`'s job, and it is aimed at the foot only.
+   */
+  private scatterProps(
+    chapter: ResolvedChapter,
+    island: IsoIsland,
+    foot: Foot,
+    body: Container
+  ): PropView[] {
     const scheme = PLANTING[chapter.identity.terrain] ?? DEFAULT_PLANTING;
     const rand = createRandom(seedOf(chapter.id) ^ 0x5bd1);
     const count = rangeInt(rand, scheme.count[0], scheme.count[1]);
@@ -762,11 +1133,27 @@ export class OverviewLayer {
     const right = island.topBounds.right;
     if (right <= left) return views;
 
+    // Half the standing thing's width plus air — but never less than a fifth of
+    // the top face either side, because the two chapters with the *smallest*
+    // things standing on them (Freelance's cottage, Contact's lighthouse) are
+    // exactly the ones a bush in front of reduces to a green lump.
+    const width = right - left;
+    const clear = Math.max(foot.width * 0.5 + 4, width * 0.24);
+
     for (let i = 0; i < count; i++) {
       const kind = scheme.kinds[rangeInt(rand, 0, scheme.kinds.length - 1)];
-      const x = Math.max(left + 1, Math.min(right - 1, rangeInt(rand, left, right)));
+      // Resampled rather than dropped: a skipped draw would thin the planting
+      // on exactly the islands with the widest buildings, which is backwards.
+      let x = -1;
+      for (let attempt = 0; attempt < 8; attempt++) {
+        const candidate = Math.max(left + 1, Math.min(right - 1, rangeInt(rand, left, right)));
+        if (island.surface[candidate] < 0) continue;
+        if (Math.abs(candidate - (island.topCenter.x + foot.centerX)) < clear) continue;
+        x = candidate;
+        break;
+      }
+      if (x < 0) continue;
       const surfaceY = island.surface[x];
-      if (surfaceY < 0) continue;
 
       const variant = rangeInt(rand, 0, 3);
       const textures = this.props.textures(kind, variant);
@@ -797,6 +1184,7 @@ export class OverviewLayer {
         kind === "flower" ? PROP_MATERIALS[PETALS[i % PETALS.length]] : PROP_MATERIALS[tones.light];
       view.setTones(PROP_MATERIALS[tones.base], light, PROP_MATERIALS[tones.dark]);
 
+      view.container.zIndex = surfaceY;
       body.addChild(view.container);
       views.push(view);
     }
@@ -913,6 +1301,25 @@ export class OverviewLayer {
       "Overview"
     );
   }
+}
+
+/** The spot on the top face a building stands on, before anything stands there. */
+function footOf(island: IsoIsland): Foot {
+  // The top face's own centre, not its back rim: `island.surface` holds the
+  // *highest* row of each column, which on the centre column is the far edge
+  // of the ellipse — standing there floats a building half a cap-height above
+  // the surface it is meant to rest on.
+  // Centred on the top face's *own* midpoint, not on the island texture's.
+  // `topCenter.x` is the geometric centre of the plot the coastline was
+  // generated in; `topBounds` is where the land actually ended up, and on a
+  // rough island the two are several pixels apart. Standing on the former is
+  // what walked Workshop's shed off its own left edge.
+  return {
+    y: 0,
+    width: 0,
+    centerX: Math.round((island.topBounds.left + island.topBounds.right) / 2 - island.topCenter.x),
+    topWidth: island.topBounds.right - island.topBounds.left,
+  };
 }
 
 /** A stable number from a chapter id, so an island is the same island twice. */

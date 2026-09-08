@@ -42,6 +42,7 @@ export { AptechBuilding, AptechRenderer, APTECH } from "./aptech";
 export { BbitBuilding, BbitRenderer, BBIT } from "./bbit";
 export { CottageBuilding, CottageRenderer, COTTAGE } from "./cottage";
 export { IdeasTentBuilding, IdeasTentRenderer, IDEAS_TENT } from "./ideastent";
+export { LighthouseRenderer } from "./lighthouse";
 export { Planet01Building, Planet01Renderer, PLANET01 } from "./planet01";
 export { VaultsysBuilding, VaultsysRenderer, VAULTSYS } from "./vaultsys";
 export { NatureTechBuilding, NatureTechRenderer, NATURETECH } from "./naturetech";

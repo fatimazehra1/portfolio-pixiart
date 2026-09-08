@@ -25,8 +25,15 @@ import { maskToTexture } from "../shared";
  * can read the other:
  *
  * ```
- *   .  empty      X  body      o  lit      #  shadowed
+ *   .  empty      X  body      o  lit      #  shadowed      *  glowing
  * ```
+ *
+ * `*` is the one addition the hub asked for: a cell tinted with the chapter's
+ * own `identity.accent` instead of its rock, so a window, a bulb or a lamp
+ * room reads as lit rather than as one more body pixel. Everything baked here
+ * also carries a one-pixel outline, derived from the shape rather than
+ * plotted — at hub scale a brown shed on brown earth has no silhouette at all
+ * without one.
  *
  * Light comes from the upper left, which is the convention every drawing in
  * this world already follows — the cloud tops, the lighthouse, the shore props.
@@ -62,14 +69,21 @@ export const LANDMARKS: Record<string, readonly string[]> = {
   ],
 
   // --- Freelance: one small cottage, one chimney ---------------------------
+  // A pitch steep enough to read as a roof at a fifth of this size, eaves that
+  // overhang the walls so the two stay separate shapes, one lit window and a
+  // door. Nothing else fits at hub scale, and nothing else is needed.
   cottage: [
-    "...oo...",
-    "..oXXX#.",
-    ".oXXXXX#",
-    "oXXXXXXX",
-    "oXXXXXXX",
-    "oX##XXX#",
-    "########",
+    ".....oo.....",
+    "....oXX#....",
+    "...oXXXX#...",
+    "..oXXXXXX#..",
+    ".oXXXXXXXX#.",
+    "oXXXXXXXXXX#",
+    ".##########.",
+    ".oX**XXXXX#.",
+    ".oX**XX##X#.",
+    ".oXXXXX##X#.",
+    ".##########.",
   ],
   chimney: ["oX#", "oX#", "oX#"],
 
@@ -130,60 +144,128 @@ export const LANDMARKS: Record<string, readonly string[]> = {
   ],
 
   // --- BBIT: a stone spire. Quiet, upright, nothing beside it --------------
+  // Twice as tall as it is wide, and stepped in three times on the way up —
+  // three wide, five, seven, nine. A straight-sided shaft at this scale reads
+  // as a block whatever you put on it; the steps are the only thing that says
+  // "tower". One window, three pixels across, lit in the chapter's accent,
+  // because a single lit window is worth more than a facade of dark ones.
   spire: [
-    "..oo..",
-    ".oXX#.",
-    ".oXX#.",
-    "oXXXX#",
-    "oX##X#",
-    "oXXXX#",
-    "oX##X#",
-    "oXXXX#",
-    "######",
-  ],
-
-  // --- Workshop: a shed that has been added to more than once --------------
-  shed: [
-    "..ooooo..",
+    "....X....",
+    "...oX#...",
+    "...oX#...",
+    "..oXXX#..",
+    "..oXXX#..",
+    "..oXXX#..",
+    ".oXXXXX#.",
+    ".oX***X#.",
+    ".oX***X#.",
     ".oXXXXX#.",
     "oXXXXXXX#",
     "oX#XXX#X#",
     "oXXXXXXX#",
+    "oX#XXX#X#",
+    "oXXXXXXX#",
+    "oXX###XX#",
     "#########",
+  ],
+
+  // --- Workshop: a shed that has been added to more than once --------------
+  // The bay stands open — a dark void a third of the front wide, which is the
+  // whole point of a workshop you can see into — under a gable with a real
+  // overhanging eave, a lit window beside it, and a stove vent clear of the
+  // ridge. An earlier pass made the bay eight pixels of twelve and the whole
+  // shed went back to reading as one dark lump.
+  shed: [
+    "..........oX#.",
+    "..........oX#.",
+    "......oo..oX#.",
+    ".....oXXo.oX#.",
+    "....oXXXXooX#.",
+    "...oXXXXXXXX#.",
+    "..oXXXXXXXXXX#",
+    ".#############",
+    ".oXX####XXXX#.",
+    ".oXX####X**X#.",
+    ".oXX####X**X#.",
+    ".oXX####XXXX#.",
+    ".#############",
   ],
   leanto: ["oo##", "oXX#", "oXX#", "####"],
 
   // --- Ideas: a tent. Pointed, temporary, guyed down ------------------------
+  // Two poles crossed above the ridge, a door held open, and a bulb strung
+  // under it. The poles are what stop this reading as a pyramid, and the bulb
+  // is the one thing on the island that says somebody is still in there.
   tent: [
-    "...o...",
-    "..oX#..",
-    ".oXXX#.",
-    "oXXXXX#",
-    "oX#.#X#",
-    "#######",
+    "....o...#....",
+    ".....o.#.....",
+    "......X......",
+    ".....oX#.....",
+    "....oXXX#....",
+    "...oXXXXX#...",
+    "..oXX*X*XX#..",
+    ".oXXX###XXX#.",
+    ".oXX#####XX#.",
+    "oXXX#####XXX#",
+    "#############",
   ],
 
   // --- Lighthouse: the fixed point. Tall, tapered, lamp at the top ---------
+  // The one shape on the map that has to be legible from anywhere on it. Top
+  // to bottom: a capped lantern roof, the glazed lamp room, the railing and
+  // the gallery deck it stands on, then a tower stepping out three times on
+  // its way down. The beam leaves the lamp room horizontally, at lamp height
+  // — drawn any lower it stopped being a beam and became a yellow box stuck to
+  // the tower's side. `LANDMARK_ANCHORS` keeps the *tower* over the island
+  // rather than the drawing's bounding box, which the beam skews.
   lighthouse: [
-    ".oXX#.",
-    ".o##X.",
-    ".oXX#.",
-    "oXXXX#",
-    ".oXX#.",
-    ".oXX#.",
-    ".oXX#.",
-    "oXXXX#",
-    "oX##X#",
-    "oXXXX#",
-    "######",
+    "...oX#.......",
+    "..oXXX#......",
+    ".oXXXXX#.....",
+    "..X***X...**.",
+    "..X***X.*****",
+    "..X***X...**.",
+    "o#o#o#o#o....",
+    "oXXXXXXX#....",
+    "..oXXX#......",
+    "..oXXX#......",
+    "..oXXX#......",
+    ".oXXXXX#.....",
+    ".oXXXXX#.....",
+    ".oX###X#.....",
+    ".oXXXXX#.....",
+    "oXXXXXXX#....",
+    "oXXXXXXX#....",
+    "oX#####X#....",
+    "oXXXXXXX#....",
+    "oXX###XX#....",
+    "#########....",
   ],
 };
 
-/** A landmark, baked into its three tones. */
+/**
+ * The column a drawing should be stood on, where that is not its own middle.
+ *
+ * Only the lighthouse needs one: its beam is half the bitmap's width and none
+ * of its mass, so centring the bounding box hangs the tower off the island's
+ * edge while the beam sits neatly over the middle. Everything else is
+ * symmetric enough that the bitmap's centre is the right answer.
+ */
+const LANDMARK_ANCHORS: Record<string, number> = {
+  lighthouse: 4, // the tower's own centre column
+};
+
+/** A landmark, baked into its outline and its four tones. */
 export interface LandmarkTextures {
   base: Texture;
   light: Texture;
   dark: Texture;
+  /** The `*` cells — tinted with the chapter's accent, not with its rock. */
+  lit: Texture;
+  /** One pixel of empty space around the whole silhouette, for a hard edge. */
+  outline: Texture;
+  /** The column this drawing stands on, in baked pixels — usually its middle. */
+  anchorX: number;
   width: number;
   height: number;
 }
@@ -210,7 +292,7 @@ export class LandmarkFactory {
     // blank screen.
     if (!rows || rows.length === 0) return null;
 
-    const built = bake(rows);
+    const built = bakePixelArt(rows, LANDMARK_ANCHORS[name]);
     this.cache.set(name, built);
     return built;
   }
@@ -220,33 +302,67 @@ export class LandmarkFactory {
       set.base.destroy(true);
       set.light.destroy(true);
       set.dark.destroy(true);
+      set.lit.destroy(true);
+      set.outline.destroy(true);
     }
     this.cache.clear();
   }
 }
 
-/** Turn `.`/`X`/`o`/`#` rows into three white masks. */
-function bake(rows: readonly string[]): LandmarkTextures {
-  const height = rows.length;
-  const width = Math.max(...rows.map((row) => row.length));
+/**
+ * Turn `.`/`X`/`o`/`#`/`*` rows into five white masks, padded by one pixel.
+ *
+ * Exported because the hub's ground dressing (`SiteFactory`) is plotted in the
+ * same convention and wants the same outline. One baker, one outline weight —
+ * a crate drawn to a different rule than the tent beside it is the kind of
+ * mismatch that reads as "assets from two places".
+ */
+export function bakePixelArt(rows: readonly string[], anchor?: number): LandmarkTextures {
+  // A pixel of margin all round, so the derived outline has somewhere to go on
+  // shapes whose walls run to the edge of their own plot — which is most of
+  // them, because a silhouette that stops short of its bounds wastes width it
+  // never gets back at this scale.
+  const inner = Math.max(...rows.map((row) => row.length));
+  const width = inner + 2;
+  const height = rows.length + 2;
   const size = width * height;
 
   const base = new Uint8Array(size);
   const light = new Uint8Array(size);
   const dark = new Uint8Array(size);
+  const lit = new Uint8Array(size);
+  const outline = new Uint8Array(size);
 
-  for (let y = 0; y < height; y++) {
+  for (let y = 0; y < rows.length; y++) {
     const row = rows[y];
-    for (let x = 0; x < width; x++) {
+    for (let x = 0; x < inner; x++) {
       const cell = row[x] ?? ".";
       if (cell === ".") continue;
 
-      const i = y * width + x;
-      // Every filled pixel is in the body; the lit and shadowed masks are drawn
-      // *over* it. One drawing, three tints, tinted per chapter at runtime.
+      const i = (y + 1) * width + (x + 1);
+      // Every filled pixel is in the body; the lit, shadowed and glowing masks
+      // are drawn *over* it. One drawing, four tints, tinted per chapter at
+      // runtime.
       base[i] = 255;
       if (cell === "o") light[i] = 255;
       else if (cell === "#") dark[i] = 255;
+      else if (cell === "*") lit[i] = 255;
+    }
+  }
+
+  // Derived, not plotted: every empty pixel orthogonally touching the body.
+  // Drawn behind everything in the island's darkest rock tone, it is what
+  // separates a brown shed from the brown earth it stands on.
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const i = y * width + x;
+      if (base[i]) continue;
+      const touching =
+        (x > 0 && base[i - 1]) ||
+        (x < width - 1 && base[i + 1]) ||
+        (y > 0 && base[i - width]) ||
+        (y < height - 1 && base[i + width]);
+      if (touching) outline[i] = 255;
     }
   }
 
@@ -254,6 +370,10 @@ function bake(rows: readonly string[]): LandmarkTextures {
     base: maskToTexture(width, height, base, "Landmark"),
     light: maskToTexture(width, height, light, "Landmark"),
     dark: maskToTexture(width, height, dark, "Landmark"),
+    lit: maskToTexture(width, height, lit, "Landmark"),
+    outline: maskToTexture(width, height, outline, "Landmark"),
+    // Plus the pad, so callers can use it straight against the baked width.
+    anchorX: (anchor ?? inner / 2) + 1,
     width,
     height,
   };

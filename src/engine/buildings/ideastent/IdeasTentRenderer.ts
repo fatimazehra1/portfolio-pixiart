@@ -33,18 +33,34 @@ const H = 76;
 
 const BASE = H - 2;
 
-/** The two poles the ridge hangs between, and how far apart they lean. */
-const LEFT_POLE = { x: 16, top: 18, lean: -2 };
-const RIGHT_POLE = { x: 84, top: 22, lean: 2 };
+/**
+ * The two poles the ridge hangs between, and how far apart they lean.
+ *
+ * They stand *in* from the eaves rather than at them, and they are tall. That
+ * is the whole difference between a tent and a shed: a shed's roof is held up
+ * at its edges and comes out flat, a tent's is held up in the middle and falls
+ * away steeply to both sides. An earlier pass had these near the corners with
+ * four pixels of sag between them, which drew a flat awning on stilts.
+ */
+const LEFT_POLE = { x: 38, top: 10, lean: -1 };
+const RIGHT_POLE = { x: 70, top: 12, lean: 1 };
 
 /** How far the ridge sags between the two poles holding it up. */
-const RIDGE_SAG = 4;
+const RIDGE_SAG = 3;
+
+/**
+ * Where the canvas comes down to, and how steeply it gets there.
+ *
+ * A slope near 1.2 is what makes the silhouette read as a peak from across the
+ * map; below about 0.8 it flattens back into a roof.
+ */
+const EAVE = { left: 8, right: 100, slope: 1.2 };
 
 /** The bench under it. */
-const BENCH = { x: 30, y: BASE - 20, width: 44, height: 3 };
+const BENCH = { x: 26, y: BASE - 20, width: 42, height: 3 };
 
 /** The bulb, hanging off the ridge on a wire, a little left of centre. */
-const BULB = { x: 46, drop: 16 };
+const BULB = { x: 48, drop: 16 };
 
 // --- Animation ---------------------------------------------------------------
 
@@ -238,13 +254,26 @@ export class IdeasTentRenderer extends BuildingRenderer {
   private plotShade(): void {
     const shade = this.pixels("shade");
 
-    for (let x = LEFT_POLE.x - 6; x <= RIGHT_POLE.x + 6; x++) {
-      const top = this.canvasY(x) + 2;
+    // Only under the span the poles actually hold up, and falling off toward
+    // the eaves. Carried edge to edge at full strength — which is what the flat
+    // awning did — it filled the whole footprint and the tent came out as one
+    // dark triangle with the bench, the sign and the bulb lost inside it.
+    const left = LEFT_POLE.x - 20;
+    const right = RIGHT_POLE.x + 20;
+    const middle = (left + right) / 2;
+
+    for (let x = left; x <= right; x++) {
+      const top = this.canvasY(x) + 3;
       if (top >= BASE) continue;
-      // Deeper in the middle, where the awning is lowest and the bench is.
-      const depth = BASE - top;
-      for (let i = 0; i < depth; i++) {
-        const alpha = i < 4 ? 190 : i < 10 ? 130 : 80;
+      // Deepest under the ridge, thinning to nothing where daylight gets in
+      // under the skirt.
+      const across = 1 - Math.abs(x - middle) / ((right - left) / 2);
+      const falloff = 0.35 + 0.65 * across;
+
+      for (let i = 0; i < BASE - top; i++) {
+        const base = i < 4 ? 150 : i < 12 ? 110 : 70;
+        const alpha = Math.round(base * falloff);
+        if (alpha <= 8) continue;
         shade.set(x, top + i, alpha);
       }
     }
@@ -260,15 +289,12 @@ export class IdeasTentRenderer extends BuildingRenderer {
   private canvasY(x: number): number {
     const left = LEFT_POLE.x;
     const right = RIGHT_POLE.x;
-    if (x < left) {
-      // The overhang past the left pole, falling away.
-      const t = (left - x) / 10;
-      return LEFT_POLE.top + Math.round(t * t * 8);
-    }
-    if (x > right) {
-      const t = (x - right) / 10;
-      return RIGHT_POLE.top + Math.round(t * t * 8);
-    }
+    // Outside the ridge the canvas is a straight, steep fall to the eave —
+    // straight rather than curved on purpose. A guyed sheet between a ridge and
+    // a peg is under tension across its width and hangs flat; the curve belongs
+    // to the ridge line only, which is the part hanging off a rope.
+    if (x < left) return Math.round(LEFT_POLE.top + (left - x) * EAVE.slope);
+    if (x > right) return Math.round(RIGHT_POLE.top + (x - right) * EAVE.slope);
     const t = (x - left) / (right - left);
     const ridge = LEFT_POLE.top + (RIGHT_POLE.top - LEFT_POLE.top) * t;
     // The sag between the poles: a rope-supported ridge is a curve, not a line.
@@ -290,7 +316,7 @@ export class IdeasTentRenderer extends BuildingRenderer {
       const stripe = this.pixels("stripe", f);
       const patch = this.pixels("patch", f);
 
-      for (let x = LEFT_POLE.x - 12; x <= RIGHT_POLE.x + 12; x++) {
+      for (let x = EAVE.left; x <= EAVE.right; x++) {
         const breeze = f === 0 ? 0 : Math.round(Math.sin((x - LEFT_POLE.x) * 0.16) * 1.2);
         const y = this.canvasY(x) + breeze;
 
@@ -302,13 +328,13 @@ export class IdeasTentRenderer extends BuildingRenderer {
         dark.set(x, y + 2);
 
         // A stripe down the middle panel, following the same curve.
-        if (x > 44 && x < 56) stripe.set(x, y + 1);
+        if (x > 46 && x < 58) stripe.set(x, y + 1);
         // One taped patch, off to the right, where the canvas tore.
-        if (x > 66 && x < 74) patch.set(x, y + (x % 2));
+        if (x > 78 && x < 88) patch.set(x, y + (x % 2));
       }
 
       // The two edges hang down, fraying, rather than stopping in mid-air.
-      for (const edge of [LEFT_POLE.x - 12, RIGHT_POLE.x + 12]) {
+      for (const edge of [EAVE.left, EAVE.right]) {
         const y = this.canvasY(edge);
         const drop = 4 + Math.round(this.rand() * 3);
         for (let i = 0; i < drop; i++) {
@@ -318,7 +344,7 @@ export class IdeasTentRenderer extends BuildingRenderer {
       }
 
       // And the front lip, hanging off the fly-edge in scallops.
-      for (let x = LEFT_POLE.x - 12; x <= RIGHT_POLE.x + 12; x += 6) {
+      for (let x = EAVE.left; x <= EAVE.right; x += 6) {
         const y = this.canvasY(x) + 3;
         canvas.set(x, y);
         canvas.set(x + 1, y);
@@ -402,15 +428,17 @@ export class IdeasTentRenderer extends BuildingRenderer {
     const paint = this.pixels("paint");
     const rope = this.pixels("rope");
 
-    const x = 66;
-    const y = 40;
-    const w = 26;
+    // Out under the right-hand fall of the canvas, clear of both the bench and
+    // the eave — the two things the steeper roof left it nowhere to be.
+    const x = 72;
+    const y = 46;
+    const w = 24;
     const h = 12;
 
     // Hung off the right pole by a short rope, and tilted three pixels.
-    rope.set(x + w - 4, y - 3);
-    rope.set(x + w - 3, y - 4);
-    rope.set(x + w - 2, y - 5);
+    rope.set(x, y - 2);
+    rope.set(x - 1, y - 4);
+    rope.set(x - 2, y - 6);
 
     for (let dy = 0; dy < h; dy++) {
       const tilt = Math.round((dy / h) * 2);

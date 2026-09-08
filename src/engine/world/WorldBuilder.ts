@@ -556,7 +556,10 @@ export class World {
       height: bounds.height + BOTTOM_RESERVE / zoom,
     });
     // Below 1, so it is possible to stand far enough back to see the whole map.
-    this.camera.setZoomRange(0.5, 3);
+    // The floor has to clear `fitZoom` on a short, wide window — clamped above
+    // it, the opening frame is the clamp's, not the fit's, and the map opens
+    // with its outermost worlds cut off.
+    this.camera.setZoomRange(0.35, 3);
     this.camera.setWheelMode("zoom");
     this.overview.setPresence(1);
     // A fresh arrival on the map is not a deliberate framing, so a resize may

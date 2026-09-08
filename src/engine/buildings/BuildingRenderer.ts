@@ -209,7 +209,10 @@ export abstract class BuildingRenderer {
   /** Per-layer multiplier on an emissive layer's alpha. See `setEmissiveScale`. */
   private readonly scales = new Map<string, number>();
 
+  private baselineGapValue = 0;
   private lighting: LightingState | null = null;
+  /** Pull every lit material a fraction of the way toward one colour. See `blendToward`. */
+  private ground: { color: number; amount: number } | null = null;
 
   constructor(
     readonly width: number,
@@ -242,6 +245,23 @@ export abstract class BuildingRenderer {
     return this.height;
   }
 
+  /**
+   * Empty rows between the lowest pixel actually drawn and the bottom of the
+   * bitmap. Zero for most buildings.
+   *
+   * A caller that stands a building on a surface positions the *sprite*, and
+   * the sprite is anchored to the bitmap's bottom edge — which is not the same
+   * row as the building's own feet whenever a renderer reserves a little slack
+   * under its baseline (`const BASE = H - 2` is the common idiom here). On the
+   * shore the difference is a pixel or two on ground that already has grass in
+   * front of it and nobody sees it. On the hub, where a tower stands on a bare
+   * isometric top face with sky behind it, the same pixel or two reads as the
+   * building hovering. Add this to the surface y and the feet land on it.
+   */
+  get baselineGap(): number {
+    return this.baselineGapValue;
+  }
+
   // --- Commands --------------------------------------------------------------
 
   /** Plot, bake and mount. Call once, after construction. */
@@ -264,7 +284,26 @@ export abstract class BuildingRenderer {
       this.container.addChild(sprite);
     }
 
+    this.measureBaseline();
     this.applyLighting(this.lighting);
+  }
+
+  /**
+   * Find the lowest row anything was actually drawn on, over every layer and
+   * every frame. Once, at build time — see `baselineGap`.
+   */
+  private measureBaseline(): void {
+    for (let y = this.height - 1; y >= 0; y--) {
+      for (const frames of this.layers.values()) {
+        for (const frame of frames) {
+          for (let x = 0; x < this.width; x++) {
+            if (frame.get(x, y) === 0) continue;
+            this.baselineGapValue = this.height - 1 - y;
+            return;
+          }
+        }
+      }
+    }
   }
 
   /**
@@ -275,6 +314,22 @@ export abstract class BuildingRenderer {
   applyLighting(state: LightingState | null): void {
     this.lighting = state;
     for (const name of this.sprites.keys()) this.light(name);
+  }
+
+  /**
+   * Pull every non-emissive material a fraction of the way toward `color`.
+   *
+   * For a building standing somewhere its own palette was never authored for —
+   * the hub, where each one sits on an island with its own surface tones. A
+   * building sharing no colour at all with the ground under it reads as pasted
+   * onto it; a small pull toward the ground's own family is what makes the two
+   * read as one object. Small, deliberately: a cast over the materials, not a
+   * repaint of them. Emissive layers are left out — a lit window is its own
+   * light, and the ground has no say in what colour it burns.
+   */
+  blendToward(color: number, amount: number): void {
+    this.ground = amount > 0 ? { color, amount: Math.min(1, amount) } : null;
+    this.applyLighting(this.lighting);
   }
 
   destroy(): void {
@@ -356,6 +411,17 @@ export abstract class BuildingRenderer {
       return;
     }
 
-    sprite.tint = this.lighting ? applyAmbient(material.color, this.lighting) : material.color;
+    const lit = this.lighting ? applyAmbient(material.color, this.lighting) : material.color;
+    sprite.tint = this.ground ? mix(lit, this.ground.color, this.ground.amount) : lit;
   }
+}
+
+/** Lerp two packed colours, channel by channel. */
+function mix(from: number, to: number, t: number): number {
+  const lerp = (a: number, b: number) => Math.round(a + (b - a) * t) & 0xff;
+  return (
+    (lerp((from >> 16) & 0xff, (to >> 16) & 0xff) << 16) |
+    (lerp((from >> 8) & 0xff, (to >> 8) & 0xff) << 8) |
+    lerp(from & 0xff, to & 0xff)
+  );
 }
