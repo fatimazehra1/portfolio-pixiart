@@ -43,6 +43,44 @@ export interface CelestialState {
 }
 
 /**
+ * The rectangle of the *frame* the sun and the moon are allowed to travel in.
+ *
+ * Fractions of the viewport, not of the sky, and the difference matters: a
+ * zoomed chapter world drags the whole sky container upward to keep its
+ * horizon on the sea's (`setHorizonShift`), which can be a hundred pixels or
+ * more. A field measured in sky fractions would go up with it and put the sun
+ * off the top of the screen, which is the bug this type was added to fix. The
+ * system takes the shift back out.
+ *
+ * Fractions rather than pixels, so it survives a resize. The palette says where a body
+ * is *in the sky*; this says where the sky's usable part is, and the two are
+ * separate because they are owned by different people — the palette is the
+ * hour, the field is the composition the hour is being drawn into.
+ *
+ * The hub leaves it at the identity and its sun goes wherever the hour puts
+ * it. A chapter world narrows it, because a chapter world is zoomed in on a
+ * building with land filling the bottom of the frame and a panel over the top
+ * right, and a sun that landed in either would simply not exist as far as the
+ * visitor is concerned. Narrowing rather than relocating is what keeps the two
+ * views agreeing: the same hour still puts the body at the same fraction along
+ * the same arc, on a shorter arc.
+ */
+export interface CelestialField {
+  left: number;
+  right: number;
+  top: number;
+  bottom: number;
+}
+
+/** The whole sky, which is what the hub uses. */
+export const FULL_CELESTIAL_FIELD: CelestialField = {
+  left: 0,
+  right: 1,
+  top: 0,
+  bottom: 1,
+};
+
+/**
  * A complete look for the sky at one time of day. Everything except `gradient`
  * and `bands` is interpolated numerically during a time transition; the gradient
  * itself cross-fades between two baked textures (see SkyGradient).

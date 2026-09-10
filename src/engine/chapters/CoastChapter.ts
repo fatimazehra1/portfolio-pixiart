@@ -59,6 +59,31 @@ const RENDERERS: Record<string, (context: BuildingContext) => Building> = {
 const LIGHTHOUSE_RENDERER = "lighthouse";
 
 /**
+ * The strip of sky a chapter world lets the sun and the moon into.
+ *
+ * The hub can put its sun anywhere, because the hub is a wide shot of islands
+ * floating in open sky. A chapter world is not: it is zoomed onto a building,
+ * the land fills the bottom of the frame, the plaque covers the top right and
+ * the way back covers the top left. The hours whose sun sits low (dawn, sunset,
+ * dusk) or right (noon) were putting it behind one of those, which is how a
+ * world that has a sun in it reads as a world that lost it.
+ *
+ * So the body keeps its place in the hour and loses some of its range: the
+ * field is the clear band between the buttons and the land. Same clock, same
+ * arc, drawn shorter — see `CelestialField`.
+ */
+const SKY_TOP = 0.15;
+const SKY_BOTTOM = 0.4;
+const SKY_LEFT = 0.07;
+/**
+ * How much of the right edge the plaque owns, in CSS pixels: its width, its
+ * inset, and a gutter so the sun clears it rather than touching it.
+ */
+const PLAQUE_CLEARANCE = 320 + 20 + 28;
+/** Never squeeze the arc narrower than this, however small the viewport. */
+const SKY_MIN_WIDTH = 0.34;
+
+/**
  * A chapter world built as a stretch of coast.
  *
  * # What this is, and what it used to be
@@ -142,6 +167,7 @@ export class CoastChapter implements ChapterWorld {
     // you see when you look away from the town, and a sky that slid off screen
     // as you walked would be a painted backdrop on wheels.
     this.sky = new SkySystem({ width, height, timeOfDay, motionScale });
+    this.fitCelestialField(width);
     const pixelScale = this.sky.pixelScale;
 
     engine.camera.setPixelSize(pixelScale);
@@ -370,6 +396,7 @@ export class CoastChapter implements ChapterWorld {
     const engine = this.context.engine;
 
     this.sky.resize(width, height);
+    this.fitCelestialField(width);
     // A taller viewport can earn a bigger whole-number scale, and the camera's
     // grid is that scale — re-read it before anything is placed against it.
     engine.camera.setPixelSize(this.sky.pixelScale);
@@ -444,6 +471,26 @@ export class CoastChapter implements ChapterWorld {
    * the constants that produced it — two halves of the picture agreeing in
    * theory and not on screen is the failure this exists to prevent.
    */
+  /**
+   * Hand the sky the band its sun is allowed in, for this viewport.
+   *
+   * Recomputed on every resize rather than authored as a fraction, because the
+   * thing being cleared — the plaque — is a fixed number of pixels wide. On a
+   * wide screen it costs the sun almost nothing; on a narrow one it costs it
+   * most of the right-hand sky, which is the correct trade when the
+   * alternative is a sun nobody can see.
+   */
+  private fitCelestialField(width: number): void {
+    const clear = width > 0 ? (width - PLAQUE_CLEARANCE) / width : 1;
+    const right = Math.max(SKY_LEFT + SKY_MIN_WIDTH, Math.min(1, clear));
+    this.sky.setCelestialField({
+      left: SKY_LEFT,
+      right,
+      top: SKY_TOP,
+      bottom: SKY_BOTTOM,
+    });
+  }
+
   private lockHorizon(): void {
     const view = this.context.engine.camera.getView();
     const horizon = this.ocean.topY;

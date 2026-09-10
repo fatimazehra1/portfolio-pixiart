@@ -21,6 +21,7 @@ export {
 export type { CloudShapeTextures, GlowOptions } from "./textures";
 export type {
   BirdTone,
+  CelestialField,
   CelestialState,
   CloudLayerConfig,
   CloudTones,
@@ -29,3 +30,4 @@ export type {
   SkySystemOptions,
   TimeOfDay,
 } from "./types";
+export { FULL_CELESTIAL_FIELD } from "./types";

@@ -5,8 +5,11 @@ import { CloudLayer } from "./CloudLayer";
 import { HorizonHaze } from "./HorizonHaze";
 import { SkyGradient } from "./SkyGradient";
 import { DEFAULT_TIME_OF_DAY, SKY_PRESETS, blendGradientStops, lerpPalette } from "./palette";
+import { FULL_CELESTIAL_FIELD } from "./types";
 import { DEFAULT_PIXEL_HEIGHT } from "../shared";
 import type {
+  CelestialField,
+  CelestialState,
   CloudLayerConfig,
   GradientStop,
   SkyPalette,
@@ -126,10 +129,27 @@ export class SkySystem {
   /** Mount this into the scene, behind everything else. */
   readonly container = new Container();
 
+  /**
+   * A mount point for scenery that belongs *inside* the sky.
+   *
+   * Empty in a coastal scene: the shore has a horizon, and whatever sits past
+   * it is the sea's business. The overview has neither, so its faint far
+   * islands hang in the air — and hanging in the air only reads if the air
+   * closes over them. Here they sit behind the midground and foreground bands
+   * and in front of the distant one, so clouds pass over a far island instead
+   * of the whole sky sitting flat behind everything.
+   *
+   * Contents are in sky pixels, on the sky's own grid. Parallax is the
+   * caller's business: the sky knows how far away its own clouds are, not how
+   * far away someone else's scenery is.
+   */
+  readonly distant = new Container();
+
   private readonly gradient = new SkyGradient();
   private readonly haze: HorizonHaze;
   private readonly cloudLayers: CloudLayer[];
   private readonly birds: BirdFlock;
+  private celestialField: CelestialField = FULL_CELESTIAL_FIELD;
   private readonly sun: CelestialBody;
   private readonly moon: CelestialBody;
 
@@ -193,12 +213,16 @@ export class SkySystem {
     this.moon = new CelestialBody({ kind: "moon", ...MOON, seed: seed + 2 });
     this.birds = new BirdFlock(seed + 3);
 
+    this.distant.label = "sky:distant";
+    this.distant.eventMode = "none";
+
     const [background, midground, foreground] = this.cloudLayers;
     this.container.addChild(
       this.gradient.container,
       this.sun.container,
       this.moon.container,
       background.container,
+      this.distant,
       midground.container,
       this.birds.container,
       this.haze.container,
@@ -368,8 +392,28 @@ export class SkySystem {
    * @param shift where the sea's horizon has actually gone, relative to where
    *   the sky's is, in CSS pixels.
    */
+  /**
+   * Narrow the strip of sky the sun and moon are drawn into. See
+   * `CelestialField`.
+   *
+   * Re-applies the current palette rather than waiting for the next tick, so a
+   * caller that sets this on resize does not leave the sun in the old field
+   * for a frame.
+   */
+  setCelestialField(field: CelestialField): void {
+    this.celestialField = field;
+    this.applyPalette(this.currentPalette);
+  }
+
   setHorizonShift(shift: number): void {
-    this.container.y = Math.round(shift / this.pixelScaleValue) * this.pixelScaleValue;
+    const next = Math.round(shift / this.pixelScaleValue) * this.pixelScaleValue;
+    if (next === this.container.y) return;
+    this.container.y = next;
+    // A narrowed field is measured against the frame, so the bodies have to be
+    // replaced when the container moves under them. Guarded on an actual
+    // change: this is called every frame, and the shift only moves while the
+    // camera is zooming.
+    if (this.celestialField !== FULL_CELESTIAL_FIELD) this.applyPalette(this.currentPalette);
   }
 
   /** Re-fit to a new viewport, in CSS pixels. */
@@ -414,8 +458,32 @@ export class SkySystem {
     }
     this.birds.setTone(palette.bird.color, palette.bird.alpha);
     this.haze.setTone(palette.hazeColor, palette.hazeAlpha);
-    this.sun.apply(palette.sun, this.skyWidth, this.skyHeight);
-    this.moon.apply(palette.moon, this.skyWidth, this.skyHeight);
+    this.sun.apply(this.inField(palette.sun), this.skyWidth, this.skyHeight);
+    this.moon.apply(this.inField(palette.moon), this.skyWidth, this.skyHeight);
+  }
+
+  /**
+   * Fold a body's position into the field.
+   *
+   * The identity field short-circuits, so the hub pays nothing for a feature
+   * only the chapter worlds use.
+   */
+  private inField(state: CelestialState): CelestialState {
+    const field = this.celestialField;
+    if (field === FULL_CELESTIAL_FIELD) return state;
+
+    // The field is a fraction of the frame and the body is placed in sky
+    // coordinates, so whatever `setHorizonShift` has done to the container has
+    // to come back off. Without this the sun is correct relative to a sky that
+    // is itself a hundred pixels off the top of the screen.
+    const frameHeight = this.skyHeight * this.pixelScaleValue;
+    const drift = frameHeight > 0 ? this.container.y / frameHeight : 0;
+
+    return {
+      ...state,
+      x: field.left + state.x * (field.right - field.left),
+      y: field.top + state.y * (field.bottom - field.top) - drift,
+    };
   }
 
   private applyParallax(): void {
