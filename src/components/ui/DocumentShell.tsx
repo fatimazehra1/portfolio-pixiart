@@ -89,15 +89,38 @@ const CSS = `
   --soft: #4d5865;
   --line: #d9dee5;
   --accent: #c9913f;
+  --ground: #f5ecd7;
+  --paper: #fffdf8;
+  --frame: #241c12;
+  --brass: #c9913f;
   min-height: 100dvh;
-  background: #ffffff;
+  background: var(--ground);
   color: var(--ink);
   font-family: var(--font-sans), "Helvetica Neue", Arial, sans-serif;
   font-size: 15px;
   line-height: 1.6;
   -webkit-font-smoothing: antialiased;
 }
-.doc .sheet { max-width: 760px; margin: 0 auto; padding: 4rem 2rem 5rem; }
+/* The same panel /resume sits on, and for the same reason: four written
+   pages that look like one site, and one site that looks like the map. */
+.doc .sheet {
+  max-width: 760px;
+  margin: 2.5rem auto 4rem;
+  padding: 0 2.5rem 3.5rem;
+  background: var(--paper);
+  border: 2px solid var(--frame);
+  box-shadow:
+    0 0 0 2px #06090f,
+    8px 8px 0 0 rgb(36 28 18 / 0.22);
+}
+.doc .sheet::before {
+  content: "";
+  display: block;
+  margin: 0 -2.5rem 2.75rem;
+  height: 10px;
+  background: var(--brass);
+  border-bottom: 2px solid var(--frame);
+}
 .doc a { color: inherit; text-underline-offset: 2px; }
 .doc a:hover { color: var(--accent); }
 
@@ -183,7 +206,14 @@ const CSS = `
 .doc .foot p { margin: 0 0 0.35rem; }
 
 @media (max-width: 640px) {
-  .doc .sheet { padding: 2.5rem 1.25rem 3rem; }
+  .doc .sheet {
+    margin: 0;
+    padding: 0 1.25rem 2.5rem;
+    border-left: 0;
+    border-right: 0;
+    box-shadow: none;
+  }
+  .doc .sheet::before { margin: 0 -1.25rem 2rem; }
   .doc .head h1 { font-size: 1.75rem; }
 }
 `;
