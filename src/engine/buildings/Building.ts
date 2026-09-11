@@ -326,6 +326,11 @@ export abstract class Building {
     return this.renderer.height * this.pixelScaleValue;
   }
 
+  /** The building's width in *art* pixels. The companion of `artHeight`. */
+  get artWidth(): number {
+    return this.renderer.width;
+  }
+
   /**
    * The building's height in *art* pixels, before any scale or zoom.
    *

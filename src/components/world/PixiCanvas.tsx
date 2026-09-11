@@ -36,6 +36,10 @@ export default function PixiCanvas() {
 
     const { setCamera, setHotspot, setLoadProgress, setTimeSnapshot, setUniverse } =
       useWorldStore.getState();
+    // Read through `getState` at call time, not captured: the found list grows
+    // while the world is alive and a captured copy would go stale.
+    const findCat = (id: string, name: string, x: number, y: number) =>
+      useWorldStore.getState().findCat(id, name, x, y);
 
     // DESIGN.md §Animation: calm by default, still when asked. 0 stops the drift
     // and makes time-of-day changes instant without flattening the art.
@@ -51,6 +55,8 @@ export default function PixiCanvas() {
         onTime: setTimeSnapshot,
         onUniverse: setUniverse,
         onHotspot: setHotspot,
+        onCat: (event) => findCat(event.id, event.name, event.x, event.y),
+        catsFound: () => useWorldStore.getState().catsFound,
         onProgress: setLoadProgress,
       });
 

@@ -64,6 +64,23 @@ export interface ChapterContext {
    * test, a screenshot rig — simply has hotspots that do nothing.
    */
   onHotspot?: (event: HotspotEvent) => void;
+  /**
+   * Which cats the visitor has already found, and where to report a new one.
+   *
+   * The world places the cats and reports the click; it counts nothing and
+   * stores nothing. The collection is interface — a bucket, a panel and a line
+   * in localStorage — and none of that belongs inside a renderer.
+   */
+  catsFound?: readonly string[];
+  onCat?: (event: CatEvent) => void;
+}
+
+/** One cat, the moment it is clicked. Coordinates are this world's own pixels. */
+export interface CatEvent {
+  id: string;
+  name: string;
+  x: number;
+  y: number;
 }
 
 /**

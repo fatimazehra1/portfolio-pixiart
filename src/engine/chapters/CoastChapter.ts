@@ -7,6 +7,7 @@ import { Foreground } from "../foreground";
 import { Atmosphere } from "../atmosphere";
 import { Lighthouse } from "../lighthouse";
 import { AmbientLife } from "../life";
+import { CatLayer } from "../cats";
 import {
   AptechBuilding,
   BbitBuilding,
@@ -119,6 +120,8 @@ const MAX_SUBJECT_ZOOM = 3;
  * framing pass nobody noticed was broken.
  */
 const LIGHTHOUSE_ART_HEIGHT = 112;
+/** And its width, for the one cat that sits up at the lamp room. */
+const LIGHTHOUSE_ART_WIDTH = 22;
 
 /**
  * A chapter world built as a stretch of coast.
@@ -169,6 +172,7 @@ export class CoastChapter implements ChapterWorld {
   private readonly atmosphere: Atmosphere;
   private readonly lighthouse: Lighthouse | null;
   private readonly life: AmbientLife;
+  private readonly cats: CatLayer;
   private readonly buildings: BuildingManager;
   private readonly weather: WeatherSystem;
   private readonly dayNight: DayNightManager;
@@ -337,9 +341,26 @@ export class CoastChapter implements ChapterWorld {
     });
     engine.layer("props").addChild(this.life.container);
 
+    /**
+     * The cats, one either side of the buildings.
+     *
+     * The order below is the whole of "partly occluded": `behind` goes in
+     * first, so a cat placed at a building's edge is genuinely behind it and
+     * only the few pixels past the wall show. Nothing is masked.
+     */
+    this.cats = new CatLayer({
+      chapter: chapter.id,
+      pixelScale,
+      found: context.catsFound ?? [],
+      motionScale,
+      onCatch: (id, name, x, y) => context.onCat?.({ id, name, x, y }),
+    });
+
     const structures = engine.layer("structures");
+    structures.addChild(this.cats.behind);
     if (this.lighthouse) structures.addChild(this.lighthouse.container);
     structures.addChild(this.buildings.container);
+    structures.addChild(this.cats.front);
 
     this.weather = new WeatherSystem({ width, height, pixelScale, motionScale });
     engine.layer("weather").addChild(this.weather.container);
@@ -384,6 +405,7 @@ export class CoastChapter implements ChapterWorld {
       this.stars.bindTime(context.time),
       this.environment.bindLighting(grade),
       grade.subscribe((state) => this.life.applyLighting(state)),
+      grade.subscribe((state) => this.cats.applyLighting(state)),
       this.buildings.bindLighting(grade),
       this.foreground.bindLighting(grade),
       this.weather.bindLighting(grade),
@@ -409,6 +431,7 @@ export class CoastChapter implements ChapterWorld {
     // blends, so it has to be in place before the opening climate is published
     // or the first frame is composed at the authored zoom and then corrects.
     this.fitSceneFraming(height);
+    this.layoutCats();
 
     this.scenes.focusOn(this.entryFocus().x);
   }
@@ -500,6 +523,7 @@ export class CoastChapter implements ChapterWorld {
     const anchors = this.shoreAnchors();
     this.environment.resize(width, height, anchors);
     this.life.resize(this.worldWidth, anchors, this.sky.pixelScale);
+    this.layoutCats();
     this.lighthouse?.resize(width, height, anchors);
     this.buildings.resize(width, height, anchors);
     this.foreground.resize(width, height);
@@ -527,6 +551,7 @@ export class CoastChapter implements ChapterWorld {
     this.ground.update(delta);
     this.environment.update(delta);
     this.life.update(delta);
+    this.cats.update(delta);
     this.lighthouse?.update(delta);
     this.buildings.update(delta);
     this.weather.update(delta);
@@ -552,6 +577,7 @@ export class CoastChapter implements ChapterWorld {
     this.environment.destroy();
     this.ground.destroy();
     this.ocean.destroy();
+    this.cats.destroy();
     this.life.destroy();
     this.sky.destroy();
   }
@@ -604,6 +630,58 @@ export class CoastChapter implements ChapterWorld {
       const steps = Math.max(1, Math.round(pixelScale * wanted));
       const zoom = Math.min(MAX_SUBJECT_ZOOM, steps / pixelScale);
       this.scenes.setFraming(scene.id, zoom);
+    }
+  }
+
+  /**
+   * Put the cats where the scene's own subject says they go.
+   *
+   * A cat is measured from the building it is hiding on or behind, in that
+   * building's own bitmap coordinates, so the box handed over here is the one
+   * thing that has to be right. The lighthouse chapter has no `Building` and
+   * its tower is measured instead — same shape, different source.
+   *
+   * Re-run on every resize, because the pixel grid moves with the viewport and
+   * a cat pinned to the old one slides off its roof.
+   */
+  private layoutCats(): void {
+    const pixelScale = this.sky.pixelScale;
+
+    // One building per chapter today, and the cats are per chapter, so the
+    // first one is the subject. A chapter with two would need the roster to
+    // name which, which it can do without this changing shape.
+    const building = this.buildings.buildings[0];
+    if (building) {
+      const halfWidth = building.artWidth / 2;
+      const centre = building.worldX / pixelScale;
+      const base = building.worldY / pixelScale;
+      this.cats.layout(
+        {
+          left: centre - halfWidth,
+          right: centre + halfWidth,
+          top: base - building.artHeight,
+          bottom: base,
+        },
+        pixelScale
+      );
+      return;
+    }
+
+    if (this.lighthouse) {
+      const centre = this.lighthouse.worldX / pixelScale;
+      const lampY = this.lighthouse.lampPosition.y / pixelScale;
+      // Half the tower's width either side, which is all a cat at the lamp
+      // room needs: the roster only anchors this one to the roof.
+      const half = LIGHTHOUSE_ART_WIDTH / 2;
+      this.cats.layout(
+        {
+          left: centre - half,
+          right: centre + half,
+          top: lampY,
+          bottom: lampY + LIGHTHOUSE_ART_HEIGHT,
+        },
+        pixelScale
+      );
     }
   }
 

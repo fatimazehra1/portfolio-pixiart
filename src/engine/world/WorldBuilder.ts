@@ -15,7 +15,7 @@ import {
   universeBounds,
   universeCentre,
 } from "../universe";
-import type { HotspotEvent, ResolvedChapter, UniverseState } from "../universe";
+import type { CatEvent, HotspotEvent, ResolvedChapter, UniverseState } from "../universe";
 import type { CameraView } from "../camera/Camera";
 import type { SceneState } from "../scene";
 import type { TimeOfDay } from "../sky";
@@ -95,6 +95,10 @@ export interface WorldOptions {
   onUniverse?: (state: UniverseState) => void;
   /** Called when a marked part of a building is pointed at or clicked. */
   onHotspot?: (event: HotspotEvent) => void;
+  /** Called when a cat is clicked. See `ChapterContext.onCat`. */
+  onCat?: (event: CatEvent) => void;
+  /** Asked, on every world build, which cats are already found. */
+  catsFound?: () => readonly string[];
   /** Which world to open on, if any. Defaults to the overview. */
   openChapter?: string;
   /**
@@ -269,6 +273,8 @@ export class World {
       // Straight out to the interface. A hotspot's label is a DOM panel and
       // its click opens a section of the plaque; neither is the engine's job.
       onHotspot: (event) => this.options.onHotspot?.(event),
+      onCat: (event) => this.options.onCat?.(event),
+      catsFound: () => this.options.catsFound?.() ?? [],
     });
 
     // --- The camera ----------------------------------------------------------

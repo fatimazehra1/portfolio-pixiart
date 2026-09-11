@@ -35,6 +35,7 @@ export type {
   ChapterBuilder,
   ChapterClock,
   ChapterContext,
+  CatEvent,
   ChapterWorld,
   HotspotEvent,
 } from "./ChapterWorld";

@@ -107,6 +107,25 @@ export interface WorldState {
    */
   hotspot: { label: string; section: string; x: number; y: number } | null;
 
+  /**
+   * Which cats have been found, by id, and whether the collection is open.
+   *
+   * Restored from localStorage on mount and written back on every catch, so a
+   * count survives a reload. Deliberately the only thing about this feature
+   * that persists: no timestamps, no progress, nothing that would make an
+   * easter egg feel like an account.
+   */
+  catsFound: readonly string[];
+  catsOpen: boolean;
+  /**
+   * The cat just caught, for the label and the arc toward the bucket.
+   *
+   * Cleared by whoever drew it once the arc has landed. Carries the world
+   * position rather than the screen one, for the same reason `hotspot` does:
+   * the camera keeps moving and only the engine can convert.
+   */
+  caught: { id: string; name: string; x: number; y: number; at: number } | null;
+
   setReady: (value: boolean) => void;
   setLoadProgress: (progress: number, label: string) => void;
   setViewport: (size: Size) => void;
@@ -121,6 +140,13 @@ export interface WorldState {
   setOpenSection: (title: string | null) => void;
   /** Mirror a hotspot event from the engine. See `hotspot` and `openSection`. */
   setHotspot: (event: HotspotEvent) => void;
+  /** Restore the found list, once, from storage. */
+  restoreCats: (ids: readonly string[]) => void;
+  /** Record one. Ignores a cat already found, so a double click counts once. */
+  findCat: (id: string, name: string, x?: number, y?: number) => void;
+  /** Clear the flying cat once its arc has landed. */
+  clearCaught: () => void;
+  setCatsOpen: (open: boolean) => void;
 }
 
 export const useWorldStore = create<WorldState>((set) => ({
@@ -146,6 +172,9 @@ export const useWorldStore = create<WorldState>((set) => ({
   approach: 0,
   openSection: null,
   hotspot: null,
+  catsFound: [],
+  catsOpen: false,
+  caught: null,
 
   setReady: (isReady) => set({ isReady }),
   setLoadProgress: (loadProgress, loadLabel) => set({ loadProgress, loadLabel }),
@@ -175,6 +204,20 @@ export const useWorldStore = create<WorldState>((set) => ({
         (state.chapter?.id ?? null) === previous.chapterId ? previous.openSection : null,
     })),
   setOpenSection: (openSection) => set({ openSection }),
+  restoreCats: (ids) => set({ catsFound: [...ids] }),
+  findCat: (id, name, x = 0, y = 0) =>
+    set((previous) =>
+      previous.catsFound.includes(id)
+        ? previous
+        : {
+            catsFound: [...previous.catsFound, id],
+            // `at` is what makes two catches of different cats distinct
+            // objects, so an effect keyed on this fires for the second one.
+            caught: { id, name, x, y, at: Date.now() },
+          }
+    ),
+  clearCaught: () => set({ caught: null }),
+  setCatsOpen: (catsOpen) => set({ catsOpen }),
   setHotspot: (event) =>
     set((previous) => {
       const at = event.spot ? { label: event.spot.label, section: event.spot.section, x: event.x, y: event.y } : null;

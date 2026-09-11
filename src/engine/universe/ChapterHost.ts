@@ -3,7 +3,13 @@ import type { GradeManager } from "../grade";
 import type { CameraView } from "../camera/Camera";
 import type { TimeOfDay } from "../sky";
 import type { Size } from "../types";
-import type { ChapterBuilder, ChapterClock, ChapterWorld, HotspotEvent } from "./ChapterWorld";
+import type {
+  CatEvent,
+  ChapterBuilder,
+  ChapterClock,
+  ChapterWorld,
+  HotspotEvent,
+} from "./ChapterWorld";
 import type { InteriorKind, ResolvedChapter } from "./UniverseTypes";
 
 export interface ChapterHostOptions {
@@ -17,6 +23,10 @@ export interface ChapterHostOptions {
   builders: Readonly<Record<InteriorKind, ChapterBuilder>>;
   /** Handed to every world it builds. See `ChapterContext.onHotspot`. */
   onHotspot?: (event: HotspotEvent) => void;
+  /** Handed to every world it builds. See `ChapterContext.onCat`. */
+  onCat?: (event: CatEvent) => void;
+  /** Asked on every build which cats are already found. */
+  catsFound?: () => readonly string[];
 }
 
 /**
@@ -46,6 +56,8 @@ export class ChapterHost {
   private readonly time: ChapterClock;
   private readonly motionScale: number;
   private readonly onHotspot: ((event: HotspotEvent) => void) | undefined;
+  private readonly onCat: ((event: CatEvent) => void) | undefined;
+  private readonly catsFound: (() => readonly string[]) | undefined;
   private readonly timeOfDay: TimeOfDay | undefined;
   private readonly builders: Readonly<Record<InteriorKind, ChapterBuilder>>;
 
@@ -58,6 +70,8 @@ export class ChapterHost {
     this.time = options.time;
     this.motionScale = options.motionScale;
     this.onHotspot = options.onHotspot;
+    this.onCat = options.onCat;
+    this.catsFound = options.catsFound;
     this.timeOfDay = options.timeOfDay;
     this.builders = options.builders;
   }
@@ -102,6 +116,10 @@ export class ChapterHost {
       timeOfDay: this.timeOfDay,
       motionScale: this.motionScale,
       onHotspot: this.onHotspot,
+      onCat: this.onCat,
+      // Read at build time rather than captured once: a visitor who finds a
+      // cat, leaves and comes back must not be offered it again.
+      catsFound: this.catsFound?.(),
     });
 
     this.world = world;

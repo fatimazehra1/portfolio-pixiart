@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import ChapterOverlay from "@/components/ui/ChapterOverlay";
 import Sidebar from "@/components/ui/Sidebar";
 import LoadingScreen from "@/components/ui/LoadingScreen";
+import CatBucket from "@/components/ui/CatBucket";
 import HotspotLabel from "@/components/ui/HotspotLabel";
 import ResumeLink from "@/components/ui/ResumeLink";
 import SoundToggle from "@/components/ui/SoundToggle";
@@ -75,6 +76,11 @@ export default function WorldStage() {
           further than the same corner it was on the last screen.
         */}
         <div className="absolute right-5 bottom-5 flex items-stretch gap-2">
+          {/* The bucket sits with the other corner controls rather than in a
+              corner of its own, because it is a control and not an event. */}
+          <div className="relative flex">
+            <CatBucket />
+          </div>
           <SoundToggle />
           <ResumeLink />
         </div>

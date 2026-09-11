@@ -1,9 +1,11 @@
 "use client";
 
 import Link from "next/link";
+import { useRef } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { CHAPTER_TIMELINE, PROFILE } from "@/data/chapters";
 import { WRITTEN_PAGES } from "@/data/pages";
+import { SECRET_CAT } from "@/engine/cats";
 import { getWorld } from "@/components/world/worldHandle";
 import { useWorldStore } from "@/stores/worldStore";
 
@@ -39,6 +41,22 @@ export default function Sidebar() {
   const isReady = useWorldStore((s) => s.isReady);
   const view = useWorldStore((s) => s.view);
   const chapterId = useWorldStore((s) => s.chapterId);
+  const findCat = useWorldStore((s) => s.findCat);
+
+  /**
+   * The secret cat: five presses on the name.
+   *
+   * The counter is a ref rather than state because nothing on screen changes
+   * until the fifth one, and re-rendering the sidebar four times to count to
+   * four would be four renders for nothing.
+   */
+  const presses = useRef(0);
+  const countLogoPress = () => {
+    presses.current += 1;
+    if (presses.current < SECRET_CAT.clicks) return;
+    presses.current = 0;
+    findCat(SECRET_CAT.id, SECRET_CAT.name);
+  };
 
   // Straight from PROFILE, and no longer with a technology count appended.
   // Three numbers about scale and ownership — years, things shipped, tenants
@@ -47,6 +65,7 @@ export default function Sidebar() {
   const stats = PROFILE.stats;
 
   if (!isReady) return null;
+
 
   const go = (id: string) => {
     const world = getWorld();
@@ -68,9 +87,18 @@ export default function Sidebar() {
           aria-label="Career overview"
         >
           <div>
+            {/*
+              The name is the closest thing this site has to a logo, which is
+              why the one cat that belongs to no world is behind it. Pressing
+              it five times finds it; pressing it once, or twenty times,
+              changes nothing else. It stays a heading: no cursor change, no
+              hover state, nothing that would make a visitor think it is a
+              control they were supposed to use.
+            */}
             <p
               className="font-display text-[1.125rem] leading-none font-semibold tracking-wide"
               style={{ color: "var(--ui-text)" }}
+              onClick={countLogoPress}
             >
               {PROFILE.name}
             </p>

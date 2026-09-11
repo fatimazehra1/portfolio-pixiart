@@ -84,6 +84,7 @@ export {
 export type {
   ChapterConfig,
   ChapterIdentity,
+  CatEvent,
   ChapterWorld,
   HotspotEvent,
   ResolvedChapter,
