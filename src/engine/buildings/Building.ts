@@ -1,6 +1,6 @@
 import { Container, Rectangle, Sprite } from "pixi.js";
 import { InteractionZone } from "./InteractionZone";
-import { Pixels, type BuildingRenderer } from "./BuildingRenderer";
+import { Pixels, type BuildingRenderer, type Hotspot } from "./BuildingRenderer";
 import { BUILDING_PLOTS, PROP_BASELINES } from "../ground";
 import type { GroundBand, PlotArea } from "../ground";
 import type { LightingState } from "../lighting";
@@ -74,6 +74,19 @@ export interface BuildingDefinition {
 const DEFAULT_RADIUS_RATIO = 0.62;
 
 /**
+ * How a hotspot marker reads: warm, and quiet until you find it.
+ *
+ * The same lamp colour the building's own hover frame uses, at an alpha low
+ * enough that four of them on a facade are a texture rather than an overlay.
+ * A visitor who never points at one should be able to look at the building and
+ * not notice they are there; a visitor sweeping the facade should find them
+ * without being told to look.
+ */
+const HOTSPOT_TINT = 0xffe4a3;
+const HOTSPOT_REST = 0.6;
+const HOTSPOT_HOVER = 1;
+
+/**
  * A landmark in the world.
  *
  * # The template
@@ -113,6 +126,18 @@ export abstract class Building {
   private readonly explicitRadius: number | undefined;
   /** A hard-edged outline, shown while the pointer is on the building. */
   private readonly highlight: Sprite;
+  /** One marker per hotspot, in the same unscaled grid as the artwork. */
+  private readonly marks = new Map<string, Sprite>();
+  /** Which hotspot the pointer is on, if any. Published to whoever asked. */
+  private hoveredSpot: Hotspot | null = null;
+
+  /**
+   * Told when the pointer finds, leaves, or clicks one of this building's
+   * hotspots. Bound by `BuildingManager`, which is the only thing that knows
+   * there is anything outside the engine to tell.
+   */
+  onHotspotHover: ((spot: Hotspot | null) => void) | null = null;
+  onHotspotSelect: ((spot: Hotspot) => void) | null = null;
 
   private pixelScaleValue = 1;
   /** Position in world pixels — the grid the manager's container works in. */
@@ -163,6 +188,8 @@ export abstract class Building {
     this.highlight.position.set(-half - pad, -renderer.height - pad);
     this.container.addChild(this.highlight);
 
+    this.buildHotspots();
+
     this.zone = new InteractionZone({
       x: 0,
       y: 0,
@@ -177,7 +204,109 @@ export abstract class Building {
     this.resize(context);
   }
 
+  /**
+   * Build one marker per hotspot: a corner bracket, not a box.
+   *
+   * A full rectangle around a floor of windows reads as a selection tool
+   * dropped on the artwork. Four short corner ticks say "there is something
+   * here" and leave the facade underneath legible, which is the whole point of
+   * marking only the few parts that are worth a click.
+   *
+   * Each marker carries its own pointer handling rather than the building
+   * hit-testing them: Pixi already does hit testing, it does it against the
+   * scaled transform for free, and a hotspot that has to be found by arithmetic
+   * is a hotspot that will be found in the wrong place after the first zoom.
+   */
+  private buildHotspots(): void {
+    const spots = this.renderer.hotspots;
+    if (spots.length === 0) return;
+
+    const half = this.renderer.width >> 1;
+
+    for (const spot of spots) {
+      const pixels = new Pixels(spot.width, spot.height);
+      // A quarter of the shorter side, so a tall narrow spot and a wide flat
+      // one both get ticks that read as corners rather than as most of a box.
+      const arm = Math.max(2, Math.min(spot.width, spot.height) >> 2);
+      for (const [cx, dx] of [
+        [0, 1],
+        [spot.width - 1, -1],
+      ] as const) {
+        for (const [cy, dy] of [
+          [0, 1],
+          [spot.height - 1, -1],
+        ] as const) {
+          for (let i = 0; i < arm; i++) {
+            // Two pixels thick, not one. A single-pixel tick survives at a
+            // pixel scale of three and vanishes at the two a tall building
+            // gets framed at, which is exactly where the markers are needed.
+            pixels.set(cx + dx * i, cy);
+            pixels.set(cx + dx * i, cy + dy);
+            pixels.set(cx, cy + dy * i);
+            pixels.set(cx + dx, cy + dy * i);
+          }
+        }
+      }
+
+      const mark = new Sprite(pixels.bake());
+      mark.tint = HOTSPOT_TINT;
+      mark.alpha = HOTSPOT_REST;
+      mark.eventMode = "static";
+      mark.cursor = "pointer";
+      mark.position.set(-half + spot.x, -this.renderer.height + spot.y);
+      // The whole rectangle answers the pointer, not just the four ticks —
+      // a target you have to hit the corner of is not a target.
+      mark.hitArea = new Rectangle(0, 0, spot.width, spot.height);
+
+      // All three stop here rather than bubbling. The building underneath is
+      // also a hover target and also a click target, and it means something
+      // else — two frames lit at once says the pointer is on two things, and
+      // a click meant for one floor must not also open the whole chapter.
+      mark.on("pointerover", (event) => {
+        event.stopPropagation();
+        this.hoveredSpot = spot;
+        mark.alpha = HOTSPOT_HOVER;
+        this.setHovered(false);
+        this.onHotspotHover?.(spot);
+      });
+      mark.on("pointerout", (event) => {
+        event.stopPropagation();
+        if (this.hoveredSpot === spot) this.hoveredSpot = null;
+        mark.alpha = HOTSPOT_REST;
+        this.onHotspotHover?.(null);
+      });
+      mark.on("pointertap", (event) => {
+        event.stopPropagation();
+        this.onHotspotSelect?.(spot);
+      });
+
+      this.marks.set(spot.id, mark);
+      this.container.addChild(mark);
+    }
+  }
+
   // --- Queries ---------------------------------------------------------------
+
+  /** The hotspot under the pointer, or null. */
+  get hoveredHotspot(): Hotspot | null {
+    return this.hoveredSpot;
+  }
+
+  /**
+   * Where a hotspot is on screen, in world CSS pixels: the middle of its top
+   * edge, which is where a label hangs from.
+   *
+   * World pixels rather than screen: the caller has the camera and this does
+   * not, and a building that read the camera would be a building that had to
+   * be told every time it moved.
+   */
+  hotspotAnchor(spot: Hotspot): { x: number; y: number } {
+    const half = this.renderer.width >> 1;
+    return {
+      x: (this.pixelX - half + spot.x + spot.width / 2) * this.pixelScaleValue,
+      y: (this.pixelBaseY - this.renderer.height + spot.y) * this.pixelScaleValue,
+    };
+  }
 
   /** Centre line, in world CSS pixels. */
   get worldX(): number {

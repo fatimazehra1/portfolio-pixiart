@@ -36,6 +36,7 @@ export type {
   ChapterClock,
   ChapterContext,
   ChapterWorld,
+  HotspotEvent,
 } from "./ChapterWorld";
 export { ChapterHost } from "./ChapterHost";
 export type { ChapterHostOptions } from "./ChapterHost";

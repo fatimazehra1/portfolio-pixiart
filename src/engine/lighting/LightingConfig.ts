@@ -96,9 +96,23 @@ export interface LightingSettings {
    * A safety rail against a retune quietly turning the whole world one hue.
    */
   maxTintStrength: number;
+
+  /**
+   * How much extra an emissive surface is given as the local lights take over.
+   *
+   * A lit window's alpha can only reach 1, so once the multiplier is at full
+   * strength there is nothing left to say with — and "the lights are on" and
+   * "the lights are *the* light" are different pictures. This is the second
+   * half of that sentence: at full local light an emissive colour is pushed
+   * this far towards white, so a window burns rather than merely showing.
+   */
+  emissiveNightGain: number;
 }
 
 export const LIGHTING_SETTINGS: LightingSettings = {
-  minAmbient: 0.08,
+  // Raised from 0.08. Nothing consuming this should ever land close enough to
+  // zero to lose its own colour, and at night several things did.
+  minAmbient: 0.18,
   maxTintStrength: 0.55,
+  emissiveNightGain: 0.3,
 };

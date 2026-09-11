@@ -34,7 +34,7 @@ export default function PixiCanvas() {
     let cancelled = false;
     let introTimer = 0;
 
-    const { setCamera, setLoadProgress, setTimeSnapshot, setUniverse } =
+    const { setCamera, setHotspot, setLoadProgress, setTimeSnapshot, setUniverse } =
       useWorldStore.getState();
 
     // DESIGN.md §Animation: calm by default, still when asked. 0 stops the drift
@@ -50,6 +50,7 @@ export default function PixiCanvas() {
         onCamera: setCamera,
         onTime: setTimeSnapshot,
         onUniverse: setUniverse,
+        onHotspot: setHotspot,
         onProgress: setLoadProgress,
       });
 
@@ -90,5 +91,8 @@ export default function PixiCanvas() {
     };
   }, [setReady, setViewport]);
 
+  // aria-hidden on the host: what it holds is a WebGL canvas with no text in
+  // it, and the same career is written out for assistive technology and for
+  // crawlers by the fallback in app/page.tsx.
   return <div ref={hostRef} className="absolute inset-0 h-full w-full" aria-hidden />;
 }

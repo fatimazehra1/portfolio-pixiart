@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { DEFAULT_TIME_OF_DAY, TIME_SETTINGS, WORLD_WIDTH } from "@/engine";
 import type {
+  HotspotEvent,
   Size,
   TimeOfDay,
   TimePhase,
@@ -95,6 +96,17 @@ export interface WorldState {
    */
   openSection: string | null;
 
+  /**
+   * The marked part of a building the pointer is on, if any.
+   *
+   * Only what changes identity — which spot, and where it is in the world.
+   * Where that is *on screen* is read from the engine every frame by the
+   * overlay itself, for the same reason `ChapterOverlay` does it: a position in
+   * React state would be sixty renders a second behind a canvas already doing
+   * the real work.
+   */
+  hotspot: { label: string; section: string; x: number; y: number } | null;
+
   setReady: (value: boolean) => void;
   setLoadProgress: (progress: number, label: string) => void;
   setViewport: (size: Size) => void;
@@ -107,6 +119,8 @@ export interface WorldState {
   setUniverse: (state: UniverseState) => void;
   /** Open one detail section, or pass null to close whatever is open. */
   setOpenSection: (title: string | null) => void;
+  /** Mirror a hotspot event from the engine. See `hotspot` and `openSection`. */
+  setHotspot: (event: HotspotEvent) => void;
 }
 
 export const useWorldStore = create<WorldState>((set) => ({
@@ -131,6 +145,7 @@ export const useWorldStore = create<WorldState>((set) => ({
   hoveredChapterId: null,
   approach: 0,
   openSection: null,
+  hotspot: null,
 
   setReady: (isReady) => set({ isReady }),
   setLoadProgress: (loadProgress, loadLabel) => set({ loadProgress, loadLabel }),
@@ -160,4 +175,17 @@ export const useWorldStore = create<WorldState>((set) => ({
         (state.chapter?.id ?? null) === previous.chapterId ? previous.openSection : null,
     })),
   setOpenSection: (openSection) => set({ openSection }),
+  setHotspot: (event) =>
+    set((previous) => {
+      const at = event.spot ? { label: event.spot.label, section: event.spot.section, x: event.x, y: event.y } : null;
+      // A click is a hover that also opens the panel. Clicking the spot whose
+      // section is already open shuts it, so the marker toggles the same way
+      // the heading beside it does.
+      if (!event.selected) return { hotspot: at };
+      const section = event.spot?.section ?? null;
+      return {
+        hotspot: at,
+        openSection: previous.openSection === section ? null : section,
+      };
+    }),
 }));

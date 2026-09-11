@@ -143,6 +143,44 @@ export class AptechRenderer extends BuildingRenderer {
     this.plotBlock(RIGHT, 1);
     this.plotGate();
     this.plotFlag();
+
+    /**
+     * Three blocks, three things that happened in them.
+     *
+     * This chapter has one group of highlights rather than named builds, so all
+     * three open the same row — what the markers add is *where* each part of it
+     * happened, which a list of bullets cannot say. The flag is not a hotspot;
+     * it is the only thing on the campus that moves and it should stay scenery.
+     */
+    this.setHotspots([
+      {
+        id: "gate",
+        section: "Highlights",
+        label: "The campus",
+        x: GATE.x,
+        y: GATE.top,
+        width: GATE.width,
+        height: H - GATE.top - 2,
+      },
+      {
+        id: "labs",
+        section: "Highlights",
+        label: "Where the training happened",
+        x: LEFT.x,
+        y: LEFT.top,
+        width: LEFT.width,
+        height: H - LEFT.top - 2,
+      },
+      {
+        id: "projects",
+        section: "Highlights",
+        label: "First projects",
+        x: RIGHT.x,
+        y: RIGHT.top,
+        width: RIGHT.width,
+        height: H - RIGHT.top - 2,
+      },
+    ]);
   }
 
   /** The plinth every block stands on, so the campus meets the grass on stone. */
@@ -291,6 +329,17 @@ export class AptechRenderer extends BuildingRenderer {
     const cx = GATE.x + (GATE.width >> 1);
     const archHalf = 7;
     const archTop = bottom - 20;
+
+    // The arch is the gate. Both leaves, from the middle.
+    this.setDoorway({
+      x: cx - archHalf,
+      y: archTop + 4,
+      width: archHalf * 2,
+      height: bottom - (archTop + 4),
+      swing: "double",
+      interior: 0x1c1712,
+      glow: 0xffdca8,
+    });
 
     for (let y = archTop; y < bottom; y++) {
       // A shallow curve at the head, straight jambs below it.

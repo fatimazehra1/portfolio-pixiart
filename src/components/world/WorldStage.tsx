@@ -4,11 +4,11 @@ import dynamic from "next/dynamic";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import ChapterOverlay from "@/components/ui/ChapterOverlay";
-import ExploreButton from "@/components/ui/ExploreButton";
 import Sidebar from "@/components/ui/Sidebar";
-import FirstVisitHint from "@/components/ui/FirstVisitHint";
 import LoadingScreen from "@/components/ui/LoadingScreen";
+import HotspotLabel from "@/components/ui/HotspotLabel";
 import ResumeLink from "@/components/ui/ResumeLink";
+import SoundToggle from "@/components/ui/SoundToggle";
 import WorldControls from "@/components/ui/WorldControls";
 
 // The Pixi world is client-only (WebGL/DOM). Dynamic + ssr:false must live inside
@@ -65,11 +65,19 @@ export default function WorldStage() {
       <LoadingScreen />
       <div className="ui-layer absolute inset-0 z-10">
         <ChapterOverlay />
-        <ExploreButton />
+        <HotspotLabel />
         <WorldControls />
         <Sidebar />
-        <ResumeLink />
-        <FirstVisitHint />
+        {/*
+          The bottom-right corner: the speaker, then the way out to the
+          document. One row so the two stay a fixed gap apart at every
+          viewport, and so the fast path — land, read, click Resume — is never
+          further than the same corner it was on the last screen.
+        */}
+        <div className="absolute right-5 bottom-5 flex items-stretch gap-2">
+          <SoundToggle />
+          <ResumeLink />
+        </div>
       </div>
     </>
   );

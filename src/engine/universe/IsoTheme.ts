@@ -454,10 +454,13 @@ export const ISO_THEME: Readonly<Record<string, IsoThemeEntry>> = {
     // Rough dirt and nothing else. No surface was ever laid here; the path is
     // where people walked, and that is the whole of the groundworks.
     ground: {
-      patches: 0.48,
+      // Pulled back from 0.48. Half the cap in worn dirt over a brown
+      // topsoil left the tent standing in a crater rather than on ground —
+      // the patches are meant to be where somebody walked, not the surface.
+      patches: 0.26,
       path: 4,
       surface: "dirt",
-      dirt: [0xc9a670, 0xab8a56, 0x8a6e42, 0x66502f],
+      dirt: [0xd9bb86, 0xbd9c65, 0x9c7f4e, 0x7a613a],
     },
     dressing: [
       ...at("yard", ["sack", 2], ["ropeCoil", 1], ["oilLantern", 1], ["stool", 1]),

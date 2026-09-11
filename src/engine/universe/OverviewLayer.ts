@@ -1,5 +1,13 @@
-import { Container, Graphics, Rectangle, Sprite, Texture, TilingSprite } from "pixi.js";
-import { createRandom, ditherAlpha, range, rangeInt, toTexture } from "../shared";
+import { Container, Graphics, Rectangle, Sprite, Texture } from "pixi.js";
+import {
+  DEFAULT_PIXEL_HEIGHT,
+  createRandom,
+  ditherAlpha,
+  pixelScaleFor,
+  range,
+  rangeInt,
+  toTexture,
+} from "../shared";
 import { generateIsoIsland } from "./IsoIslandFactory";
 import type { IsoIsland } from "./IsoIslandFactory";
 import { DEFAULT_ISO_THEME, ISO_THEME } from "./IsoTheme";
@@ -12,7 +20,10 @@ import type { BuildingRenderer } from "../buildings";
 import type { CameraView } from "../camera/Camera";
 import { applyAmbient } from "../lighting";
 import type { LightingState } from "../lighting";
-import { lerpColor } from "../sky";
+import { SkySystem, lerpColor } from "../sky";
+import type { SkyPalette } from "../sky";
+import { FIELD_MARGIN, WeatherLayer } from "../weather";
+import type { WeatherProfile } from "../weather";
 import type { TimePhase } from "../time";
 import type { Size } from "../types";
 import type { ResolvedChapter } from "./UniverseTypes";
@@ -27,101 +38,114 @@ import type { ResolvedChapter } from "./UniverseTypes";
  * "a place packed with places", not "a diagram of one".
  *
  * # Two spaces, as before
- * `backdrop` is screen space, behind the camera: the warm gradient and the
- * drifting cloud bands are atmosphere, not places, and do not pan.
+ * `backdrop` is screen space, behind the camera: the sky is atmosphere, not a
+ * place, and does not pan — it parallaxes, which is a different thing.
  * `field` is world space, inside the camera: the dashed paths and every
  * island live there, so panning moves them together.
+ *
+ * # The sky is not the map's own
+ * The map used to bake six vertical gradients of its own and drift three
+ * tiling puffs across them, and it read as a different product from the worlds
+ * you can walk into — those have a layered, dithered sky with weather in it and
+ * a sun going round. There is no version of "a second sky, tuned to match the
+ * first" that stays matched, so the map now mounts `SkySystem`, the same one a
+ * chapter world does, driven off the same clock. Everything the sky knows how
+ * to do — the banded gradient, three parallax cloud bands, sun and moon on
+ * their arc, the horizon haze, the birds — arrives with it.
  */
 
 /**
- * The sky between the worlds, at each phase of the loop.
+ * The frame's own darkened edges, at each phase of the loop.
  *
- * Three stops rather than two — a straight lerp from a deep tone to a pale one
- * goes grey through the middle, and grey is what this palette exists to avoid.
- * The cloud tone and the vignette come with each phase for the same reason:
- * three separately-tuned constants that all describe "how dark it is" is three
- * chances for one of them to be left behind at a retune.
- *
- * Night is the only entry with a rule attached to it. This is the landing
- * screen, and a landing screen that opens black is a landing screen that
- * failed to load. Deep blue-purple, and the foot of the frame stays light
- * enough to read an island's silhouette against.
+ * All that is left of the map's private palette: the sky itself comes from
+ * `COLOR_PRESETS` now, and a vignette is a property of the *frame* rather than
+ * of the weather, so it stays here. It still moves with the hour — the edges
+ * close in further after dark, and darken toward the colour of the sky they are
+ * closing in on rather than toward one authored mauve.
  */
-interface HubSky {
-  top: number;
-  mid: number;
-  bottom: number;
-  /** What the drifting cloud bands are tinted by, on top of their own tone. */
-  cloud: number;
-  /** The frame's own darkened edges, and how far they close in. */
+interface HubFrame {
   vignette: number;
   vignetteAlpha: number;
 }
 
-const HUB_SKY: Record<TimePhase, HubSky> = {
-  // Soft pink, with the night still draining out of the top of the frame.
-  dawn: {
-    top: 0x4e5892,
-    mid: 0xdf8b9c,
-    bottom: 0xf6d3ad,
-    cloud: 0xf3ccd4,
-    vignette: 0x35315e,
-    vignetteAlpha: 0.3,
-  },
-  // Pale gold at the horizon, climbing into the blue the day will settle at.
-  morning: {
-    top: 0x6c9fd6,
-    mid: 0xb9d6ec,
-    bottom: 0xf7e3bc,
-    cloud: 0xeef2fb,
-    vignette: 0x3a4a68,
-    vignetteAlpha: 0.26,
-  },
-  // The ordinary state, and the one the islands are painted for: a clear,
-  // saturated blue. Deliberately the most colour in the loop rather than the
-  // washed-out cream a "neutral" daylight would default to — a sky that is
-  // merely bright reads as an absence, and this one has to read as weather.
-  noon: {
-    top: 0x3d85d9,
-    mid: 0x73b4e9,
-    bottom: 0xcfe7f4,
-    // Not white. White cloud on a saturated blue is the one combination in
-    // the loop with enough contrast to show the tile repeating and the dither
-    // that made it — over the old cream sky neither was visible at all.
-    cloud: 0xd9ebfb,
-    vignette: 0x2f5a80,
-    vignetteAlpha: 0.2,
-  },
-  // Late afternoon: warm yellow-gold across the middle, blue still overhead.
-  sunset: {
-    top: 0x7ba4cf,
-    mid: 0xf0c46e,
-    bottom: 0xfaeab6,
-    cloud: 0xfff0c9,
-    vignette: 0x4a4030,
-    vignetteAlpha: 0.28,
-  },
-  // Orange running down into deep coral, under a sky already going purple.
-  dusk: {
-    top: 0x5c4478,
-    mid: 0xe0713f,
-    bottom: 0xf59f68,
-    cloud: 0xf0ae8e,
-    vignette: 0x35223f,
-    vignetteAlpha: 0.36,
-  },
-  night: {
-    top: 0x231e40,
-    mid: 0x3a3566,
-    bottom: 0x5f5989,
-    cloud: 0x3a3563,
-    vignette: 0x141230,
-    vignetteAlpha: 0.42,
-  },
+const HUB_FRAME: Record<TimePhase, HubFrame> = {
+  dawn: { vignette: 0x35315e, vignetteAlpha: 0.3 },
+  morning: { vignette: 0x3a4a68, vignetteAlpha: 0.26 },
+  noon: { vignette: 0x2f5a80, vignetteAlpha: 0.2 },
+  sunset: { vignette: 0x4a4030, vignetteAlpha: 0.28 },
+  dusk: { vignette: 0x35223f, vignetteAlpha: 0.36 },
+  night: { vignette: 0x141230, vignetteAlpha: 0.42 },
 };
 
-/** The phase the map is baked and framed against before the clock speaks. */
+/** The phase the map is framed against before the clock speaks. */
 const HUB_SKY_DEFAULT: TimePhase = "noon";
+
+/**
+ * Where the map's horizon sits, 0–1 down the frame.
+ *
+ * Lower than a coastal scene's, and there is nothing at it: the map has no sea
+ * to meet, so this is only telling the sky where to put its haze band. Low
+ * enough that the haze pools under the cluster and reads as depth of air
+ * beneath floating islands, rather than as a line ruled behind them.
+ */
+const HUB_HORIZON = 0.78;
+
+/** The sky's own seed. Not the islands' — a reseed of one must not move the other. */
+const HUB_SKY_SEED = 0x71c3;
+
+/**
+ * How far the far islands move with the camera, against the map's 1.
+ *
+ * Between the midground cloud band's depth and the foreground's, because that
+ * is where they sit in the sky. Slower than the worlds themselves by a factor
+ * of eight, which is what says "further away" without a single change of scale.
+ */
+const FAR_DEPTH = 0.12;
+
+/** How far past each edge of the frame the far islands are spread, per side. */
+const FAR_MARGIN = 0.4;
+
+/**
+ * The far islands themselves: where across the spread, how far down the sky,
+ * how big in sky pixels, and how faint.
+ *
+ * Sizes are small and alphas are low on purpose — see `buildFarField`. They sit
+ * above the map's own horizon so the haze band settles over their feet, which
+ * is what makes them read as distance rather than as small islands nearby.
+ */
+const FAR_ISLANDS = [
+  { u: 0.08, v: 0.44, size: 9, alpha: 0.22, tone: 0xb9a3c4, rock: 0x8d7a99 },
+  { u: 0.37, v: 0.36, size: 6, alpha: 0.18, tone: 0xc7b0c9, rock: 0x9a86a0 },
+  { u: 0.68, v: 0.47, size: 10, alpha: 0.16, tone: 0xd9bda6, rock: 0xa88f7c },
+  { u: 0.93, v: 0.39, size: 6, alpha: 0.15, tone: 0xd3bcb4, rock: 0xa08c88 },
+] as const;
+
+/**
+ * Motes drifting at the front of the frame.
+ *
+ * A `WeatherProfile` rather than anything new: the coast already runs dust,
+ * fog, rain and sparks through one emitter, and "a few specks of pollen over
+ * the map" is that emitter with the numbers turned down until it is barely
+ * there. Sparse, slow, near-transparent, and confined to the lower two-thirds
+ * so the top of the frame stays clean sky.
+ *
+ * Not emissive, so it takes the hour's colour like everything else — warm at
+ * dusk, and almost gone at midnight, which is exactly when dust in the air
+ * would stop being visible.
+ */
+const HUB_MOTES: WeatherProfile = {
+  density: 1.6,
+  size: [1, 2],
+  streak: 1,
+  color: 0xfff2d6,
+  alpha: [0.08, 0.2],
+  vx: [-7, -2],
+  vy: [-2, 5],
+  sway: { amount: [2, 7], rate: [0.16, 0.4] },
+  band: [0.34, 1],
+  veil: { color: 0xffffff, alpha: 0 },
+  emissive: false,
+};
 
 /** How much glow an island carries with nothing pointing at it. */
 const GLOW_REST = 0.24;
@@ -163,6 +187,25 @@ const CLOSE_DRESSING: readonly DressingEntry[] = [
 ];
 
 const BOB_PIXELS = 2;
+
+/**
+ * How far a world rises under the pointer, in map pixels.
+ *
+ * Six, which at the hub's usual pixel scale is a clear lift and still less
+ * than the height of the smallest prop on the island. Enough that the island
+ * you are pointing at is unmistakably the one that answered; not enough to
+ * look like it is taking off.
+ */
+const HOVER_LIFT = 6;
+
+/**
+ * How far the front door opens on hover. Ajar, not open.
+ *
+ * The rest of the swing belongs to the click, and a door that reached the same
+ * place for pointing at a building as for entering it would have nothing left
+ * to say at the moment it matters.
+ */
+const HOVER_DOOR = 0.35;
 const BOB_PERIOD = [16, 27] as const;
 const DETAIL_SMOOTHING = 6;
 
@@ -236,6 +279,13 @@ const INTRO_FADE = 0.14;
  * old 0.8 a building filled its whole surface, and an island you cannot see
  * any ground on is a plinth, not a place.
  */
+/**
+ * Texture pixels per world pixel for a chapter island. See
+ * `IsoIslandParams.detail` — this is the number that puts the ground on the
+ * same pixel grid as the buildings standing on it.
+ */
+const ISLAND_DETAIL = 2;
+
 const BUILDING_WIDTH_FIT = 0.625; // top face is at least 1.6x the building it carries
 
 /**
@@ -323,6 +373,8 @@ interface Marker {
   lit: Container[];
   target: number;
   hover: number;
+  /** 1 while the camera is flying into this world. See `setApproaching`. */
+  approach: number;
   bobRate: number;
   bobPhase: number;
   /** Marker-local y of whatever stands tallest — island, building, or landmark. */
@@ -375,14 +427,14 @@ export class OverviewLayer {
   /** Screen space, in front of the camera: the vignette, and nothing else. */
   readonly overlay = new Container();
 
-  /** The phase we are in, and the one we are crossing to, cross-faded. */
-  private readonly gradient = new Sprite();
-  private readonly gradientNext = new Sprite();
-  private readonly skyTextures = new Map<TimePhase, Texture>();
+  /** The whole sky: gradient, clouds, sun, moon, haze, birds. See the class note. */
+  private readonly sky: SkySystem;
+  /** The one particle field on the map — motes at the front of the frame. */
+  private readonly motes: WeatherLayer;
+  private readonly moteTexture: Texture;
   private readonly vignette = new Sprite();
-  /** Purely scenic: far islands, behind every real world. */
+  /** Purely scenic: far islands, hung inside the sky between its cloud bands. */
   private readonly farField = new Container();
-  private readonly cloudLayers: { sprite: TilingSprite; speed: number; tint: number; alpha: number }[] = [];
   /** One entry per leg of the route. See buildPaths. */
   private readonly pathField = new Container();
   private readonly pathLegs: PathLeg[] = [];
@@ -393,10 +445,12 @@ export class OverviewLayer {
   private readonly landmarkArt = new LandmarkFactory();
   /** Crates, cones, hedges, bollards: the ground dressing the shore does not grow. */
   private readonly siteArt = new SiteFactory();
-  private readonly cloudTextures: Texture[] = [];
   private readonly farTextures: Texture[] = [];
   private readonly farViews: {
     sprite: Sprite;
+    /** Where it sits across the spread and down the sky, 0–1. See FAR_ISLANDS. */
+    u: number;
+    v: number;
     baseY: number;
     rate: number;
     amount: number;
@@ -422,7 +476,7 @@ export class OverviewLayer {
   /** How far the opening has come, 0–1. Sits at 1 whenever it is not running. */
   private introProgress = 1;
   private introRunning = false;
-  private vignetteAlpha = HUB_SKY[HUB_SKY_DEFAULT].vignetteAlpha;
+  private vignetteAlpha = HUB_FRAME[HUB_SKY_DEFAULT].vignetteAlpha;
 
   constructor(options: OverviewLayerOptions) {
     this.chapters = options.chapters;
@@ -440,25 +494,54 @@ export class OverviewLayer {
     this.overlay.label = "overview:overlay";
     this.overlay.eventMode = "none";
 
-    this.gradient.eventMode = "none";
-    this.gradientNext.eventMode = "none";
-    this.gradientNext.alpha = 0;
-    for (const phase of Object.keys(HUB_SKY) as TimePhase[]) {
-      this.skyTextures.set(phase, this.bakeGradient(HUB_SKY[phase]));
-    }
-    this.gradient.texture = this.skyTextures.get(HUB_SKY_DEFAULT)!;
-    this.gradientNext.texture = this.gradient.texture;
-    this.backdrop.addChild(this.gradient);
-    this.backdrop.addChild(this.gradientNext);
-    this.buildClouds();
+    // The map's sky is a chapter world's sky. Its own pixel grid rather than
+    // the map's: the sky is drawn outside the camera and has never shared a
+    // grid with what is inside one — see `SkySystem.resize`.
+    this.sky = new SkySystem({
+      width: options.width,
+      height: options.height,
+      horizon: HUB_HORIZON,
+      seed: HUB_SKY_SEED,
+      motionScale: this.motionScale,
+    });
+    this.backdrop.addChild(this.sky.container);
+
+    this.moteTexture = toTexture(
+      1,
+      1,
+      (pixels) => {
+        pixels[0] = 255;
+        pixels[1] = 255;
+        pixels[2] = 255;
+        pixels[3] = 255;
+      },
+      "Overview"
+    );
+    this.motes = new WeatherLayer({
+      profile: HUB_MOTES,
+      texture: this.moteTexture,
+      // The veil is off at alpha 0, so the one white pixel does for both.
+      veilTexture: this.moteTexture,
+      seed: 0x3e91,
+      motionScale: this.motionScale,
+    });
+    this.motes.setIntensity(1);
 
     this.vignette.eventMode = "none";
     this.vignette.texture = this.bakeVignette();
+    // Two things in front of the camera now, and they need separate opacities:
+    // the vignette's is the hour's, the motes' is their own. So the container's
+    // alpha carries the map's presence and nothing else.
+    this.overlay.addChild(this.motes.container);
     this.overlay.addChild(this.vignette);
 
     this.farField.label = "overview:far";
     this.farField.eventMode = "none";
-    this.field.addChild(this.farField);
+    // Inside the sky rather than inside the camera. See `SkySystem.distant`.
+    this.sky.distant.addChild(this.farField);
+    // Built once, not per pixel scale: they are on the sky's grid, and the map's
+    // can change without the backdrop being affected.
+    this.buildFarField();
 
     this.pathField.label = "overview:paths";
     this.pathField.eventMode = "none";
@@ -477,7 +560,8 @@ export class OverviewLayer {
     this.backdrop.visible = on;
     this.field.visible = on;
     this.overlay.visible = on;
-    this.overlay.alpha = this.presence * this.vignetteAlpha;
+    this.overlay.alpha = this.presence;
+    this.vignette.alpha = this.vignetteAlpha;
     this.field.eventMode = on ? "static" : "none";
     this.backdrop.alpha = this.presence;
     this.field.alpha = this.presence;
@@ -514,27 +598,15 @@ export class OverviewLayer {
     this.light = hub;
     this.night = clamp01((0.78 - state.ambientIntensity) / 0.58);
 
-    const from = HUB_SKY[state.fromPhase as TimePhase] ?? HUB_SKY[HUB_SKY_DEFAULT];
-    const to = HUB_SKY[state.toPhase as TimePhase] ?? from;
+    const from = HUB_FRAME[state.fromPhase as TimePhase] ?? HUB_FRAME[HUB_SKY_DEFAULT];
+    const to = HUB_FRAME[state.toPhase as TimePhase] ?? from;
     const blend = state.blend;
-
-    // The sky: two sprites, the far one faded up across the hand-over.
-    this.gradient.texture = this.skyTextures.get(state.fromPhase as TimePhase) ?? this.gradient.texture;
-    this.gradientNext.texture = this.skyTextures.get(state.toPhase as TimePhase) ?? this.gradient.texture;
-    this.gradientNext.alpha = blend;
 
     this.vignette.tint = lerpColor(from.vignette, to.vignette, blend);
     this.vignetteAlpha = from.vignetteAlpha + (to.vignetteAlpha - from.vignetteAlpha) * blend;
-    this.overlay.alpha = this.presence * this.vignetteAlpha;
+    this.vignette.alpha = this.vignetteAlpha;
 
-    const cloud = lerpColor(from.cloud, to.cloud, blend);
-    for (const { sprite, tint, alpha } of this.cloudLayers) {
-      sprite.tint = multiply(tint, cloud);
-      // Thinner after dark. These are dithered alpha masks, and a dither that
-      // is barely visible over a pale sky is a visible chequerboard over a
-      // deep one — the pattern reads long before the cloud does.
-      sprite.alpha = alpha * (1 - this.night * 0.72);
-    }
+    this.motes.applyLighting(hub);
 
     // One multiply, shared by every island on the board: the ambient applied
     // to plain white is exactly "what colour is white here now".
@@ -557,6 +629,18 @@ export class OverviewLayer {
       // What is left of the glow takes the hour like everything else.
       marker.glow.tint = multiply(theme.topPalette[0], ambient);
     }
+  }
+
+  /**
+   * Put the sky between two of the cycle's phases.
+   *
+   * A pass-through, deliberately: the map does not get an opinion about what
+   * dusk looks like. Both endpoints and a blend, exactly as a chapter world's
+   * sky is driven — see `DayNightManager.push` — so the map and the world you
+   * drop into are two views of one afternoon rather than two products.
+   */
+  setSkyPalette(from: SkyPalette, to: SkyPalette, blend: number): void {
+    this.sky.setBlendedPalette(from, to, blend);
   }
 
   /**
@@ -592,6 +676,23 @@ export class OverviewLayer {
   setHover(id: string, hover: number): void {
     const marker = this.markers.get(id);
     if (marker) marker.target = hover < 0 ? 0 : hover > 1 ? 1 : hover;
+  }
+
+  /**
+   * How far the camera has committed to flying into a world, 0 to 1.
+   *
+   * The map does not decide this and cannot: the flight belongs to the host,
+   * which owns the camera and the director. All this does is give the world
+   * being flown into something to answer with, which at the moment is its
+   * front door.
+   *
+   * Passing null clears whatever was set, which is what coming back to the map
+   * means.
+   */
+  setApproaching(id: string | null, approach = 1): void {
+    for (const [key, marker] of this.markers) {
+      marker.approach = key === id ? (approach < 0 ? 0 : approach > 1 ? 1 : approach) : 0;
+    }
   }
 
   /**
@@ -636,17 +737,22 @@ export class OverviewLayer {
 
     this.elapsed += delta * this.motionScale;
 
-    if (this.motionScale > 0) {
-      for (const { sprite, speed } of this.cloudLayers) {
-        sprite.tilePosition.x -= speed * delta;
-      }
-    }
+    // The sky drifts, flies its birds and runs its own transitions. It is told
+    // where the camera is, not moved with it: each of its bands answers that
+    // with its own depth, which is the whole of the parallax.
+    this.sky.update(delta);
+    this.sky.setViewOffset(view.viewLeft);
+    this.motes.update(delta, this.elapsed);
 
     if (this.motionScale > 0) {
       for (const far of this.farViews) {
         far.sprite.y = far.baseY + Math.sin(this.elapsed * far.rate + far.phase) * far.amount;
       }
     }
+
+    // The far islands are in the sky, so they parallax like a cloud band rather
+    // than like a world — slowly, and on the sky's grid.
+    this.farField.x = Math.round((-view.viewLeft * FAR_DEPTH) / this.sky.pixelScale);
 
     const t = 1 - Math.exp(-DETAIL_SMOOTHING * delta);
 
@@ -664,11 +770,21 @@ export class OverviewLayer {
       marker.glow.alpha = GLOW_REST * (1 - this.night * 0.8) + marker.hover * 0.34;
 
       if (this.motionScale > 0) {
-        marker.body.y = Math.round(
-          Math.sin(this.elapsed * marker.bobRate + marker.bobPhase) * BOB_PIXELS
-        );
+        // The bob it always had, plus the lift hover adds to it. One
+        // assignment, because two things writing `body.y` would fight.
+        marker.body.y =
+          Math.round(Math.sin(this.elapsed * marker.bobRate + marker.bobPhase) * BOB_PIXELS) -
+          Math.round(marker.hover * HOVER_LIFT);
         marker.building?.tick(this.elapsed);
       }
+
+      // The door answers the pointer directly: ajar while you are looking at
+      // it, wide once you have committed to going in. `approach` is set by the
+      // host when the camera starts its flight, and it outranks hover, so a
+      // door that is already opening does not half-close because the pointer
+      // slid off the island on the way in.
+      marker.building?.setDoor(Math.max(marker.approach, marker.hover * HOVER_DOOR));
+      marker.building?.setApproach(marker.approach);
 
       for (const view of marker.propViews) view.animate(this.elapsed);
     }
@@ -734,19 +850,20 @@ export class OverviewLayer {
     if (size.width <= 0 || size.height <= 0) return;
 
     this.viewport = size;
-    this.gradient.width = size.width;
-    this.gradient.height = size.height;
-    this.gradientNext.width = size.width;
-    this.gradientNext.height = size.height;
+    this.sky.resize(size.width, size.height);
     this.vignette.width = size.width;
     this.vignette.height = size.height;
-    this.layoutClouds(size);
+    this.resizeMotes(size);
 
     const next = Math.max(1, Math.round(pixelScale));
     if (next !== this.pixelScaleValue) {
       this.pixelScaleValue = next;
       this.rebuild();
     }
+
+    // The sky may have taken a new grid of its own, and the far islands are
+    // laid out on it.
+    this.layoutFarField();
 
     this.field.scale.set(this.pixelScaleValue);
   }
@@ -757,12 +874,14 @@ export class OverviewLayer {
     this.siteArt.destroy();
     this.glowTexture?.destroy(true);
     this.glowTexture = null;
-    for (const texture of this.cloudTextures) texture.destroy(true);
-    this.cloudTextures.length = 0;
     for (const texture of this.farTextures) texture.destroy(true);
     this.farTextures.length = 0;
-    for (const texture of this.skyTextures.values()) texture.destroy(true);
-    this.skyTextures.clear();
+    this.farViews.length = 0;
+    // Before the backdrop goes: the sky owns textures the container teardown
+    // knows nothing about, and the far islands are mounted inside it.
+    this.sky.destroy();
+    this.motes.destroy();
+    this.moteTexture.destroy(true);
     this.vignette.texture?.destroy(true);
     this.backdrop.destroy({ children: true });
     this.overlay.destroy({ children: true });
@@ -770,43 +889,6 @@ export class OverviewLayer {
   }
 
   // --- Internal: backdrop --------------------------------------------------
-
-  /**
-   * One phase's vertical gradient, baked once and kept.
-   *
-   * Six textures of 1x128 rather than one re-baked as the light moves: the
-   * hand-over between two phases is a cross-fade between two sprites, which is
-   * the same machinery the sky and the sea inside a world already use, and it
-   * costs nothing per frame.
-   */
-  private bakeGradient(sky: HubSky): Texture {
-    const h = 128;
-    return toTexture(
-      1,
-      h,
-      (pixels) => {
-        const lerp = (a: number, b: number, t: number) => Math.round(a + (b - a) * t);
-        const split = (c: number) => [(c >> 16) & 0xff, (c >> 8) & 0xff, c & 0xff];
-        const stops = [split(sky.top), split(sky.mid), split(sky.bottom)];
-        // The peach stop sits high, so the deep tone stays a band overhead
-        // rather than a wash over the whole frame.
-        const knee = 0.42;
-        for (let y = 0; y < h; y++) {
-          const t = y / (h - 1);
-          const low = t < knee;
-          const a = low ? stops[0] : stops[1];
-          const b = low ? stops[1] : stops[2];
-          const k = low ? t / knee : (t - knee) / (1 - knee);
-          const o = y * 4;
-          pixels[o] = lerp(a[0], b[0], k);
-          pixels[o + 1] = lerp(a[1], b[1], k);
-          pixels[o + 2] = lerp(a[2], b[2], k);
-          pixels[o + 3] = 255;
-        }
-      },
-      "Overview"
-    );
-  }
 
   /**
    * The frame's own edges, darkened. Baked small and stretched: it is a
@@ -844,96 +926,6 @@ export class OverviewLayer {
     );
   }
 
-  /** A soft, multi-lobed cloud puff, tileable enough at low alpha. */
-  private bakeCloudTile(seed: number): Texture {
-    const rand = createRandom(seed);
-    const w = 220;
-    const h = 56;
-    const alpha = new Float32Array(w * h);
-
-    const lobes = rangeInt(rand, 2, 3);
-    for (let i = 0; i < lobes; i++) {
-      const cx = range(rand, w * 0.2, w * 0.8);
-      const cy = range(rand, h * 0.4, h * 0.65);
-      const rx = range(rand, w * 0.14, w * 0.22);
-      const ry = range(rand, h * 0.28, h * 0.4);
-
-      for (let y = 0; y < h; y++) {
-        const dy = (y - cy) / ry;
-        for (let x = 0; x < w; x++) {
-          const dx = (x - cx) / rx;
-          const d = Math.sqrt(dx * dx + dy * dy);
-          if (d > 1.2) continue;
-          alpha[y * w + x] = Math.max(alpha[y * w + x], Math.max(0, 1 - d / 1.2));
-        }
-      }
-    }
-
-    const mask = new Uint8Array(w * h);
-    for (let y = 0; y < h; y++) {
-      for (let x = 0; x < w; x++) {
-        const i = y * w + x;
-        if (alpha[i] <= 0) continue;
-        mask[i] = ditherAlpha(alpha[i], 5, x, y);
-      }
-    }
-
-    return toTexture(
-      w,
-      h,
-      (pixels) => {
-        for (let i = 0; i < mask.length; i++) {
-          const o = i * 4;
-          pixels[o] = 255;
-          pixels[o + 1] = 255;
-          pixels[o + 2] = 255;
-          pixels[o + 3] = mask[i];
-        }
-      },
-      "Overview"
-    );
-  }
-
-  private buildClouds(): void {
-    // Three bands: further is smaller, fainter and slower — the one cheap cue
-    // that reads as depth without a single extra draw call's worth of logic.
-    // Each gets its own tile so the three don't read as one pattern at three
-    // scales.
-    // Tinted, not white. Against the old flat cream these were white on white
-    // and read as nothing at all; each band now carries a little of the sky it
-    // sits in — mauve high up, warm peach lower down — so they stay
-    // low-contrast without disappearing.
-    const bands = [
-      { seed: 0x9911, y: 0.06, alpha: 0.24, scale: 0.75, speed: 1.6, tint: 0xe6dcee },
-      { seed: 0xa42c, y: 0.26, alpha: 0.32, scale: 1.1, speed: 3.2, tint: 0xf6eef4 },
-      { seed: 0xb0e7, y: 0.5, alpha: 0.28, scale: 1.5, speed: 5.4, tint: 0xfdf4e8 },
-    ];
-
-    for (const band of bands) {
-      const texture = this.bakeCloudTile(band.seed);
-      this.cloudTextures.push(texture);
-      const sprite = new TilingSprite({ texture, width: 1, height: 1 });
-      sprite.eventMode = "none";
-      sprite.alpha = band.alpha;
-      sprite.tint = band.tint;
-      (sprite as unknown as { __band: typeof band }).__band = band;
-      this.backdrop.addChild(sprite);
-      this.cloudLayers.push({ sprite, speed: band.speed, tint: band.tint, alpha: band.alpha });
-    }
-  }
-
-  private layoutClouds(size: Size): void {
-    for (const { sprite } of this.cloudLayers) {
-      const band = (sprite as unknown as { __band: { y: number; scale: number } }).__band;
-      // Wider than the viewport by half, so the band keeps drifting past the
-      // edge rather than visibly wrapping inside the frame.
-      sprite.width = size.width;
-      sprite.height = size.height * 0.34;
-      sprite.y = size.height * band.y;
-      sprite.tileScale.set(band.scale);
-    }
-  }
-
   // --- Internal: islands ----------------------------------------------------
 
   private rebuild(): void {
@@ -962,8 +954,6 @@ export class OverviewLayer {
   private build(): void {
     const scale = this.pixelScaleValue;
     if (!this.glowTexture) this.glowTexture = this.bakeGlow(48);
-
-    this.buildFarField(scale);
 
     // Paths first, so the islands sit over them. Masked only while there is
     // an opening left to run.
@@ -1000,6 +990,12 @@ export class OverviewLayer {
         vines: theme.vines,
         vineTones: theme.vineTones,
         ground: theme.ground,
+        // Baked at twice the grid and drawn at half scale. Every building on
+        // the hub is drawn large and scaled *down* onto this map, so at 1:1
+        // the ground was carrying pixels twice the size of the walls standing
+        // on it — the islands did not read as rougher art so much as bigger
+        // art. See `IsoIslandParams.detail`.
+        detail: ISLAND_DETAIL,
       });
 
       const body = new Container();
@@ -1015,6 +1011,7 @@ export class OverviewLayer {
       body.addChild(glow);
 
       const islandSprite = new Sprite(island.texture);
+      islandSprite.scale.set(1 / island.textureScale);
       islandSprite.x = -island.topCenter.x;
       islandSprite.y = -island.topCenter.y;
       islandSprite.eventMode = "none";
@@ -1096,6 +1093,7 @@ export class OverviewLayer {
         detail,
         target: 0,
         hover: 0,
+        approach: 0,
         bobRate:
           (Math.PI * 2) /
           (BOB_PERIOD[0] + (chapter.overview.x % (BOB_PERIOD[1] - BOB_PERIOD[0]))),
@@ -1117,44 +1115,29 @@ export class OverviewLayer {
    * — they read as grey smudges dropped in the void, which is precisely what a
    * stray shadow would look like and exactly the wrong thing to have floating
    * near an island.
+   *
+   * # Why they live in the sky
+   * They used to sit in world space beside the nine real worlds, which meant
+   * they moved with them, pixel for pixel — nine islands and four faint ones
+   * all sliding at exactly the same rate says they are all the same distance
+   * away, and the far ones were then just small. Hung in the sky instead, they
+   * drift at a fraction of the camera, and the sky's own cloud bands pass in
+   * front of them. That is the whole of the depth.
+   *
+   * Laid out against the *frame* rather than against the cluster for the same
+   * reason a cloud is: this is backdrop, and a backdrop is composed where the
+   * viewer is looking, not where the subject happens to have been placed.
    */
-  private buildFarField(scale: number): void {
+  private buildFarField(): void {
     for (const child of this.farField.removeChildren()) child.destroy();
     this.farViews.length = 0;
     for (const texture of this.farTextures) texture.destroy(true);
     this.farTextures.length = 0;
 
-    // Placed against the cluster's own extent, so adding a tenth world moves
-    // the far pieces with it instead of stranding them.
-    let left = Infinity;
-    let right = -Infinity;
-    let top = Infinity;
-    let bottom = -Infinity;
-    for (const chapter of this.chapters) {
-      left = Math.min(left, chapter.overview.x);
-      right = Math.max(right, chapter.overview.x);
-      top = Math.min(top, chapter.overview.y);
-      bottom = Math.max(bottom, chapter.overview.y);
-    }
-    if (!Number.isFinite(left)) return;
-
-    const w = right - left;
-    const h = bottom - top;
-    const at = (u: number, v: number) => ({ x: left + w * u, y: top + h * v });
-
-    // Fractions of the cluster, not pixels — the composition survives a
-    // re-spread of the real islands.
-    const specs = [
-      { at: at(0.08, 0.06), size: 22, alpha: 0.3, tone: 0xb9a3c4, rock: 0x8d7a99 },
-      { at: at(0.72, 0.02), size: 17, alpha: 0.24, tone: 0xc7b0c9, rock: 0x9a86a0 },
-      { at: at(0.5, 1.05), size: 26, alpha: 0.22, tone: 0xd9bda6, rock: 0xa88f7c },
-      { at: at(0.95, 0.84), size: 14, alpha: 0.2, tone: 0xd3bcb4, rock: 0xa08c88 },
-    ];
-
     const rand = createRandom(0x4f1c);
-    for (const spec of specs) {
+    for (const spec of FAR_ISLANDS) {
       const island = generateIsoIsland({
-        size: Math.max(4, Math.round(spec.size)),
+        size: spec.size,
         // Two tones, flattened towards the sky: at this alpha the palette is
         // reading as haze, and four steps of contrast would fight the near
         // islands for attention.
@@ -1169,19 +1152,55 @@ export class OverviewLayer {
       sprite.eventMode = "none";
       sprite.alpha = spec.alpha;
       sprite.anchor.set(0.5);
-      sprite.x = Math.round(spec.at.x / scale);
-      const baseY = Math.round(spec.at.y / scale);
-      sprite.y = baseY;
       this.farField.addChild(sprite);
 
       this.farViews.push({
         sprite,
-        baseY,
+        u: spec.u,
+        v: spec.v,
+        baseY: 0,
         rate: range(rand, 0.12, 0.3),
         amount: range(rand, 1.5, 3.5),
         phase: range(rand, 0, Math.PI * 2),
       });
     }
+
+    this.layoutFarField();
+  }
+
+  /**
+   * Place the far islands across the sky, in sky pixels.
+   *
+   * Spread wider than the frame, because they parallax: a piece pinned to the
+   * right-hand edge at rest has to have somewhere to come from when the camera
+   * pans that way.
+   */
+  private layoutFarField(): void {
+    const { width, height } = this.sky.size;
+    if (width <= 0 || height <= 0) return;
+
+    const spread = width * (1 + FAR_MARGIN * 2);
+    for (const far of this.farViews) {
+      far.sprite.x = Math.round(-width * FAR_MARGIN + spread * far.u);
+      far.baseY = Math.round(height * far.v);
+      far.sprite.y = far.baseY;
+    }
+  }
+
+  /** Re-fit the mote field, on its own grid. Mirrors `WeatherSystem.resize`. */
+  private resizeMotes(size: Size): void {
+    const scale = pixelScaleFor(size.height, DEFAULT_PIXEL_HEIGHT);
+    this.motes.container.scale.set(scale);
+    // Oversized and offset back, so motes exist past every edge of the view
+    // rather than appearing at them.
+    this.motes.container.position.set(
+      -Math.round((size.width * FIELD_MARGIN) / scale),
+      -Math.round((size.height * FIELD_MARGIN) / scale)
+    );
+    this.motes.resize(
+      Math.ceil((size.width * (1 + FIELD_MARGIN * 2)) / scale),
+      Math.ceil((size.height * (1 + FIELD_MARGIN * 2)) / scale)
+    );
   }
 
   /** Stand this chapter's own detailed landmark on its island, unscaled art unchanged. */

@@ -187,6 +187,44 @@ export class CottageRenderer extends BuildingRenderer {
     this.plotRoof();
     this.plotMailbox();
     this.plotSmoke();
+
+    /**
+     * The lit room, the chimney, the mailbox: working, living here, and the
+     * clients who found the place.
+     *
+     * Freelance years have no named products to hang rows on, so the three
+     * open the one group of highlights. What they carry is the reading of the
+     * house — that this was work done from where somebody lived.
+     */
+    this.setHotspots([
+      {
+        id: "desk",
+        section: "Highlights",
+        label: "The desk it was built from",
+        x: HOUSE.x,
+        y: HOUSE.top,
+        width: HOUSE.width,
+        height: BASE - HOUSE.top,
+      },
+      {
+        id: "chimney",
+        section: "Highlights",
+        label: "Still going",
+        x: CHIMNEY.x - 2,
+        y: CHIMNEY.top,
+        width: CHIMNEY.width + 4,
+        height: ROOF.top - CHIMNEY.top + 6,
+      },
+      {
+        id: "mailbox",
+        section: "Highlights",
+        label: "Where the clients came from",
+        x: MAILBOX.x - 5,
+        y: MAILBOX.boxTop - 2,
+        width: 14,
+        height: BASE - MAILBOX.boxTop + 2,
+      },
+    ]);
   }
 
   /** A stone footing and a short path, so the cottage meets the grass on stone. */
@@ -283,6 +321,9 @@ export class CottageRenderer extends BuildingRenderer {
     stone.rect(x - 1, BASE - 1, w + 2, 1);
     // A latch, which is the smallest possible sign the door is used.
     this.pixels("metal").rect(x + w - 3, y + 9, 2, 1);
+
+    // One plank leaf, swinging off the hinge side.
+    this.setDoorway({ x, y, width: w, height: h, swing: "single", glow: 0xffd0a0 });
   }
 
   /**

@@ -24,6 +24,11 @@ export type { TimeListener, TimePhase, TimeSettings, TimeSnapshot } from "./time
 export { DayNightSystem, DayNightManager, COLOR_PRESETS, DAY_NIGHT_SETTINGS } from "./dayNight";
 export type { DayNightState, PhasePalettes, PhasePreset } from "./dayNight";
 
+// Sound (see ./audio). Off by default; `SoundToggle` is the only thing that
+// turns it on. Import from "@/engine/audio" rather than here if you do not
+// also need the renderer — this barrel pulls Pixi in with it.
+export { AmbientAudio, getAudio } from "./audio";
+
 // Stars (see ./stars for the full system).
 export { Stars, StarField, STAR_SETTINGS, PHASE_VISIBILITY } from "./stars";
 export type { StarSettings, StarsOptions } from "./stars";
@@ -80,6 +85,7 @@ export type {
   ChapterConfig,
   ChapterIdentity,
   ChapterWorld,
+  HotspotEvent,
   ResolvedChapter,
   UniverseState,
   ViewMode,

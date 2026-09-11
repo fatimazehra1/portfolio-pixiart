@@ -218,6 +218,45 @@ export class WorkshopRenderer extends BuildingRenderer {
     this.plotServerBay(BAY_3);
     this.plotCobwebs();
     this.plotDust();
+
+    /**
+     * Three of the four bays, and pointedly not the fourth.
+     *
+     * The whole building is an argument about which experiments are still
+     * running: three bays dark, one lit. Marking the three dead ones and the
+     * live one equally would flatten that. The donut bay is left alone — it is
+     * the abandoned one, and the visitor finding three markers and one
+     * unmarked corner is being told something true.
+     */
+    this.setHotspots([
+      {
+        id: "terminal",
+        section: "Highlights",
+        label: "Three.js and the web",
+        x: BAY_1,
+        y: SHED.top + ROOF_H,
+        width: BAY_W,
+        height: FLOOR - SHED.top - ROOF_H,
+      },
+      {
+        id: "easel",
+        section: "Highlights",
+        label: "Interface and product design",
+        x: BAY_2,
+        y: SHED.top + ROOF_H,
+        width: BAY_W,
+        height: FLOOR - SHED.top - ROOF_H,
+      },
+      {
+        id: "rack",
+        section: "Highlights",
+        label: "The bench still in use",
+        x: BAY_3,
+        y: SHED.top + ROOF_H,
+        width: BAY_W,
+        height: FLOOR - SHED.top - ROOF_H,
+      },
+    ]);
   }
 
   /**

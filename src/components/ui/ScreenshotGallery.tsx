@@ -53,16 +53,18 @@ export default function ScreenshotGallery({
   return (
     <>
       <ul
-        className="mt-3 grid grid-cols-2 gap-1.5 border-t pt-3"
-        style={{ borderColor: "var(--ui-border)" }}
+        // Inside the plaque, so it is framed in the plaque's own rule and
+        // not in the dark panel's.
+        className="mt-3 grid grid-cols-2 gap-1.5 border-t-2 pt-3"
+        style={{ borderColor: "var(--plaque-line)" }}
       >
         {shown.map((file, index) => (
           <li key={file}>
             <button
               type="button"
               onClick={() => setOpen(file)}
-              className="block w-full cursor-pointer overflow-hidden rounded border transition-opacity hover:opacity-80"
-              style={{ borderColor: "var(--ui-border)" }}
+              className="block w-full cursor-pointer overflow-hidden border-2 transition-opacity hover:opacity-80"
+              style={{ borderColor: "var(--plaque-frame)" }}
               aria-label={`${title} screenshot ${index + 1}, click to enlarge`}
             >
               {/* Plain <img>: these are dropped in by hand at unknown sizes,
@@ -70,10 +72,11 @@ export default function ScreenshotGallery({
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
                 src={screenshotPath(id, file)}
-                alt={`${title} screenshot ${index + 1}`}
-                // Not lazy: a gallery only exists inside an open panel, so
-                // every thumbnail here is already on screen, and lazy loading
-                // inside a transformed overlay simply never triggers.
+                alt={`${title} — project screenshot ${index + 1} of ${shown.length}`}
+                // Lazy, and off the critical path: a gallery only renders
+                // inside an open panel, so nothing here is worth a byte until
+                // the visitor has actually opened one.
+                loading="lazy"
                 decoding="async"
                 className="block h-16 w-full object-cover"
                 onError={() => fail(file)}
@@ -102,8 +105,9 @@ export default function ScreenshotGallery({
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src={screenshotPath(id, open)}
-              alt={`${title} screenshot, enlarged`}
-              className="max-h-full max-w-full rounded shadow-2xl"
+              alt={`${title} — project screenshot, enlarged`}
+              className="max-h-full max-w-full border-2"
+              style={{ borderColor: "var(--plaque-frame)" }}
             />
           </motion.div>
         )}

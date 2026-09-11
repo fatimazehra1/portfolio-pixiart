@@ -7,18 +7,20 @@ import { getWorld } from "@/components/world/worldHandle";
 import { useWorldStore } from "@/stores/worldStore";
 
 /**
- * The hint and the way back.
+ * The hint, the plaque, and the way back.
  *
- * Two small things that share one file because they are one decision: how
- * much interface is allowed on screen at once. The identity mark used to live
- * here too — it now lives in `Sidebar`, which owns the hub's left edge, so
- * this file no longer has to fade in and out with it or fight it for the same
- * corner.
+ * Three small things that share one file because they are one decision: how
+ * much interface is allowed on screen at once. The answer is deliberately
+ * small — a hint while you are on the map, and inside a world exactly two
+ * things: what this place is, and one door out of it.
  *
- * The hint earns its place — a map you can drag and zoom looks identical to a
- * static picture until you try, and a first-time visitor should not have to
- * guess. It fades once you have actually moved the camera, because at that
- * point it is telling you something you have just done.
+ * # One way in, one way out
+ * The map used to carry a floating "Explore ..." button under whichever island
+ * was closest *and* a click target on the island *and* a dismissable first-time
+ * hint that said the same sentence as the permanent one. Pointing at a world
+ * and clicking it is the way in — that is what the labels, the card and the
+ * island itself all are, one target. Escape, or this button, is the way out.
+ * Everything else was furniture.
  */
 
 export default function WorldControls() {
@@ -44,12 +46,12 @@ export default function WorldControls() {
             exit={{ opacity: 0, x: -10 }}
             transition={{ duration: 0.24, ease: "easeOut" }}
             onClick={() => getWorld()?.leaveChapter()}
-            className="ui-panel absolute top-20 left-5 flex cursor-pointer items-center gap-2 px-3 py-2 font-sans text-[0.8125rem] font-medium transition-colors hover:bg-white/8"
+            className="ui-panel ui-button absolute top-5 left-5 flex cursor-pointer items-center gap-2 px-3 py-2 font-sans text-[0.8125rem] transition-colors"
           >
             <span aria-hidden>←</span>
-            <span>Back to the universe</span>
+            <span>Back to the map</span>
             <kbd
-              className="ml-1 rounded border px-1.5 py-0.5 text-[0.625rem] tracking-wide"
+              className="ml-1 border-2 px-1.5 py-0.5 text-[0.625rem] tracking-wider"
               style={{ borderColor: "var(--ui-border)", color: "var(--ui-faint)" }}
             >
               ESC
@@ -58,7 +60,7 @@ export default function WorldControls() {
         )}
       </AnimatePresence>
 
-      {/* Where you are, once you are somewhere. */}
+      {/* What this place is, on the wall of it. */}
       <AnimatePresence>
         {inside && content && (
           <motion.div
@@ -67,15 +69,16 @@ export default function WorldControls() {
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -8 }}
             transition={{ duration: 0.28, ease: "easeOut" }}
-            // Tall content, a short screen: the panel scrolls inside itself
-            // rather than growing past the viewport it is floating over.
-            className="ui-panel absolute top-5 right-5 max-h-[calc(100dvh-2.5rem)] w-[19rem] overflow-y-auto px-3.5 py-3 font-sans"
+            // Tall content, a short screen: the plaque scrolls inside itself
+            // rather than growing past the viewport it is hanging over.
+            className="ui-plaque ui-scroll absolute top-5 right-5 max-h-[calc(100dvh-2.5rem)] w-[20rem] overflow-y-auto"
           >
             <InfoCard content={content} />
           </motion.div>
         )}
       </AnimatePresence>
-      {/* The hint. Overview only. */}
+
+      {/* The hint. Overview only, and the only one on the page. */}
       <AnimatePresence>
         {view === "overview" && (
           <motion.p
@@ -84,10 +87,10 @@ export default function WorldControls() {
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.4, delay: 0.6 }}
-            className="absolute bottom-5 left-1/2 -translate-x-1/2 font-sans text-[0.6875rem] tracking-wide select-none"
-            style={{ color: "var(--ui-faint)" }}
+            className="absolute bottom-5 left-1/2 -translate-x-1/2 font-sans text-[0.75rem] tracking-wide select-none"
+            style={{ color: "var(--ui-text)", textShadow: "1px 1px 0 var(--ui-edge)" }}
           >
-            Scroll or ± to zoom · drag or arrows to pan · click a world to enter
+            Click an island to enter it · scroll to zoom · drag to pan
           </motion.p>
         )}
       </AnimatePresence>

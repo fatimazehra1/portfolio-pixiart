@@ -233,20 +233,26 @@ const DUSK: PhasePreset = {
  * takes its cast from it.
  */
 const NIGHT: PhasePreset = {
+  // Lifted a stop and a half off where it was. The old night was dark enough
+  // that the islands stopped existing in it, which is the one thing a phase
+  // is not allowed to do — the archipelago is the picture. What reads as
+  // night now is the *hue* (indigo and violet, cool all the way up) and the
+  // fact that every artificial light is doing the work, not an absence of
+  // exposure.
   sky: {
-    top: 0x0b1e3f, // --sky-night
-    upper: 0x172549,
-    middle: 0x26305c,
-    horizon: 0x3f4470,
-    glow: 0x4a4a78,
-    base: 0x3f3963,
+    top: 0x152a52, // --sky-night, lifted
+    upper: 0x21315d,
+    middle: 0x333f70,
+    horizon: 0x4e5484,
+    glow: 0x5b5b8c,
+    base: 0x4e4877,
   },
-  oceanReflection: 0x3b3f63,
-  oceanDeep: 0x0c2438,
-  hazeColor: 0x2c3a63,
-  hazeAlpha: 0.36,
-  ambient: 0.42,
-  cloudTint: 0x454f7e,
+  oceanReflection: 0x4a4f75,
+  oceanDeep: 0x14314a,
+  hazeColor: 0x3a4a76,
+  hazeAlpha: 0.32,
+  ambient: 0.62,
+  cloudTint: 0x555f8e,
   cloudAlpha: 0.7,
   sun: {
     x: 0.3,
@@ -260,17 +266,105 @@ const NIGHT: PhasePreset = {
     x: 0.7,
     y: 0.19,
     opacity: 1,
-    color: 0xdfe6f5,
-    glow: 0x9fb4e0,
-    glowOpacity: 0.3,
+    color: 0xeaf0ff,
+    glow: 0xa8c0ee,
+    glowOpacity: 0.42,
   },
 };
 
+/**
+ * The grade laid over every authored phase.
+ *
+ * The presets above are painted at full strength on purpose — it is easier to
+ * author a colour you can see than one already pulled halfway to grey — and
+ * this is the single pass that takes them down to the muted, sun-faded range
+ * the world is meant to sit in (ART_DIRECTION.md §Color Philosophy). One
+ * number here moves the whole day, which is the only way six phases stay in
+ * the same film stock.
+ *
+ * `warmth` is the second half of the same idea: desaturation alone leaves the
+ * mid-tones papery, so the middle of the range leans a little towards a dusty
+ * amber. Only the middle — the highlights stay clean and the shadows stay
+ * blue, and a warm cast across all three would just be sepia.
+ */
+const GRADE = {
+  /** How far every authored colour is pulled towards its own grey, 0–1. */
+  saturation: 0.3,
+  /** How far mid-luminance colours lean towards `warmTone`, 0–1. */
+  warmth: 0.09,
+  warmTone: 0xc9a883,
+} as const;
+
+const clampUnit = (v: number) => (v < 0 ? 0 : v > 1 ? 1 : v);
+
+function mixColor(from: number, to: number, t: number): number {
+  const k = clampUnit(t);
+  const ch = (shift: number) => {
+    const a = (from >> shift) & 0xff;
+    const b = (to >> shift) & 0xff;
+    return Math.round(a + (b - a) * k);
+  };
+  return (ch(16) << 16) | (ch(8) << 8) | ch(0);
+}
+
+/** Rec. 709 relative luminance, 0–1. */
+function luma(color: number): number {
+  return (
+    (0.2126 * ((color >> 16) & 0xff) +
+      0.7152 * ((color >> 8) & 0xff) +
+      0.0722 * (color & 0xff)) /
+    255
+  );
+}
+
+/** Desaturate, then warm the mid-range. The whole grade, one colour. */
+function graded(color: number): number {
+  const grey = Math.round(luma(color) * 255);
+  const muted = mixColor(color, (grey << 16) | (grey << 8) | grey, GRADE.saturation);
+
+  // A hump centred on mid-grey: nothing at black, nothing at white, most in
+  // the middle, so the warmth lands on the body of the picture and not its ends.
+  const mid = 1 - Math.abs(luma(muted) - 0.5) * 2;
+  return mixColor(muted, GRADE.warmTone, GRADE.warmth * mid * mid);
+}
+
+/**
+ * Run one authored preset through the grade.
+ *
+ * Every colour a renderer will ever see passes through here — sky anchors, the
+ * two water tones, haze, cloud and both bodies — so no phase can quietly opt
+ * out of the film stock. Alphas, ambient and positions are untouched.
+ */
+function grade(preset: PhasePreset): PhasePreset {
+  const { top, middle, horizon, upper, glow, base } = preset.sky;
+  const sky: PhasePreset["sky"] = {
+    top: graded(top),
+    middle: graded(middle),
+    horizon: graded(horizon),
+    ...(upper === undefined ? {} : { upper: graded(upper) }),
+    ...(glow === undefined ? {} : { glow: graded(glow) }),
+    ...(base === undefined ? {} : { base: graded(base) }),
+  };
+
+  const body = (b: PhasePreset["sun"]) => ({ ...b, color: graded(b.color), glow: graded(b.glow) });
+
+  return {
+    ...preset,
+    sky,
+    oceanReflection: graded(preset.oceanReflection),
+    oceanDeep: graded(preset.oceanDeep),
+    hazeColor: graded(preset.hazeColor),
+    cloudTint: graded(preset.cloudTint),
+    sun: body(preset.sun),
+    moon: body(preset.moon),
+  };
+}
+
 export const COLOR_PRESETS: Record<TimePhase, PhasePreset> = {
-  dawn: DAWN,
-  morning: MORNING,
-  noon: NOON,
-  sunset: SUNSET,
-  dusk: DUSK,
-  night: NIGHT,
+  dawn: grade(DAWN),
+  morning: grade(MORNING),
+  noon: grade(NOON),
+  sunset: grade(SUNSET),
+  dusk: grade(DUSK),
+  night: grade(NIGHT),
 };

@@ -2,6 +2,7 @@ import { Container } from "pixi.js";
 import { INTERACT_KEY } from "./InteractionZone";
 import type { InteractionZone } from "./InteractionZone";
 import type { Building, BuildingAnchors, BuildingContext } from "./Building";
+import type { Hotspot } from "./BuildingRenderer";
 import { PROP_BASELINES } from "../ground";
 import type { PlotArea } from "../ground";
 import type { LightingState } from "../lighting";
@@ -34,6 +35,10 @@ export interface BuildingManagerOptions {
   cullMargin?: number;
   /** Notified whenever a building is interacted with. */
   onInteract?: (building: Building) => void;
+  /** Notified when the pointer finds or leaves a hotspot on a facade. */
+  onHotspotHover?: (building: Building, spot: Hotspot | null) => void;
+  /** Notified when one is clicked. */
+  onHotspotSelect?: (building: Building, spot: Hotspot) => void;
 }
 
 const DEFAULT_CULL_MARGIN = 120;
@@ -91,6 +96,12 @@ export class BuildingManager {
   private readonly list: Building[] = [];
 
   private readonly onInteractCallback: ((building: Building) => void) | undefined;
+  private readonly onHotspotHoverCallback:
+    | ((building: Building, spot: Hotspot | null) => void)
+    | undefined;
+  private readonly onHotspotSelectCallback:
+    | ((building: Building, spot: Hotspot) => void)
+    | undefined;
   private readonly cullMargin: number;
   private readonly motionScale: number;
 
@@ -125,6 +136,8 @@ export class BuildingManager {
     this.motionScale = Math.max(0, options.motionScale ?? 1);
     this.cullMargin = options.cullMargin ?? DEFAULT_CULL_MARGIN;
     this.onInteractCallback = options.onInteract;
+    this.onHotspotHoverCallback = options.onHotspotHover;
+    this.onHotspotSelectCallback = options.onHotspotSelect;
 
     this.container.label = "buildings";
     // `passive`, not `none`: the container itself is not a target, but a
@@ -196,6 +209,12 @@ export class BuildingManager {
       building.zone.trigger();
       this.onInteractCallback?.(building);
     });
+
+    // The hotspots on the facade. The building owns where they are and what
+    // they look like; this owns the fact that something outside the engine
+    // wants to know when one is pointed at.
+    building.onHotspotHover = (spot) => this.onHotspotHoverCallback?.(building, spot);
+    building.onHotspotSelect = (spot) => this.onHotspotSelectCallback?.(building, spot);
 
     this.world.addChild(building.container);
 

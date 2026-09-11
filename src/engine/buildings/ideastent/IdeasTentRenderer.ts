@@ -186,6 +186,43 @@ export class IdeasTentRenderer extends BuildingRenderer {
     this.plotSign();
     this.plotBulb();
     this.plotCanvas();
+
+    /**
+     * The bench, the bulb, and the shade over both.
+     *
+     * A tent with three markers on it is already close to being a tent that is
+     * all markers, which is why there are three and not five. They open the one
+     * group of highlights; what each one says is which part of the tent it is.
+     */
+    this.setHotspots([
+      {
+        id: "bench",
+        section: "Highlights",
+        label: "What is on the bench",
+        x: BENCH.x,
+        y: BENCH.y - 3,
+        width: BENCH.width,
+        height: BENCH.height + 10,
+      },
+      {
+        id: "bulb",
+        section: "Highlights",
+        label: "Ideas arriving",
+        x: BULB.x - 5,
+        y: LEFT_POLE.top + BULB.drop - 5,
+        width: 11,
+        height: 11,
+      },
+      {
+        id: "shade",
+        section: "Highlights",
+        label: "Left open, not left",
+        x: EAVE.left,
+        y: LEFT_POLE.top,
+        width: EAVE.right - EAVE.left,
+        height: 14,
+      },
+    ]);
   }
 
   /** The two poles, each leaning its own way. Nothing here is plumb. */

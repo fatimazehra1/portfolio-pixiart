@@ -15,7 +15,7 @@ import {
   universeBounds,
   universeCentre,
 } from "../universe";
-import type { ResolvedChapter, UniverseState } from "../universe";
+import type { HotspotEvent, ResolvedChapter, UniverseState } from "../universe";
 import type { CameraView } from "../camera/Camera";
 import type { SceneState } from "../scene";
 import type { TimeOfDay } from "../sky";
@@ -93,6 +93,8 @@ export interface WorldOptions {
   onScene?: (state: SceneState) => void;
   /** Called whenever the view mode, the world or the hovered world changes. */
   onUniverse?: (state: UniverseState) => void;
+  /** Called when a marked part of a building is pointed at or clicked. */
+  onHotspot?: (event: HotspotEvent) => void;
   /** Which world to open on, if any. Defaults to the overview. */
   openChapter?: string;
   /**
@@ -264,6 +266,9 @@ export class World {
       motionScale,
       timeOfDay: options.timeOfDay,
       builders: CHAPTER_BUILDERS,
+      // Straight out to the interface. A hotspot's label is a DOM panel and
+      // its click opens a section of the plaque; neither is the engine's job.
+      onHotspot: (event) => this.options.onHotspot?.(event),
     });
 
     // --- The camera ----------------------------------------------------------
@@ -473,6 +478,23 @@ export class World {
       // Below 1 only during the opening. See `OverviewLayer.presenceOf`.
       presence: this.overview.presenceOf(id),
     };
+  }
+
+  /**
+   * Where a point inside the open world is on screen, in CSS pixels.
+   *
+   * The other half of `onHotspot`: the event says *which* spot, in the world's
+   * own pixels, and this says where that is right now. Split that way because
+   * the camera keeps moving after the pointer stops — a label handed a screen
+   * position once would come unstuck from the window it is naming the moment
+   * anything panned.
+   *
+   * Null when no world is open, which is the only state where an inside point
+   * means nothing.
+   */
+  insideScreen(x: number, y: number): { x: number; y: number } | null {
+    if (!this.chapters.isOpen) return null;
+    return this.engine.camera.worldToScreen({ x, y });
   }
 
   /** Re-fit everything to a new viewport, in CSS pixels. */

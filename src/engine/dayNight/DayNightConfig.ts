@@ -149,8 +149,13 @@ export const DAY_NIGHT_SETTINGS: DayNightSettings = {
 
   groundWarmthDark: 0.45,
   groundWarmthLight: 0.14,
-  groundExposureFloor: 0.32,
-  groundExposureCurve: 1.4,
+  // Raised from 0.32. This is the number that decides whether a night island
+  // still has grass, sand and rock on it or is one silhouette; below about
+  // 0.4 the material differences stop being legible at all.
+  groundExposureFloor: 0.44,
+  // Softened from 1.4 along with it: a steep curve spends its whole budget
+  // crushing the low end, which is exactly the end that was broken.
+  groundExposureCurve: 1.2,
 
   birdAmbientFloor: 0.5,
   birdAmbientCeiling: 0.95,

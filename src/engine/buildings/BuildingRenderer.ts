@@ -1,6 +1,6 @@
 import { Container, Sprite, Texture } from "pixi.js";
 import { maskToTexture as bakeMask } from "../shared";
-import { applyAmbient } from "../lighting";
+import { applyAmbient, LIGHTING_SETTINGS } from "../lighting";
 import type { LightingState } from "../lighting";
 
 /**
@@ -191,12 +191,101 @@ export interface LayerMaterial {
   nightAlpha?: number;
 }
 
+// --- Hotspots ----------------------------------------------------------------
+
+/**
+ * A part of a building worth pointing at, in bitmap pixels.
+ *
+ * The bridge between the art and the plaque. A renderer knows that rows 47 to
+ * 76 of its facade are the floor the rider dashboard was built on, because it
+ * drew them there and the constant is still called `F4`; the plaque knows there
+ * is a section headed "Domino's rider dashboard". Declaring the rectangle from
+ * inside `plot`, where that constant is in scope, is what stops the two drifting
+ * apart — the same argument `setDoorway` makes.
+ *
+ * # Why only a few
+ * Every window is not a hotspot. A facade where everything is clickable is a
+ * facade where nothing is worth clicking, and the visitor learns to stop
+ * trying. Three to five, on the parts that have something written about them.
+ *
+ * # Coordinates
+ * Origin at the bitmap's top-left, like everything else a renderer plots. The
+ * building scales it to the pixel grid; nothing here knows about zoom.
+ */
+export interface Hotspot {
+  /** Unique within this building. Used for nothing but keying. */
+  id: string;
+  /**
+   * The plaque section this opens, by its exact title.
+   *
+   * A string rather than an id because the sections in `data/chapters.ts` have
+   * no ids, and inventing a pair of them so a click could be routed would be
+   * two more things to keep in agreement. A title that matches nothing opens
+   * nothing, which is a visible failure rather than a silent one.
+   */
+  section: string;
+  /** Two or three words, shown while the pointer is on it. */
+  label: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+// --- The door ----------------------------------------------------------------
+
+/**
+ * Where a building's front door is, in bitmap pixels.
+ *
+ * Declared by calling `setDoorway` from inside `plot`, where the numbers the
+ * door was drawn with are still in scope. A door plotted at `BLOCK.x + 14` and
+ * then *restated* as a constant somewhere else is a door that silently stops
+ * lining up the first time the facade is retuned.
+ */
+export interface Doorway {
+  /** Left edge of the opening. */
+  x: number;
+  /** Top of the opening. */
+  y: number;
+  width: number;
+  height: number;
+  /**
+   * How the door opens.
+   *
+   * `double` parts in the middle and is right for anything with two leaves or
+   * a glazed entrance bay; `single` swings from one side and is right for a
+   * cottage or a tower. It changes nothing but where the gap grows from.
+   */
+  swing?: "double" | "single";
+  /** What is behind the door. Defaults to a dark hallway. */
+  interior?: number;
+  /** The light spilling out of it once it is open. */
+  glow?: number;
+}
+
+/** How many steps there are between shut and wide open. */
+const DOOR_FRAMES = 5;
+
+/** The two layers every door is made of, in draw order. */
+const DOOR_DARK = "__doorDark";
+const DOOR_GLOW = "__doorGlow";
+
+const DOOR_INTERIOR = 0x1b1712;
+const DOOR_GLOW_COLOR = 0xffd9a0;
+
 /**
  * The base every building's artwork extends.
  *
  * Subclasses declare their materials, plot into named layers, and say what moves.
  * Everything else — baking, draw order, tinting, the day/night response and
  * teardown — happens here once for every building that will ever exist.
+ *
+ * # The door
+ * One implementation for every building, because a door opening is the same
+ * event everywhere: a gap that grows and light that comes out of it. A
+ * renderer says where its door is (`setDoorway`) and this bakes the frames and
+ * answers `setDoor`. A building with no door says nothing and gets nothing,
+ * which is the correct amount of door for a tent.
  */
 export abstract class BuildingRenderer {
   /** The artwork. Positioned by the building that owns it. */
@@ -210,6 +299,14 @@ export abstract class BuildingRenderer {
   private readonly scales = new Map<string, number>();
 
   private baselineGapValue = 0;
+  /** Where the front door is, once `plot` has said. See `setDoorway`. */
+  private doorway: Doorway | null = null;
+  /** The parts worth pointing at, once `plot` has said. See `setHotspots`. */
+  private hotspotList: readonly Hotspot[] = [];
+  /** The frame currently shown, so a door that has not moved costs nothing. */
+  private doorFrame = -1;
+  /** How far the visitor has committed to entering. See `setApproach`. */
+  private approachValue = 0;
   private lighting: LightingState | null = null;
   /** Pull every lit material a fraction of the way toward one colour. See `blendToward`. */
   private ground: { color: number; amount: number } | null = null;
@@ -232,6 +329,36 @@ export abstract class BuildingRenderer {
 
   /** Advance the idle animation. `elapsed` is the world's clock in seconds. */
   abstract tick(elapsed: number): void;
+
+  /**
+   * The layers actually drawn, back to front: the building's own, then its
+   * door over the top of them.
+   *
+   * The door has to be in front of the facade it is cut into, and a renderer
+   * that had to remember to list two layers it did not write is a renderer
+   * that will forget.
+   */
+  private get drawOrder(): readonly string[] {
+    return this.doorway ? [...this.order, DOOR_DARK, DOOR_GLOW] : this.order;
+  }
+
+  /** A layer's material, including the two the door brought with it. */
+  private materialFor(name: string): LayerMaterial | undefined {
+    if (name === DOOR_DARK) return { color: this.doorway?.interior ?? DOOR_INTERIOR };
+    if (name === DOOR_GLOW) {
+      return {
+        color: this.doorway?.glow ?? DOOR_GLOW_COLOR,
+        emissive: true,
+        // Visible by day too. A door opening at noon still shows a hallway
+        // that is darker than the wall around it and a little warm light in
+        // it, and a door that only worked after dark would read as broken for
+        // most of the loop.
+        dayAlpha: 0.45,
+        nightAlpha: 1,
+      };
+    }
+    return this.materials[name];
+  }
 
   /**
    * How high above the baseline a prompt should hang, in pixels.
@@ -267,8 +394,12 @@ export abstract class BuildingRenderer {
   /** Plot, bake and mount. Call once, after construction. */
   build(): void {
     this.plot();
+    // After `plot`, because that is when a renderer has said where its door
+    // is; before baking, because the frames have to be in `layers` for the
+    // loop below to find them.
+    this.bakeDoorFrames();
 
-    for (const name of this.order) {
+    for (const name of this.drawOrder) {
       const frames = this.layers.get(name);
       if (!frames || frames.length === 0) continue;
 
@@ -314,6 +445,45 @@ export abstract class BuildingRenderer {
   applyLighting(state: LightingState | null): void {
     this.lighting = state;
     for (const name of this.sprites.keys()) this.light(name);
+  }
+
+  /**
+   * How far the visitor has committed to coming in, 0 to 1.
+   *
+   * Distinct from `setDoor` on purpose. A door answers the *pointer*, which is
+   * a question; this answers the *click*, which is an answer. Most buildings
+   * do nothing with it. The lighthouse starts its beam turning, which is the
+   * one thing on this map that should happen before you arrive rather than
+   * after (`LighthouseRenderer`).
+   */
+  setApproach(value: number): void {
+    this.approachValue = value < 0 ? 0 : value > 1 ? 1 : value;
+  }
+
+  /**
+   * Open the front door, 0 shut and 1 wide.
+   *
+   * The map calls this with a fraction while the pointer is on a building, and
+   * with 1 while the camera is flying into it. Buildings with no doorway
+   * ignore it, so a caller never has to ask whether this one has a door.
+   *
+   * Quantised to the baked frames: a door is a handful of drawn states, not a
+   * continuous transform, because sliding a sprite to open it would take the
+   * gap off the pixel grid the wall around it is on.
+   */
+  setDoor(open: number): void {
+    if (!this.doorway) return;
+
+    const clamped = open < 0 ? 0 : open > 1 ? 1 : open;
+    const frame = Math.round(clamped * (DOOR_FRAMES - 1));
+    if (frame === this.doorFrame) return;
+    this.doorFrame = frame;
+
+    this.setFrame(DOOR_DARK, frame);
+    this.setFrame(DOOR_GLOW, frame);
+    // The light comes up with the gap rather than switching on with it. A
+    // hallway two pixels wide does not throw as much light as an open door.
+    this.setEmissiveScale(DOOR_GLOW, frame === 0 ? 0 : clamped);
   }
 
   /**
@@ -389,9 +559,77 @@ export abstract class BuildingRenderer {
     return this.sprites.get(layer);
   }
 
+  /**
+   * Declare where the front door is. Call from `plot`, at the point the door
+   * is drawn, so the two cannot disagree.
+   */
+  protected setDoorway(doorway: Doorway): void {
+    this.doorway = doorway;
+  }
+
+  /**
+   * Declare the parts of this building worth pointing at. See `Hotspot`.
+   *
+   * Call from `plot`, for the same reason `setDoorway` is called from there:
+   * the rectangles are the ones the artwork was drawn with, and a hotspot
+   * restated as its own constant is a hotspot that silently stops lining up.
+   */
+  protected setHotspots(spots: readonly Hotspot[]): void {
+    this.hotspotList = spots;
+  }
+
+  /** What this building offers to be clicked on. Empty for most. */
+  get hotspots(): readonly Hotspot[] {
+    return this.hotspotList;
+  }
+
+  /**
+   * Bake the door's frames: a gap that grows, and light coming out of it.
+   *
+   * Frame 0 is empty, which is what shut looks like — the facade already has a
+   * door painted on it, and opening one means covering that paint with a
+   * hallway rather than removing anything. The last frame is the full opening.
+   *
+   * The glow is not a lamp. It is the two or three rows where the floor inside
+   * catches the light, plus a thin wash up the opening, which is all a doorway
+   * at this scale can honestly show.
+   */
+  private bakeDoorFrames(): void {
+    const door = this.doorway;
+    if (!door) return;
+
+    const { x, y, width, height } = door;
+    const single = door.swing === "single";
+
+    for (let frame = 0; frame < DOOR_FRAMES; frame++) {
+      const dark = this.pixels(DOOR_DARK, frame);
+      const glow = this.pixels(DOOR_GLOW, frame);
+      if (frame === 0) continue;
+
+      const open = frame / (DOOR_FRAMES - 1);
+      // A leaf never swings the whole width away: even wide open, some of the
+      // frame is still standing there.
+      const span = Math.max(1, Math.round(width * 0.86 * open));
+      const left = single ? x : x + ((width - span) >> 1);
+
+      dark.rect(left, y, span, height);
+
+      // Light on the floor of the opening, brightest at the threshold.
+      const pool = Math.max(1, Math.round(height * 0.18));
+      glow.rect(left, y + height - pool, span, pool);
+      // And a thin edge up the side the light is coming past.
+      glow.vLine(single ? left + span - 1 : left, y + Math.round(height * 0.3), y + height - 1);
+    }
+  }
+
   /** How lit the world's local lights are, 0–1. Windows and signs read this. */
   protected get localLight(): number {
     return this.lighting?.localLightMultiplier ?? 0;
+  }
+
+  /** How far the visitor has committed to entering, 0 to 1. See `setApproach`. */
+  protected get approach(): number {
+    return this.approachValue;
   }
 
   // --- Internal --------------------------------------------------------------
@@ -399,14 +637,17 @@ export abstract class BuildingRenderer {
   /** Tint and fade one layer for the current hour. */
   private light(name: string): void {
     const sprite = this.sprites.get(name);
-    const material = this.materials[name];
+    const material = this.materialFor(name);
     if (!sprite || !material) return;
 
     if (material.emissive) {
-      sprite.tint = material.color;
       const day = material.dayAlpha ?? 0;
       const night = material.nightAlpha ?? 1;
       const local = this.lighting?.localLightMultiplier ?? 0;
+      // Alpha fades the window in as the hour turns; the gain is what makes it
+      // *burn* once it is fully in. Without it a lit window at midnight is
+      // exactly as bright as one at dusk, and the town never switches on.
+      sprite.tint = brighten(material.color, LIGHTING_SETTINGS.emissiveNightGain * local);
       sprite.alpha = (day + (night - day) * local) * (this.scales.get(name) ?? 1);
       return;
     }
@@ -414,6 +655,16 @@ export abstract class BuildingRenderer {
     const lit = this.lighting ? applyAmbient(material.color, this.lighting) : material.color;
     sprite.tint = this.ground ? mix(lit, this.ground.color, this.ground.amount) : lit;
   }
+}
+
+/** Push a colour towards white by `amount`, 0–1. */
+function brighten(color: number, amount: number): number {
+  if (amount <= 0) return color;
+  const ch = (shift: number) => {
+    const v = (color >> shift) & 0xff;
+    return Math.round(v + (255 - v) * amount);
+  };
+  return (ch(16) << 16) | (ch(8) << 8) | ch(0);
 }
 
 /** Lerp two packed colours, channel by channel. */

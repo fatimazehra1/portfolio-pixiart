@@ -226,6 +226,46 @@ export class VaultsysRenderer extends BuildingRenderer {
     this.plotEntrance();
     this.plotRoof();
     this.plotAccentLighting();
+
+    /**
+     * Three, on the three parts of the facade that already mean something.
+     *
+     * The vault disc is the building's one ornament and the obvious place to
+     * hang "money moving through it"; the entrance pavilion is where a
+     * customer arrives, which is what onboarding and KYC are; the server room
+     * behind armoured glass is where the thing is actually run from. The
+     * windows are not marked. On the least animated building on the shore,
+     * four markers would be the busiest thing on it.
+     */
+    this.setHotspots([
+      {
+        id: "payments",
+        section: "Payments and cash flow",
+        label: "Payments and cash flow",
+        x: VAULT.cx - VAULT.radius - 2,
+        y: VAULT.cy - VAULT.radius - 2,
+        width: VAULT.radius * 2 + 5,
+        height: VAULT.radius * 2 + 5,
+      },
+      {
+        id: "onboarding",
+        section: "Customer onboarding and KYC",
+        label: "Onboarding and KYC",
+        x: ENTRANCE.x,
+        y: GROUND.top,
+        width: ENTRANCE.width,
+        height: PLINTH.bottom - GROUND.top + 1,
+      },
+      {
+        id: "running",
+        section: "Running it",
+        label: "The server room",
+        x: SERVER.x - 2,
+        y: SERVER.y - 2,
+        width: SERVER.width + 4,
+        height: SERVER.height + 4,
+      },
+    ]);
   }
 
   /**
@@ -493,6 +533,17 @@ export class VaultsysRenderer extends BuildingRenderer {
     const doorTop = GROUND.top + 3;
     const doorBottom = PLINTH.top - 1;
     const doorWidth = 11;
+
+    // Two leaves, so the gap grows from the meeting stile outward.
+    this.setDoorway({
+      x: CX - doorWidth - 1,
+      y: doorTop,
+      width: doorWidth * 2 + 2,
+      height: doorBottom - doorTop + 1,
+      swing: "double",
+      interior: 0x151a22,
+      glow: 0xe8dcbf,
+    });
 
     for (const dx of [CX - doorWidth - 1, CX + 1]) {
       steel.rect(dx, doorTop, doorWidth, doorBottom - doorTop + 1);

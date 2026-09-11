@@ -171,7 +171,31 @@ const ORDER = [
 
 const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
 
+/**
+ * Seconds since the last tick, from two readings of the world clock.
+ *
+ * Clamped, because the clock keeps running while this building is off screen
+ * and an unclamped first frame back would spin the beam through a whole
+ * revolution in one step.
+ */
+const delta = (now: number, before: number) => {
+  const step = now - before;
+  return step > 0 && step < 0.5 ? step : 0;
+};
+
 export class LighthouseRenderer extends BuildingRenderer {
+  /**
+   * How far the beam has turned, in seconds of sweep.
+   *
+   * Its own accumulator rather than the world clock, because the beam only
+   * advances while somebody is approaching. Reading `elapsed` directly would
+   * mean the beam had been turning all along and simply been invisible, and it
+   * would jump to wherever the clock had got to the moment it lit.
+   */
+  private sweep = 0;
+  /** The last clock value seen, so the accumulator can take a delta from it. */
+  private lastTick = 0;
+
   constructor(private readonly motionScale = 1) {
     super(W, H);
   }
@@ -365,6 +389,17 @@ export class LighthouseRenderer extends BuildingRenderer {
     light.vLine(CX - half, top + 3, BASE - 2);
     light.hLine(top + 3, CX - half, CX + half - 1);
     stone.frame(CX - half - 1, top - 1, DOOR.width + 2, DOOR.height);
+
+    // One leaf, swinging from the hinge side.
+    this.setDoorway({
+      x: CX - half,
+      y: top + 2,
+      width: DOOR.width,
+      height: BASE - 2 - (top + 2),
+      swing: "single",
+      interior: 0x171a1d,
+      glow: 0xffd9a0,
+    });
   }
 
   /**
@@ -463,12 +498,30 @@ export class LighthouseRenderer extends BuildingRenderer {
   tick(elapsed: number): void {
     if (this.motionScale <= 0) return;
 
+    /**
+     * The beam answers the click, not the clock.
+     *
+     * At rest the lamp is lit and the beam is not turning. It starts the
+     * moment somebody commits to coming here, which on this island means
+     * asking to get in touch, and it is turning by the time the panel arrives.
+     * A lighthouse that swept all day would be scenery; one that starts when
+     * you knock is an answer.
+     *
+     * `sweep` is where the beam is and `reach` is how far it throws, and they
+     * are separate so the light winds *up* rather than snapping on: the turn
+     * begins immediately and the throw arrives over the approach.
+     */
+    this.sweep += delta(elapsed, this.lastTick) * this.approach;
+    this.lastTick = elapsed;
+    const reach = this.approach;
+
     // One beam bright while the other falls back, and round again — a sweep,
     // built out of two static wedges rather than a rotation, which would take
     // the light off the pixel grid.
-    const phase = (elapsed / SWEEP_SECONDS) * Math.PI * 2;
+    const phase = (this.sweep / SWEEP_SECONDS) * Math.PI * 2;
     const swing = Math.sin(phase);
-    const near = (v: number) => SWEEP_FLOOR + (1 - SWEEP_FLOOR) * (0.5 + 0.5 * v);
+    const near = (v: number) =>
+      (SWEEP_FLOOR + (1 - SWEEP_FLOOR) * (0.5 + 0.5 * v)) * reach;
 
     this.setEmissiveScale("beamRight", near(swing));
     this.setEmissiveScale("beamLeft", near(-swing));

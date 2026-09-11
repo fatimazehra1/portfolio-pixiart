@@ -401,8 +401,11 @@ export const FLICKER: FlickerSettings = {
   depth: 0.16,
   rateA: 2.7,
   rateB: 4.3,
-  glowAlpha: 0.5,
-  glowRadius: 13,
+  // Bigger and brighter than they were. A lantern reads by its halo long
+  // before its flame, and the halo is what makes a night island look lit
+  // rather than merely visible.
+  glowAlpha: 0.72,
+  glowRadius: 17,
 };
 
 // --- Placement ---------------------------------------------------------------

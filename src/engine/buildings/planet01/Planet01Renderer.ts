@@ -97,6 +97,16 @@ const OFFICE_CYCLES = [11.3, 17.9, 23.7, 31.1];
 const OFFICE_DUTY = [0.62, 0.55, 0.7, 0.48];
 
 /** The beacon on the mast: a long wait, a short flash. */
+/**
+ * The lift: how many stops, and how long it holds at each.
+ *
+ * Slow. Sixteen frames at a second and a half each is a round trip of roughly
+ * twenty-four seconds, which reads as a lift working rather than as a light
+ * running up and down a wall.
+ */
+const ELEVATOR_FRAMES = 16;
+const ELEVATOR_SECONDS = 1.5;
+
 const BEACON_PERIOD = 2.6;
 const BEACON_FLASH = 0.35;
 
@@ -161,6 +171,16 @@ const MATERIALS: Record<string, LayerMaterial> = {
   classroom: { color: 0xf7dca6, emissive: true, dayAlpha: 0.1, nightAlpha: 1 },
   figures: { color: 0x3a3630 },
   beacon: { color: 0xff6b5a, emissive: true, dayAlpha: 0.4, nightAlpha: 1 },
+
+  /**
+   * The lift, seen through the slot of glazing over the shaft.
+   *
+   * The one thing on this building that moves vertically. Everything else
+   * blinks, breathes or scrolls in place, and a tower with nothing travelling
+   * up it is a tower nobody works in.
+   */
+  elevator: { color: 0xffe9bd, emissive: true, dayAlpha: 0.22, nightAlpha: 1 },
+  elevatorShaft: { color: 0x1b222c },
 };
 
 /** Back to front. Glass first, then what is behind it, then the frame over both. */
@@ -191,10 +211,13 @@ const ORDER = [
   "awning",
   "awningLight",
   "beacon",
+  "elevatorShaft",
+  "elevator",
 ];
 
 export class Planet01Renderer extends BuildingRenderer {
   private readonly rand = createRandom(0x9107);
+  private elevatorFrame = -1;
 
   private tickerFrame = -1;
   private pulseFrame = -1;
@@ -234,6 +257,88 @@ export class Planet01Renderer extends BuildingRenderer {
     this.plotFloorThree();
     this.plotFloorFour();
     this.plotRoof();
+    this.plotElevator();
+
+    /**
+     * One per floor, because on this building a floor *is* a product.
+     *
+     * The bands were named after them when the tower was drawn — `F3` has a
+     * comment saying it is CTAWORLD — so the hotspots are those same constants
+     * and cannot drift from the artwork. The mast, the roof and the apron carry
+     * nothing: there is nothing written about them, and marking them would
+     * teach the visitor that a marker means nothing in particular.
+     */
+    this.setHotspots([
+      {
+        id: "cta",
+        section: "CTA World",
+        label: "CTA World · logistics platform",
+        x: FLOOR3.x,
+        y: F3.top,
+        width: FLOOR3.width,
+        height: F3.bottom - F3.top + 1,
+      },
+      {
+        id: "dominos",
+        section: "Domino's rider dashboard",
+        label: "Domino's rider dashboard",
+        x: SHAFT.x,
+        y: F4.top,
+        width: SHAFT.width,
+        height: F4.bottom - F4.top + 1,
+      },
+      {
+        id: "crypto",
+        section: "Cryptocurrency trading frontend",
+        label: "Crypto trading frontend",
+        x: SHAFT.x,
+        y: F2.top,
+        width: SHAFT.width,
+        height: F2.bottom - F2.top + 1,
+      },
+      {
+        id: "catering",
+        section: "Catering platform",
+        label: "Catering platform",
+        x: PODIUM_BOX.x,
+        y: PODIUM.top,
+        width: PODIUM_BOX.width,
+        height: PODIUM.bottom - PODIUM.top + 1,
+      },
+    ]);
+  }
+
+  /**
+   * The lift shaft, and the cab in it, on one frame per stop.
+   *
+   * A slot of dark glazing on the axis, running from the podium to the roof
+   * plant, with a lit cab drawn at a different height on each frame. Frames
+   * rather than a moving sprite: the cab is three pixels of light behind
+   * glazing, and sliding a sprite up a wall drawn on the grid would put it
+   * between rows for most of its travel.
+   *
+   * The shaft is drawn once, on every frame, because it is what the cab is
+   * seen *through* and it has to be there whether the cab is at this floor or
+   * not.
+   */
+  private plotElevator(): void {
+    const top = ROOF.bottom - 2;
+    const bottom = PODIUM.top + 2;
+    const x = CX - 2;
+    const width = 4;
+    const cab = 5;
+
+    for (let frame = 0; frame < ELEVATOR_FRAMES; frame++) {
+      const shaft = this.pixels("elevatorShaft", frame);
+      shaft.rect(x - 1, top, width + 2, bottom - top);
+
+      // A triangle wave: up the tower, then down it, so the cab is always
+      // travelling somewhere rather than teleporting back to the ground.
+      const t = frame / (ELEVATOR_FRAMES - 1);
+      const ride = t < 0.5 ? t * 2 : 2 - t * 2;
+      const y = Math.round(bottom - cab - ride * (bottom - cab - top));
+      this.pixels("elevator", frame).rect(x, y, width, cab);
+    }
   }
 
   /**
@@ -328,6 +433,18 @@ export class Planet01Renderer extends BuildingRenderer {
     steelDark.vLine(CX, glazeTop, bottom - 1);
     steelDark.vLine(CX - (doorWidth >> 1) - 1, glazeTop - 1, bottom - 1);
     steelDark.vLine(CX + (doorWidth >> 1), glazeTop - 1, bottom - 1);
+
+    // The entrance bay is the door: it parts in the middle, because that is
+    // what a glazed office entrance does.
+    this.setDoorway({
+      x: CX - (doorWidth >> 1),
+      y: glazeTop,
+      width: doorWidth,
+      height: bottom - glazeTop,
+      swing: "double",
+      interior: 0x1a2330,
+      glow: 0xd8e6ff,
+    });
 
     // The awning. Scalloped, because a straight one would read as a shelf.
     const awningY = glazeTop - 3;
@@ -724,6 +841,13 @@ export class Planet01Renderer extends BuildingRenderer {
     // is broken.
     const breath = 1 - NEON_DEPTH * (0.5 + 0.5 * Math.sin(elapsed * NEON_RATE));
     this.setEmissiveScale("neon", breath);
+
+    const lift = Math.floor(elapsed / ELEVATOR_SECONDS) % ELEVATOR_FRAMES;
+    if (lift !== this.elevatorFrame) {
+      this.elevatorFrame = lift;
+      this.setFrame("elevator", lift);
+      this.setFrame("elevatorShaft", lift);
+    }
 
     const into = elapsed % BEACON_PERIOD;
     this.setEmissiveScale("beacon", into < BEACON_FLASH ? 1 : 0.08);

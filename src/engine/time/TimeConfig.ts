@@ -16,12 +16,12 @@ import type { TimeOfDay } from "../sky";
  * |---------|-------|----------|-------------------------------|
  * | dawn    |  8%   |   14.4s  | soft pink                     |
  * | morning |  8%   |   14.4s  | pale gold climbing into blue  |
- * | noon    | 55%   |   99.0s  | clear saturated blue          |
- * | sunset  |  9%   |   16.2s  | warm yellow-gold              |
- * | dusk    |  8%   |   14.4s  | orange into deep coral        |
- * | night   | 12%   |   21.6s  | deep blue-purple, lit windows |
+ * | noon    | 56%   |  100.8s  | clear blue                    |
+ * | sunset  |  9.5% |   17.1s  | warm yellow-gold              |
+ * | dusk    |  9%   |   16.2s  | orange into deep coral        |
+ * | night   |  9.5% |   17.1s  | moonlit blue, lit windows     |
  *
- * Which is: **blue day 55%, the two transitions 33% between them, night 12%.**
+ * Which is: **blue day 56%, the four transitions 34.5%, night 9.5%.**
  *
  * # Why `noon` alone carries the 55%
  * An earlier pass spent the 55% on `morning` *plus* `noon` and left the blue
@@ -42,9 +42,12 @@ export const PHASE_SPANS: readonly PhaseSpan[] = [
   { phase: "dawn", start: 0.06 },
   { phase: "morning", start: 0.14 },
   { phase: "noon", start: 0.22 },
-  { phase: "sunset", start: 0.77 },
-  { phase: "dusk", start: 0.86 },
-  { phase: "night", start: 0.94 },
+  { phase: "sunset", start: 0.78 },
+  { phase: "dusk", start: 0.875 },
+  // Trimmed from 0.94. Night is the one phase a visitor can mistake for a
+  // broken page, so it is now the shortest of the six rather than the third
+  // longest, and the time comes back to the blue day.
+  { phase: "night", start: 0.965 },
 ];
 
 /** The phases in order, for cycling and for the dev shortcuts. */

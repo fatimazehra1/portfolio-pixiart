@@ -173,6 +173,44 @@ export class BbitRenderer extends BuildingRenderer {
     this.plotClock();
     this.plotCrest();
     this.plotParapet();
+
+    /**
+     * The clock, the crest, and the one window still lit near the top.
+     *
+     * Those three are the whole building: the time it takes, the institution,
+     * and somebody still at it after hours. All three open the one group of
+     * highlights, because a degree in progress has no named builds — what the
+     * markers add is which part of the spire means what.
+     */
+    this.setHotspots([
+      {
+        id: "clock",
+        section: "Highlights",
+        label: "Still in progress",
+        x: SHAFT.x + 2,
+        y: CLOCK.cy - CLOCK.radius - 2,
+        width: SHAFT.width - 4,
+        height: CLOCK.radius * 2 + 5,
+      },
+      {
+        id: "crest",
+        section: "Highlights",
+        label: "BBIT",
+        x: CREST.cx - CREST.halfWidth - 2,
+        y: CREST.top - 2,
+        width: CREST.halfWidth * 2 + 5,
+        height: 12,
+      },
+      {
+        id: "late",
+        section: "Highlights",
+        label: "The window still lit",
+        x: SHAFT.x + 2,
+        y: PARAPET.top + PARAPET.height,
+        width: SHAFT.width - 4,
+        height: CLOCK.cy - CLOCK.radius - (PARAPET.top + PARAPET.height) - 3,
+      },
+    ]);
   }
 
   /** A stepped plinth and a small arched door. Where you go in. */
@@ -200,6 +238,16 @@ export class BbitRenderer extends BuildingRenderer {
       if (w <= 0) continue;
       frame.hLine(y, cx - w, cx + w - 1);
     }
+    this.setDoorway({
+      x: cx - half,
+      y: top + 2,
+      width: half * 2,
+      height: BASE - 3 - (top + 2),
+      swing: "single",
+      interior: 0x191c22,
+      glow: 0xffe0b0,
+    });
+
     // A step light over the door, unlit — this building closes.
     this.pixels("stoneDark").hLine(top - 1, cx - 4, cx + 3);
   }

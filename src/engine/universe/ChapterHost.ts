@@ -3,7 +3,7 @@ import type { GradeManager } from "../grade";
 import type { CameraView } from "../camera/Camera";
 import type { TimeOfDay } from "../sky";
 import type { Size } from "../types";
-import type { ChapterBuilder, ChapterClock, ChapterWorld } from "./ChapterWorld";
+import type { ChapterBuilder, ChapterClock, ChapterWorld, HotspotEvent } from "./ChapterWorld";
 import type { InteriorKind, ResolvedChapter } from "./UniverseTypes";
 
 export interface ChapterHostOptions {
@@ -15,6 +15,8 @@ export interface ChapterHostOptions {
   timeOfDay?: TimeOfDay;
   /** Which builder makes which kind of interior. See `ChapterInterior.kind`. */
   builders: Readonly<Record<InteriorKind, ChapterBuilder>>;
+  /** Handed to every world it builds. See `ChapterContext.onHotspot`. */
+  onHotspot?: (event: HotspotEvent) => void;
 }
 
 /**
@@ -43,6 +45,7 @@ export class ChapterHost {
   private readonly grade: GradeManager;
   private readonly time: ChapterClock;
   private readonly motionScale: number;
+  private readonly onHotspot: ((event: HotspotEvent) => void) | undefined;
   private readonly timeOfDay: TimeOfDay | undefined;
   private readonly builders: Readonly<Record<InteriorKind, ChapterBuilder>>;
 
@@ -54,6 +57,7 @@ export class ChapterHost {
     this.grade = options.grade;
     this.time = options.time;
     this.motionScale = options.motionScale;
+    this.onHotspot = options.onHotspot;
     this.timeOfDay = options.timeOfDay;
     this.builders = options.builders;
   }
@@ -97,6 +101,7 @@ export class ChapterHost {
       chapter,
       timeOfDay: this.timeOfDay,
       motionScale: this.motionScale,
+      onHotspot: this.onHotspot,
     });
 
     this.world = world;

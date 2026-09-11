@@ -283,6 +283,28 @@ export class CoastChapter implements ChapterWorld {
       anchors,
       motionScale,
       plots: this.layout.plots,
+      // Straight through to whoever built the world. This knows where a
+      // hotspot is and nothing about what pointing at one should look like.
+      onHotspotHover: (building, spot) => {
+        const at = spot ? building.hotspotAnchor(spot) : { x: 0, y: 0 };
+        context.onHotspot?.({
+          spot: spot && { id: spot.id, section: spot.section, label: spot.label },
+          buildingId: building.id,
+          selected: false,
+          x: at.x,
+          y: at.y,
+        });
+      },
+      onHotspotSelect: (building, spot) => {
+        const at = building.hotspotAnchor(spot);
+        context.onHotspot?.({
+          spot: { id: spot.id, section: spot.section, label: spot.label },
+          buildingId: building.id,
+          selected: true,
+          x: at.x,
+          y: at.y,
+        });
+      },
     });
 
     // Built from this world's scenes rather than listed. Adding a chapter with

@@ -6,17 +6,23 @@ import type { ChapterContent, ChapterStatus } from "@/data/chapters";
 /**
  * One world's card, floating beside it on the map.
  *
- * # Modern, not pixel
- * DESIGN.md §UI Style — Interface rules. This is the layer the picture is read
- * *through*, so it is a translucent panel with rounded corners, hairline
- * borders and Inter — not a parchment dialogue box. The pixel art is the world;
- * making the card pixelated would cost legibility in the one place the
- * portfolio actually has something to say.
+ * # The island's own label, not a second door
+ * The card, the small label and the island under them are one target: point at
+ * a world and this is what it says; click any part of it and you go there. So
+ * it is framed like everything else in the interface — a hard-edged board in
+ * the world's palette, its name in the bitmap face the in-world signage uses —
+ * and it carries no button of its own. It used to end in an accent bar that
+ * filled on hover, which was decoration pretending to be an affordance.
  *
- * # Small on purpose
- * Name, dates, one line, a status dot, a count. Everything else waits until you
- * are inside the world. The universe is the hero and a card that grew to hold a
- * CV would be a card sitting on top of the thing it is describing.
+ * # The hover layer
+ * This is the first of the three layers an island has. It answers one question
+ * and stops: what was this, in the language of the job. Name, dates, the role
+ * in a line, four tags, and how far along it is.
+ *
+ * The summary, the bullets and the full stack are the *click* layer, and they
+ * live on the plaque inside the world (`InfoCard`). A card that grew to hold a
+ * CV would be a card sitting on top of the thing it is describing, and the
+ * universe is the hero.
  */
 
 const STATUS_LABEL: Record<ChapterStatus, string> = {
@@ -70,7 +76,7 @@ export default function ChapterCard({
       aria-label={`${content.title}, ${content.period}. ${content.summary}`}
     >
       <div className="flex items-baseline justify-between gap-2">
-        <span className="text-[0.9375rem] leading-tight font-semibold tracking-tight">
+        <span className="font-display text-[1.0625rem] leading-tight font-semibold tracking-wide">
           {content.title}
         </span>
         <span
@@ -81,49 +87,39 @@ export default function ChapterCard({
         </span>
       </div>
 
+      {/* The role, in one line. The whole point of the hover layer. */}
       <p
-        className="mt-1 text-[0.625rem] tracking-wide uppercase"
-        style={{ color: "var(--ui-faint)" }}
-      >
-        {content.headline}
-      </p>
-
-      <p
-        className="mt-1.5 text-[0.75rem] leading-snug"
+        className="mt-1.5 text-[0.8125rem] leading-snug"
         style={{ color: "var(--ui-muted)" }}
       >
-        {content.summary}
+        {content.roleLine}
       </p>
 
-      {/* Three tags, not nine. The card is a signpost; the full stack is
+      {/* Four tags, not nine. The card is a signpost; the full stack is
           inside the world, where there is room for it. */}
       {content.stack.length > 0 && (
         <ul className="mt-2 flex flex-wrap gap-1" aria-label="Tech used">
-          {content.stack.slice(0, 3).map((tech) => (
+          {content.stack.slice(0, 4).map((tech) => (
             <li
               key={tech}
-              className="rounded border px-1.5 py-0.5 text-[0.625rem] leading-none"
+              className="border-2 px-1.5 py-0.5 text-[0.6875rem] leading-none"
               style={{ borderColor: "var(--ui-border)", color: "var(--ui-muted)" }}
             >
               {tech}
             </li>
           ))}
-          {content.stack.length > 3 && (
+          {content.stack.length > 4 && (
             <li className="px-0.5 text-[0.625rem] leading-none" style={{ color: "var(--ui-faint)" }}>
-              +{content.stack.length - 3}
+              +{content.stack.length - 4}
             </li>
           )}
         </ul>
       )}
 
       <div className="mt-2.5 flex items-center gap-2">
+        <span className="pixel-mark pixel-mark-on" style={{ color: accent }} aria-hidden />
         <span
-          className="h-1.5 w-1.5 shrink-0 rounded-full"
-          style={{ background: accent }}
-          aria-hidden
-        />
-        <span
-          className="text-[0.6875rem] tracking-wide uppercase"
+          className="text-[0.6875rem] tracking-wider uppercase"
           style={{ color: "var(--ui-faint)" }}
         >
           {STATUS_LABEL[content.status]}
@@ -135,21 +131,14 @@ export default function ChapterCard({
         </span>
       </div>
 
-      {/* The accent line. Fills on hover — the smallest possible signal that a
-          card is a door rather than a label. */}
-      <div
-        className="mt-2.5 h-px w-full overflow-hidden"
-        style={{ background: "var(--ui-border)" }}
-        aria-hidden
+      {/* The way into the second layer, said once. */}
+      <p
+        className="mt-2 border-t-2 pt-2 text-[0.6875rem] tracking-wider uppercase"
+        style={{ borderColor: "var(--ui-border)", color: "var(--ui-faint)" }}
       >
-        <motion.div
-          className="h-px"
-          style={{ background: accent }}
-          initial={false}
-          animate={{ width: active ? "100%" : "22%" }}
-          transition={{ duration: 0.3, ease: "easeOut" }}
-        />
-      </div>
+        Click to open
+      </p>
+
     </motion.button>
   );
 }

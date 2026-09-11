@@ -25,7 +25,7 @@ import type { TimePhase } from "../time";
  * not the air. Lamps are still worth something at this hour.
  */
 const DAWN: LightPreset = {
-  ambientIntensity: 0.44,
+  ambientIntensity: 0.5,
   // Soft pink rather than the old dusty rose: dawn and dusk are the two
   // phases most easily mistaken for each other, and the difference between
   // them is that one is pink going gold and the other is orange going purple.
@@ -96,7 +96,7 @@ const SUNSET: LightPreset = {
  * a source casting them, and everything artificial starts to take over.
  */
 const DUSK: LightPreset = {
-  ambientIntensity: 0.38,
+  ambientIntensity: 0.44,
   ambientTint: 0xef7a4c,
   tintStrength: 0.36,
   shadowStrength: 0.28,
@@ -113,11 +113,16 @@ const DUSK: LightPreset = {
  * scattered; bloom and local lights are at full strength.
  */
 const NIGHT: LightPreset = {
-  ambientIntensity: 0.14,
-  ambientTint: 0x7f9ad6,
-  tintStrength: 0.38,
-  shadowStrength: 0.16,
-  highlightStrength: 0.35,
+  // Raised from 0.14, and the tint raised with it. Moonlight is *coloured*
+  // light, not less light: at 0.14 the surfaces went to a flat near-black and
+  // the blue had nothing left to sit on, so the phase read as a failure to
+  // render rather than as a night. The exposure now clears the floor and the
+  // strong cool cast is what says which hour it is.
+  ambientIntensity: 0.34,
+  ambientTint: 0x8fb2ee,
+  tintStrength: 0.46,
+  shadowStrength: 0.2,
+  highlightStrength: 0.42,
   bloomMultiplier: 1,
   localLightMultiplier: 1,
 };

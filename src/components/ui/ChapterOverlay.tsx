@@ -116,12 +116,18 @@ export default function ChapterOverlay() {
         label.style.transform = `translate3d(${Math.round(at.x)}px, ${Math.round(
           at.topY - 10
         )}px, 0) translate(-50%, -100%)`;
-        // The hovered world's own label steps aside for its card.
-        const shown = onScreen && current !== content.id;
+        // The hovered world's label stays and brightens rather than stepping
+        // aside: the island lifting, the label lighting and the door opening
+        // are one gesture, and removing the label mid-gesture takes a third of
+        // it away. The card sits out to the side, so the two never overlap.
         // Multiplied by the world's own presence, so during the opening a
         // label arrives with its island rather than hanging over empty sky
         // waiting for it.
-        label.style.opacity = String(shown ? fade * at.presence : 0);
+        label.style.opacity = String(onScreen ? fade * at.presence : 0);
+
+        const active = current === content.id;
+        const button = label.firstElementChild;
+        if (button) button.classList.toggle("ui-label-on", active);
 
         if (current === content.id && card.current) {
           const flip = at.x + at.radius + CARD_GAP + CARD_WIDTH > width;
@@ -198,16 +204,12 @@ export default function ChapterOverlay() {
             onFocus={() => hover(item.id)}
             onBlur={() => hover(null)}
             onClick={() => getWorld()?.enterChapter(item.id)}
-            className="ui-panel flex cursor-pointer items-center gap-1.5 px-2 py-1 font-sans transition-colors hover:bg-white/8"
+            className="ui-panel ui-button flex cursor-pointer items-center gap-2 px-2 py-1 transition-colors"
             aria-label={`${item.title}, ${item.period}`}
           >
+            <span className="pixel-mark" style={{ color: "var(--accent)" }} aria-hidden />
             <span
-              className="h-1 w-1 rounded-full"
-              style={{ background: "var(--ui-faint)" }}
-              aria-hidden
-            />
-            <span
-              className="text-[0.6875rem] leading-none font-medium tracking-wide whitespace-nowrap"
+              className="font-display text-[0.8125rem] leading-none tracking-wide whitespace-nowrap"
               style={{ color: "var(--ui-text)" }}
             >
               {item.title}

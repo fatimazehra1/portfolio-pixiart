@@ -1,4 +1,4 @@
-import { createRandom, ditherIndex, range, toTexture } from "../shared";
+import { bayer, createRandom, ditherIndex, range, toTexture } from "../shared";
 import type { Texture } from "pixi.js";
 
 /**
@@ -100,10 +100,31 @@ export interface IsoIslandParams {
   vineTones?: readonly number[];
   /** Rim, dirt and a worn path on the top face. See `IsoGround`. */
   ground?: IsoGround;
+  /**
+   * How many texture pixels to bake per world pixel.
+   *
+   * The islands are the only thing on the hub generated *at* its grid; every
+   * building is drawn large and scaled down onto it, which is the whole of why
+   * the two never matched — same picture, half the pixel density on the ground
+   * under it. At 2 the island is baked at twice the linear resolution and the
+   * sprite is drawn at half scale, so a coastline steps in half-pixels and the
+   * cap's texture lands in the same size range as the walls and windows
+   * standing on it.
+   *
+   * Everything below is expressed in *world* pixels and multiplied through, so
+   * a step, a path or a rim is the same width on the island whatever this is.
+   * The returned geometry is in world pixels too — only `texture` is bigger.
+   */
+  detail?: number;
 }
 
 export interface IsoIsland {
   texture: Texture;
+  /**
+   * Texture pixels per world pixel. Draw the sprite at `1 / textureScale`;
+   * every other measure on this object is already in world pixels.
+   */
+  textureScale: number;
   width: number;
   height: number;
   /** Where the top face's centre sits, in texture pixels. Plant things here. */
@@ -184,11 +205,11 @@ const MARGIN = 3;
 
 export function generateIsoIsland(params: IsoIslandParams): IsoIsland {
   const {
-    size,
+    size: worldSize,
     topPalette,
     rockPalette,
     edgeSeed,
-    undersideLength,
+    undersideLength: worldUnderside,
     elongation = 1,
     aspect = 1,
     roughness = 1,
@@ -200,8 +221,33 @@ export function generateIsoIsland(params: IsoIslandParams): IsoIsland {
     vines = 0,
     vineTones,
     ground,
+    detail = 1,
   } = params;
   const rand = createRandom(edgeSeed >>> 0);
+
+  // Texture pixels per world pixel. Every length below is authored in world
+  // pixels and passed through `px`; every *frequency* — anything multiplied by
+  // a coordinate — goes through `fq`, or a supersampled island would come out
+  // with the same shape and half-size dirt patches, paving slabs and bands.
+  const D = Math.max(1, Math.round(detail));
+  const px = (n: number) => n * D;
+  const fq = (n: number) => n / D;
+  /**
+   * A dither cell, in world pixels.
+   *
+   * The one thing supersampling broke. An ordered dither is a *pattern the eye
+   * mixes*, and at twice the resolution its cells came out half the size —
+   * which on a sprite drawn back at half scale is below what the screen can
+   * resolve, so every band averaged into its own mean and five coloured strata
+   * turned into one grey slab. Quantising the dither's coordinates back to
+   * world pixels keeps the pattern the size it was authored at: the *edges*
+   * are twice as fine, the *texture* is not.
+   */
+  const cell = (v: number) => Math.floor(v / D);
+
+  const size = px(worldSize);
+  const undersideLength = Math.max(1, Math.round(px(worldUnderside)));
+  const margin = px(MARGIN);
 
   // The organic edge: a base radius perturbed by a few off-frequency
   // harmonics (same idiom as the coast's `mound` form) plus a per-island
@@ -215,7 +261,13 @@ export function generateIsoIsland(params: IsoIslandParams): IsoIsland {
   const p2 = range(rand, 0, Math.PI * 2);
   const p3 = range(rand, 0, Math.PI * 2);
   const wobbleAmt = range(rand, 0.12, 0.2) * roughness;
-  const fineAmt = wobbleAmt * 0.35 * roughness;
+  // The high-frequency term, halved from 0.35. It was the whole of the
+  // single-pixel chatter along the coast: at the old amplitude the radius
+  // crossed a pixel boundary and came back within two or three columns, which
+  // is a stair step rather than a headland. The two slow harmonics still own
+  // the silhouette, so the island is the same island — its edge just stops
+  // vibrating.
+  const fineAmt = wobbleAmt * 0.18 * roughness;
 
   const iso = 0.5 * aspect; // 2:1 projection, per-island deeper or shallower
   const ex = Math.max(0.35, elongation);
@@ -259,6 +311,44 @@ export function generateIsoIsland(params: IsoIslandParams): IsoIsland {
     }
   }
 
+  // --- Pass 1b: take the jitter out of the outline ------------------------
+  //
+  // A curve sampled per column steps by a pixel wherever it happens to cross
+  // one, and an organic radius crosses back and forth — which is what read as
+  // ragged. Averaging each boundary against its neighbours turns a run of
+  // one-pixel jumps into one longer, cleaner run in the same place: the low
+  // harmonics survive a window this small untouched, so the coast keeps its
+  // bays and loses only the noise between them.
+  //
+  // Widened with `D`, because a supersampled island has proportionally more
+  // columns across the same headland.
+  {
+    const reach = Math.max(1, Math.round(px(1.5)));
+    const smooth = (line: Int32Array, sign: number) => {
+      const out = Int32Array.from(line);
+      for (let x = 0; x < width; x++) {
+        if (topBottomOff[x] < topTopOff[x]) continue;
+        let sum = 0;
+        let n = 0;
+        for (let k = -reach; k <= reach; k++) {
+          const c = x + k;
+          if (c < 0 || c >= width) continue;
+          if (topBottomOff[c] < topTopOff[c]) continue;
+          sum += line[c];
+          n++;
+        }
+        if (n === 0) continue;
+        // Rounded away from the land, so smoothing never eats into a column
+        // that had land in it — the outline settles, the footprint does not.
+        const avg = sum / n;
+        out[x] = sign < 0 ? Math.floor(avg) : Math.ceil(avg);
+      }
+      line.set(out);
+    };
+    smooth(topTopOff, -1);
+    smooth(topBottomOff, 1);
+  }
+
   let left = -1;
   let right = -1;
   let boundsTopOff = 1_000_000;
@@ -278,10 +368,11 @@ export function generateIsoIsland(params: IsoIslandParams): IsoIsland {
   // straight edge is the one thing on an island that reads as CAD.
   const levels = [...(steps ?? [])]
     .filter((step) => step.rise > 0 && step.at > 0.02 && step.at < 0.98)
+    .map((step) => ({ at: step.at, rise: Math.max(1, Math.round(px(step.rise))) }))
     .sort((a, b) => a.at - b.at);
   const totalRise = levels.reduce((sum, step) => sum + step.rise, 0);
   const stepPhase = range(rand, 0, Math.PI * 2);
-  const stepWave = range(rand, 0.05, 0.11);
+  const stepWave = fq(range(rand, 0.05, 0.11));
 
   /** Where a step's line falls on this column, as a depth fraction. */
   const stepAt = (step: TopStep, x: number): number =>
@@ -297,18 +388,18 @@ export function generateIsoIsland(params: IsoIslandParams): IsoIsland {
   // --- Final layout: content-tight, no dead space between the parts -------
   // The pad above the cap carries the tallest step, or a raised back rim would
   // be lifted straight off the top edge of the texture.
-  const topPad = MARGIN + totalRise;
+  const topPad = margin + totalRise;
   const capRowOf = (oy: number) => oy - boundsTopOff + topPad;
   const capHeight = boundsBottomOff - boundsTopOff + 1;
   const wallTopRow = topPad + capHeight; // right under the lowest visible cap row
-  const wallHeight = Math.max(3, Math.round(size * wallRatio));
+  const wallHeight = Math.max(px(3), Math.round(size * wallRatio));
   const undersideTopRow = wallTopRow + wallHeight;
 
   // The second rock, when a chapter asks for one: a small lozenge floating in
   // the gap under the point, the same palette, far enough down to read as a
   // separate piece of the same break rather than a lump on the spike.
-  const secondGap = secondaryRock ? Math.max(2, Math.round(undersideLength * 0.12)) : 0;
-  const secondLength = secondaryRock ? Math.max(6, Math.round(undersideLength * 0.62)) : 0;
+  const secondGap = secondaryRock ? Math.max(px(2), Math.round(undersideLength * 0.12)) : 0;
+  const secondLength = secondaryRock ? Math.max(px(6), Math.round(undersideLength * 0.62)) : 0;
   const secondTopRow = undersideTopRow + undersideLength + secondGap;
   const secondDriftFrac = range(rand, -0.35, 0.35);
 
@@ -333,14 +424,14 @@ export function generateIsoIsland(params: IsoIslandParams): IsoIsland {
     }
   }
   const bandPhase = range(rand, 0, Math.PI * 2);
-  const bandWave = range(rand, 0.06, 0.13);
+  const bandWave = fq(range(rand, 0.06, 0.13));
 
   const bandAt = (x: number, y: number): number => {
     const d =
       y -
       wallTopRow +
-      1.4 * Math.sin(x * bandWave + bandPhase) +
-      0.8 * Math.sin(x * bandWave * 2.7 + bandPhase * 1.7);
+      px(1.4) * Math.sin(x * bandWave + bandPhase) +
+      px(0.8) * Math.sin(x * bandWave * 2.7 + bandPhase * 1.7);
     for (let i = 0; i < bandEdges.length; i++) if (d < bandEdges[i]) return i;
     return bands.length - 1;
   };
@@ -351,8 +442,8 @@ export function generateIsoIsland(params: IsoIslandParams): IsoIsland {
    */
   const fragmentTone = (x: number, y: number, lightVal: number): number => {
     const color = bands[Math.max(0, bands.length - 3)].color;
-    const tone = ditherIndex(lightVal, 3, x, y);
-    return tone === 0 ? shade(color, 1.17) : tone === 1 ? color : shade(color, 0.72);
+    const tone = ditherIndex(lightVal, 3, cell(x), cell(y));
+    return tone === 0 ? lit(color) : tone === 1 ? color : dark(color);
   };
 
   /**
@@ -361,13 +452,21 @@ export function generateIsoIsland(params: IsoIslandParams): IsoIsland {
    * authored, so a band is a *colour* and the lighting stays this file's.
    */
   const rockTone = (x: number, y: number, lightVal: number): number => {
-    const color = bands[bandAt(x, y)].color;
-    const tone = ditherIndex(lightVal, 3, x, y);
-    return tone === 0 ? shade(color, 1.17) : tone === 1 ? color : shade(color, 0.72);
+    const band = bandAt(x, y);
+    const color = bands[band].color;
+
+    // The seam. One world pixel of the band's own shadow along its top edge,
+    // so where two strata meet is a *line* rather than the place two dithers
+    // happen to change their mix. Without it adjacent bands of similar value
+    // read as noise, which is the whole of what "stratification" was losing.
+    if (band > 0 && bandAt(x, y - px(1)) !== band) return shade(color, 0.6);
+
+    const tone = ditherIndex(lightVal, 3, cell(x), cell(y));
+    return tone === 0 ? lit(color) : tone === 1 ? color : dark(color);
   };
 
   const height =
-    (secondaryRock ? secondTopRow + secondLength : undersideTopRow + undersideLength) + MARGIN;
+    (secondaryRock ? secondTopRow + secondLength : undersideTopRow + undersideLength) + margin;
 
   const topTop = new Int32Array(width).fill(-1);
   const topBottom = new Int32Array(width).fill(-1);
@@ -407,13 +506,29 @@ export function generateIsoIsland(params: IsoIslandParams): IsoIsland {
   // They are the surface, and a surface belongs to whatever generated it —
   // a second aligned sprite for a path is a second thing to keep in register
   // with a coastline that is regenerated from a seed.
+  // The rim's two tones: the outer course carries a little of the rock the
+  // wall below is made of, so cap and wall meet in a colour they share rather
+  // than in the darkest green the topsoil happens to own.
+  const rimEdge = shade(mixColor(topPalette[topPalette.length - 1], 0x4a3f34, 0.35), 0.86);
+  const rimInner = topPalette[topPalette.length - 1];
+
   const dirt = ground?.dirt ?? topPalette.map((c) => mixColor(c, 0x8a7256, 0.55));
   const patchAmount = ground?.patches ?? 0;
-  const pathWidth = ground?.path ?? 0;
+  const pathWidth = px(ground?.path ?? 0);
   const pathSurface: GroundSurface = ground?.surface ?? "dirt";
   const paving = ground?.paving ?? dirt;
 
   /** A stable 0–1 hash for a cell, so a flagstone is the same flagstone twice. */
+  // Pattern cell sizes, in world pixels: a paving slab is five across and
+  // three deep on the island whatever the island is baked at.
+  const c5 = Math.max(2, Math.round(px(5)));
+  const c4 = Math.max(2, Math.round(px(4)));
+  const c3 = Math.max(1, Math.round(px(3)));
+  const c2 = Math.max(1, Math.round(px(2)));
+  const c6 = Math.max(2, Math.round(px(6)));
+  const c9 = Math.max(3, Math.round(px(9)));
+  const c7 = Math.max(3, Math.round(px(7)));
+
   const cellNoise = (a: number, b: number): number => {
     const n = Math.sin(a * 127.1 + b * 311.7 + edgeSeed * 0.0007) * 43758.5453;
     return n - Math.floor(n);
@@ -445,44 +560,44 @@ export function generateIsoIsland(params: IsoIslandParams): IsoIsland {
       }
       case "paving": {
         // Slabs five across and three deep, with a joint on two sides.
-        const joint = x % 5 === 0 || y % 3 === 0;
+        const joint = x % c5 === 0 || y % c3 === 0;
         if (joint) return paving[last];
-        return paving[cellNoise(Math.floor(x / 5), Math.floor(y / 3)) > 0.6 ? 1 : 0];
+        return paving[cellNoise(Math.floor(x / c5), Math.floor(y / c3)) > 0.6 ? 1 : 0];
       }
       case "brick": {
         // Courses two deep, half-offset row to row. The offset is the whole
         // read: without it this is paving with a finer joint.
-        const course = Math.floor(y / 2);
-        const shift = (course % 2) * 2;
-        const joint = y % 2 === 0 || (x + shift) % 4 === 0;
+        const course = Math.floor(y / c2);
+        const shift = (course % 2) * c2;
+        const joint = y % c2 === 0 || (x + shift) % c4 === 0;
         if (joint) return paving[last];
-        return paving[cellNoise(Math.floor((x + shift) / 4), course) > 0.5 ? 1 : 0];
+        return paving[cellNoise(Math.floor((x + shift) / c4), course) > 0.5 ? 1 : 0];
       }
       case "asphalt": {
         // Dark and near-flat, and then the one thing that makes it a road: a
         // broken centre line. Three on, three off.
-        if (Math.abs(across) < 0.12 && y % 6 < 3) return paving[0];
+        if (Math.abs(across) < 0.12 && y % c6 < c3) return paving[0];
         if (edge) return paving[last];
         return paving[cellNoise(x, y) > 0.82 ? 2 : 1];
       }
       case "flagstone": {
         // Irregular: cells of four by three, each its own tone, with gaps
         // wide enough for something to grow in.
-        const cx0 = Math.floor(x / 4);
-        const cy0 = Math.floor(y / 3);
+        const cx0 = Math.floor(x / c4);
+        const cy0 = Math.floor(y / c3);
         const n = cellNoise(cx0, cy0);
         if (n > 0.78) return paving[last]; // a gap where no flag was laid
-        if (x % 4 === 0 || y % 3 === 0) return paving[last];
+        if (x % c4 === 0 || y % c3 === 0) return paving[last];
         return paving[n > 0.45 ? 1 : 0];
       }
       case "concrete": {
         // Almost nothing, which is the point: a poured slab with expansion
         // joints, and no texture between them.
-        if (x % 9 === 0 || y % 7 === 0) return paving[Math.min(last, 2)];
+        if (x % c9 === 0 || y % c7 === 0) return paving[Math.min(last, 2)];
         return paving[cellNoise(x, y) > 0.94 ? 1 : 0];
       }
       default: {
-        const worn = edge ? 2 : ditherIndex(0.62, paving.length, x, y);
+        const worn = edge ? 2 : softIndex(0.62, paving.length, cell(x), cell(y));
         return paving[Math.min(last, worn)];
       }
     }
@@ -491,9 +606,24 @@ export function generateIsoIsland(params: IsoIslandParams): IsoIsland {
   const inCap = (x: number, y: number): boolean =>
     x >= left && x <= right && topTop[x] >= 0 && y >= topTop[x] && y <= topBottom[x];
 
-  /** How far a cap pixel is from the edge of the cap, up to 3. */
+  /**
+   * The rim: two world pixels of it, and never fewer than two texture pixels.
+   *
+   * This is the line that makes the cap a *slab*. Without a deliberate width
+   * the boundary between the top face and the wall was whatever the two
+   * dithered ramps happened to do where they met, which is the definition of
+   * ragged.
+   */
+  //
+  // Two world pixels on an island with room for two, one on a small one. A
+  // fixed band is a fixed *fraction* of a small cap, and at the size of the
+  // Ideas island a two-pixel ring round a cap that is barely twenty across ate
+  // the ground the tent stands on and left a crater.
+  const rimWidth = Math.max(1, Math.round(px(worldSize >= 30 ? 2 : 1)));
+
+  /** How far a cap pixel is from the edge of the cap, up to `rimWidth`. */
   const edgeDistance = (x: number, y: number): number => {
-    for (let r = 1; r <= 2; r++) {
+    for (let r = 1; r <= rimWidth; r++) {
       if (
         !inCap(x - r, y) ||
         !inCap(x + r, y) ||
@@ -505,13 +635,13 @@ export function generateIsoIsland(params: IsoIslandParams): IsoIsland {
         return r - 1;
       }
     }
-    return 2;
+    return rimWidth;
   };
 
   // Two off-frequency harmonics, the same idiom the coastline is built from —
   // enough to read as worn ground and never enough to read as a pattern.
-  const pa = range(rand, 0.09, 0.16);
-  const pb = range(rand, 0.13, 0.22);
+  const pa = fq(range(rand, 0.09, 0.16));
+  const pb = fq(range(rand, 0.13, 0.22));
   const pp1 = range(rand, 0, Math.PI * 2);
   const pp2 = range(rand, 0, Math.PI * 2);
   const pathBend = range(rand, -0.5, 0.5);
@@ -530,7 +660,7 @@ export function generateIsoIsland(params: IsoIslandParams): IsoIsland {
             Math.sin(x * pa + pp1) * Math.sin(y * pb + pp2) +
             0.5 * Math.sin((x + y) * pa * 1.7 + pp2);
           if (n > 1.05 - patchAmount * 1.5) {
-            set(x, y, dirt[ditherIndex(0.5 + 0.3 * (1 - depth), dirt.length, x, y)]);
+            set(x, y, dirt[softIndex(0.5 + 0.3 * (1 - depth), dirt.length, cell(x), cell(y))]);
           }
         }
 
@@ -548,20 +678,31 @@ export function generateIsoIsland(params: IsoIslandParams): IsoIsland {
           const half = pathWidth * (laid ? 0.85 + 0.15 * depth : 0.55 + 0.45 * depth);
           const offset = Math.abs(x - cx - bend);
           if (offset <= half) {
-            set(x, y, surfaceColor(x, y, (x - cx - bend) / half, offset > half - 1));
+            set(x, y, surfaceColor(x, y, (x - cx - bend) / half, offset > half - px(1)));
           }
         }
 
-        // The rim, last and over everything: one tone all the way round, lit
-        // on the shoulder the sun is on and dark everywhere else. This is what
-        // turns a dithered blob into a shape with an outline.
+        // The rim, last and over everything.
+        //
+        // A band of a fixed width all the way round rather than a one-pixel
+        // outline: two courses of it, flat, no dither in either — a graded
+        // edge is exactly what the eye reads as fraying. The far shoulder
+        // takes the full dark, so the seam where the cap turns into the wall
+        // is one continuous line; the sunlit shoulder keeps a single bright
+        // course over the same band, which is what stops the island reading as
+        // a shape with a black outline drawn round it.
         const d = edgeDistance(x, y);
-        if (d <= 1) {
+        if (d < rimWidth) {
           const nx = (x - cx) / Math.max(1, outerX);
           const ny = depth - 0.5;
           const lit = nx * LIGHT_X + ny * LIGHT_Y > 0.25;
-          if (d === 0) set(x, y, lit ? topPalette[0] : topPalette[topPalette.length - 1]);
-          else if (!lit) set(x, y, topPalette[topPalette.length - 2]);
+          if (lit) {
+            // One course only. The sun side of a slab catches a highlight, it
+            // does not get a border.
+            if (d === 0) set(x, y, topPalette[0]);
+          } else {
+            set(x, y, d === 0 ? rimEdge : rimInner);
+          }
         }
       }
     }
@@ -596,7 +737,7 @@ export function generateIsoIsland(params: IsoIslandParams): IsoIsland {
         // A raised level catches more of the sky than the terrace below it.
         const raised = totalRise > 0 ? liftOf(x, (y - topTop[x]) / span) / totalRise : 0;
         const lightVal = 0.5 - 0.35 * (nx * LIGHT_X + ny * LIGHT_Y) + 0.08 * raised;
-        const tone = ditherIndex(lightVal, topPalette.length, x, y);
+        const tone = softIndex(lightVal, topPalette.length, cell(x), cell(y));
         set(x, y - liftOf(x, (y - topTop[x]) / span), topPalette[tone]);
       }
     }
@@ -645,7 +786,7 @@ export function generateIsoIsland(params: IsoIslandParams): IsoIsland {
       const end = Math.min(height, wallTopRow + wallHeight);
       for (let y = start; y < end; y++) {
         const side = (x - cx) / halfSpan;
-        set(x, y, rockTone(x, y, 0.55 - 0.4 * side));
+        set(x, y, rockTone(x, y, 0.62 - 0.55 * side));
       }
     }
 
@@ -657,14 +798,14 @@ export function generateIsoIsland(params: IsoIslandParams): IsoIsland {
       const base = underHalfWidthAt(row);
       if (base < 0.5) continue;
       const depth = row / Math.max(1, undersideLength);
-      const drift = jag[Math.min(width - 1, Math.max(0, Math.round(cx + (row % 7) - 3)))] * 2 * depth;
+      const drift = jag[Math.min(width - 1, Math.max(0, Math.round(cx + (row % px(7)) - px(3))))] * px(2) * depth;
 
       for (let x = wallLeft; x <= wallRight; x++) {
         const dx = x - cx - drift;
         const noise =
           1 +
-          0.22 * Math.sin(dx * 0.5 + row * u1 * 0.08 + up1) +
-          0.14 * Math.sin(dx * 1.1 - row * u2 * 0.05 + up2);
+          0.22 * Math.sin(dx * fq(0.5) + row * u1 * fq(0.08) + up1) +
+          0.14 * Math.sin(dx * fq(1.1) - row * u2 * fq(0.05) + up2);
         const edge = base * Math.max(0.15, noise);
         if (Math.abs(dx) > edge) continue;
 
@@ -694,21 +835,21 @@ export function generateIsoIsland(params: IsoIslandParams): IsoIsland {
 
         const length = Math.round(range(rand, undersideLength * 0.35, undersideLength * 0.95));
         const drift = range(rand, -0.16, 0.16);
-        const sway = range(rand, 0.1, 0.24);
+        const sway = fq(range(rand, 0.1, 0.24));
         const phase = range(rand, 0, Math.PI * 2);
         // Starts inside the wall rather than at its lip, so the strand reads as
         // growing out of the rock instead of being taped to it.
-        const from = wallBottom - rangeIntLocal(rand, 1, 4);
+        const from = wallBottom - px(rangeIntLocal(rand, 1, 4));
 
         for (let r = 0; r < length; r++) {
           const y = from + r;
           if (y >= height - 1) break;
-          const x = Math.round(column + drift * r + Math.sin(r * sway + phase) * 1.4);
+          const x = Math.round(column + drift * r + Math.sin(r * sway + phase) * px(1.4));
           const tone = tones[Math.min(tones.length - 1, Math.floor((r / length) * tones.length))];
           set(x, y, tone);
           // A second column every few pixels, so the strand thickens where a
           // leaf would be rather than reading as a drawn line all the way down.
-          if (r > 2 && r % 4 === 1) set(x + (side > 0 ? 1 : -1), y, shade(tone, 0.82));
+          if (r > px(2) && r % px(4) === 1) set(x + (side > 0 ? 1 : -1), y, shade(tone, 0.82));
         }
       }
     }
@@ -726,7 +867,7 @@ export function generateIsoIsland(params: IsoIslandParams): IsoIsland {
         if (base < 0.5) continue;
         for (let x = wallLeft; x <= wallRight; x++) {
           const dx = x - centre;
-          const noise = 1 + 0.24 * Math.sin(dx * 0.9 + row * 0.35 + up1);
+          const noise = 1 + 0.24 * Math.sin(dx * fq(0.9) + row * fq(0.35) + up1);
           if (Math.abs(dx) > base * Math.max(0.2, noise)) continue;
           // Sampled from the pale-stone band rather than from its own row: the
           // fragment hangs *below* the stratigraphy, and a band lookup there
@@ -740,33 +881,120 @@ export function generateIsoIsland(params: IsoIslandParams): IsoIsland {
 
   const texture = toTexture(width, height, paint, "IsoIsland");
 
-  const surface = new Int32Array(width).fill(-1);
-  const capBottom = new Int32Array(width).fill(-1);
-  for (let x = 0; x < width; x++) {
-    // The raised back rim, not the unlifted one — anything that stands on a
-    // column reads this, and on a stepped island the two are a cliff apart.
-    surface[x] = topTop[x] < 0 ? -1 : topTop[x] - liftOf(x, 0);
-    capBottom[x] = topBottom[x];
+  // Everything below leaves in world pixels. A supersampled island is bigger
+  // only as a bitmap: the column a crate stands in, the row it stands on and
+  // the footprint a building is fitted to all have to keep meaning the same
+  // thing, or raising `detail` would silently move every prop on the hub.
+  const outWidth = Math.ceil(width / D);
+  const surface = new Int32Array(outWidth).fill(-1);
+  const capBottom = new Int32Array(outWidth).fill(-1);
+  for (let ox = 0; ox < outWidth; ox++) {
+    let top = -1;
+    let bottom = -1;
+    for (let k = 0; k < D; k++) {
+      const x = ox * D + k;
+      if (x >= width || topTop[x] < 0) continue;
+      // The raised back rim, not the unlifted one — anything that stands on a
+      // column reads this, and on a stepped island the two are a cliff apart.
+      const t = topTop[x] - liftOf(x, 0);
+      if (top < 0 || t < top) top = t;
+      if (topBottom[x] > bottom) bottom = topBottom[x];
+    }
+    // The topmost of the columns folded together: a prop bridging two of
+    // them stands on the higher ground rather than half sunk into it.
+    surface[ox] = top < 0 ? -1 : Math.round(top / D);
+    capBottom[ox] = bottom < 0 ? -1 : Math.round(bottom / D);
   }
 
   return {
     texture,
-    width,
-    height,
+    textureScale: D,
+    width: outWidth,
+    height: Math.ceil(height / D),
     // Lifted by however far the land at mid-depth stands proud, so whatever is
     // planted here stands *on* the plateau rather than sunk into it. This is
     // the whole of what keeps nine buildings anchored across a change that
     // moved the ground out from under them.
-    topCenter: { x: cx, y: topPad + capHeight / 2 - liftOf(cx, 0.5) },
-    topBounds: { left, right, top: topPad - totalRise, bottom: topPad + capHeight },
+    topCenter: { x: cx / D, y: (topPad + capHeight / 2 - liftOf(cx, 0.5)) / D },
+    topBounds: {
+      left: Math.round(left / D),
+      right: Math.round(right / D),
+      top: (topPad - totalRise) / D,
+      bottom: (topPad + capHeight) / D,
+    },
     surface,
     capBottom,
   };
 }
 
+/**
+ * How much of each step of a ramp is drawn flat, at either end of it.
+ *
+ * At 0 this is an ordinary ordered dither and every pixel of the cap is in
+ * play, which is what made the top faces read as noise with a shape somewhere
+ * inside it. At 0.3 the middle 40% of each step is dithered and the rest is
+ * solid, so a lit slope is a broad flat field of one green that breaks into
+ * the next only where the two actually meet.
+ */
+const FLAT_BAND = 0.22;
+
+/**
+ * A tone from a ramp, dithered only at the transitions.
+ *
+ * Same signature and same ramp as `ditherIndex`, and the rock still uses that
+ * one — a cliff face *wants* to be busy. This is for the surfaces a visitor
+ * looks across rather than at: the cap, its dirt and its worn track.
+ */
+function softIndex(value: number, steps: number, x: number, y: number): number {
+  const v = value < 0 ? 0 : value > 1 ? 1 : value;
+  const p = v * (steps - 1);
+  const floor = Math.floor(p);
+  const f = p - floor;
+  if (f <= FLAT_BAND) return Math.min(steps - 1, floor);
+  if (f >= 1 - FLAT_BAND) return Math.min(steps - 1, floor + 1);
+  const t = (f - FLAT_BAND) / (1 - 2 * FLAT_BAND);
+  return Math.min(steps - 1, t > bayer(x, y) ? floor + 1 : floor);
+}
+
 /** An integer in [min, max]. Local, so the factory keeps one random source. */
 function rangeIntLocal(rand: () => number, min: number, max: number): number {
   return min + Math.floor(rand() * (max - min + 1));
+}
+
+/**
+ * A band's lit face, and its shadowed one.
+ *
+ * Wider apart than the old 1.17 / 0.72, and saturated a little on the way:
+ * dithering two tones this close together at half scale returns their average,
+ * and the average of two nearly identical greys is a grey. The spread is what
+ * survives the mixing.
+ */
+function lit(color: number): number {
+  return saturate(shade(color, 1.24), 1.12);
+}
+
+function dark(color: number): number {
+  return saturate(shade(color, 0.68), 1.12);
+}
+
+/**
+ * Push a colour away from its own grey.
+ *
+ * Rock is the one thing on an island with no local colour of its own to fall
+ * back on — a wall is three tones of one hue, and if the mixing pulls those
+ * three towards their common luminance the earth stops being earth.
+ */
+function saturate(color: number, amount: number): number {
+  const r = (color >> 16) & 0xff;
+  const g = (color >> 8) & 0xff;
+  const b = color & 0xff;
+  const grey = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  const clamp = (v: number) => (v < 0 ? 0 : v > 255 ? 255 : Math.round(v));
+  return (
+    (clamp(grey + (r - grey) * amount) << 16) |
+    (clamp(grey + (g - grey) * amount) << 8) |
+    clamp(grey + (b - grey) * amount)
+  );
 }
 
 /** Multiply a colour's channels, clamped. A band's lit and shadowed faces. */

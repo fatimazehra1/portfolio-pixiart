@@ -245,6 +245,46 @@ export class NatureTechRenderer extends BuildingRenderer {
     this.plotYard();
     this.plotCrane();
     this.plotDust();
+
+    /**
+     * Three, reading the building the way it was drawn: finished at the
+     * bottom, being built at the top.
+     *
+     * The two finished floors are the ledger — accounting, the part that has to
+     * be right before anything else can be. The half-glazed third is
+     * operations, the floor the work moves through. The open frame above is the
+     * platform: permissions, migrations, the parts still going in. The crane
+     * and the yard are scenery and stay unmarked.
+     */
+    this.setHotspots([
+      {
+        id: "accounting",
+        section: "Accounting",
+        label: "Accounting and banking",
+        x: BLOCK.x,
+        y: F2.top,
+        width: BLOCK.width,
+        height: F1.bottom - F2.top + 1,
+      },
+      {
+        id: "operations",
+        section: "Operations",
+        label: "Inventory, purchasing, sales",
+        x: BLOCK.x,
+        y: F3.top,
+        width: BLOCK.width,
+        height: F3.bottom - F3.top + 1,
+      },
+      {
+        id: "platform",
+        section: "Platform",
+        label: "Permissions and migrations",
+        x: BLOCK.x,
+        y: FRAME_TOP.top,
+        width: BLOCK.width,
+        height: FRAME_MID.bottom - FRAME_TOP.top + 1,
+      },
+    ]);
   }
 
   /**
@@ -359,6 +399,17 @@ export class NatureTechRenderer extends BuildingRenderer {
     this.pixels("steelDark").vLine(doorX + 10, F1.top + 6, F1.bottom - 1);
     concrete.rect(doorX - 4, F1.top + 2, 28, 3);
     concreteDark.hLine(F1.top + 4, doorX - 4, doorX + 23);
+
+    // The glazed bay is the door.
+    this.setDoorway({
+      x: doorX,
+      y: F1.top + 6,
+      width: 20,
+      height: F1.bottom - F1.top - 6,
+      swing: "double",
+      interior: 0x1d2622,
+      glow: 0xffe6b4,
+    });
   }
 
   /** A row of windows in the finished cladding. */

@@ -54,6 +54,36 @@ export interface ChapterContext {
   timeOfDay?: TimeOfDay;
   /** Global motion multiplier. 0 for `prefers-reduced-motion: reduce`. */
   motionScale: number;
+  /**
+   * Told when the pointer finds, leaves, or clicks a marked part of a building.
+   *
+   * The one thing inside a world that the *interface* has to answer rather than
+   * the world itself: a hotspot's label is a DOM panel and its click opens a
+   * section of the plaque, and both of those live on the other side of the
+   * React seam. Optional, so a world built without an interface around it — a
+   * test, a screenshot rig — simply has hotspots that do nothing.
+   */
+  onHotspot?: (event: HotspotEvent) => void;
+}
+
+/**
+ * What the interface is told about a hotspot.
+ *
+ * Carries the anchor in *world* pixels rather than screen pixels, because the
+ * engine has the camera and can convert, and a React component holding a screen
+ * position would hold a stale one the moment the camera moved. The overlay
+ * re-reads the position every frame; this event only says which spot it is.
+ */
+export interface HotspotEvent {
+  /** Null when the pointer has left. Every other field is then meaningless. */
+  spot: { id: string; section: string; label: string } | null;
+  /** The building it is on, by id. */
+  buildingId: string;
+  /** Whether this is a click rather than a hover. */
+  selected: boolean;
+  /** Middle of the hotspot's top edge, in this world's own pixels. */
+  x: number;
+  y: number;
 }
 
 /**
