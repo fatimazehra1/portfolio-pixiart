@@ -197,6 +197,17 @@ export abstract class Building {
     return this.renderer.height * this.pixelScaleValue;
   }
 
+  /**
+   * The building's height in *art* pixels, before any scale or zoom.
+   *
+   * The number a framing decision is made from: how much of the frame this
+   * building fills is its art height times the pixel grid times the zoom, and
+   * the only one of the three that belongs to the building is this one.
+   */
+  get artHeight(): number {
+    return this.renderer.height;
+  }
+
   get interactionRadius(): number {
     return this.zone.radius;
   }

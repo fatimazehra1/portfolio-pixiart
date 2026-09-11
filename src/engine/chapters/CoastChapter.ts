@@ -84,6 +84,42 @@ const PLAQUE_CLEARANCE = 320 + 20 + 28;
 const SKY_MIN_WIDTH = 0.34;
 
 /**
+ * How much of the frame's height the thing you came to see should fill.
+ *
+ * Every scene used to carry a hand-typed `camera.zoom`, and every one of those
+ * numbers was chosen while looking at one particular window. The zoom is not
+ * the framing: what a building actually fills is its art height times the
+ * pixel grid times the zoom, and the pixel grid is `floor(viewportHeight/200)`
+ * — a step function. The same 2 that filled 55% of a 674px window fills 50% of
+ * a 738px one and 72% of an 800px one, which is why the shore looked composed
+ * on one machine and cropped on another.
+ *
+ * So the target is stated as the composition instead, and the zoom is solved
+ * for at runtime. 0.6 leaves roughly a fifth of the frame as sky over the roof
+ * and a fifth as ground under it, which is the reading the whole shore is
+ * drawn for: a building standing in a place, not a building filling a window.
+ */
+const SUBJECT_FRAME = 0.6;
+
+/**
+ * A ceiling on the solved zoom, so a small subject is not blown up.
+ *
+ * Nothing on the shore is short enough to need it today; it exists so that a
+ * future scene whose subject is a mailbox does not get framed as one.
+ */
+const MAX_SUBJECT_ZOOM = 3;
+
+/**
+ * The lighthouse's tower, in art pixels.
+ *
+ * Stated rather than measured because the lighthouse is not a `Building` — it
+ * has its own system and is not in the manager's list — and a framing pass
+ * that silently skipped the one scene at the end of the coast would be a
+ * framing pass nobody noticed was broken.
+ */
+const LIGHTHOUSE_ART_HEIGHT = 112;
+
+/**
  * A chapter world built as a stretch of coast.
  *
  * # What this is, and what it used to be
@@ -136,6 +172,8 @@ export class CoastChapter implements ChapterWorld {
   private readonly dayNight: DayNightManager;
 
   private readonly unbind: (() => void)[] = [];
+  /** How tall the subject of each scene is, in art pixels. See `fitSceneFraming`. */
+  private readonly subjects = new Map<string, number>();
   private zoomWanted: number;
   private destroyed = false;
 
@@ -251,7 +289,15 @@ export class CoastChapter implements ChapterWorld {
     // a renderer is one scene entry and one line in RENDERERS.
     for (const scene of this.layout.scenes) {
       const make = scene.rendererId ? RENDERERS[scene.rendererId] : undefined;
-      if (make) this.buildings.add(make(this.buildings.context));
+      if (make) {
+        const building = make(this.buildings.context);
+        this.buildings.add(building);
+        // Kept by scene rather than by building id so the framing pass can ask
+        // "how tall is what stands here", which is the question it has.
+        this.subjects.set(scene.id, building.artHeight);
+      } else if (scene.rendererId === LIGHTHOUSE_RENDERER) {
+        this.subjects.set(scene.id, LIGHTHOUSE_ART_HEIGHT);
+      }
     }
 
     const structures = engine.layer("structures");
@@ -321,6 +367,11 @@ export class CoastChapter implements ChapterWorld {
 
     // Publish an opening climate, so the first frame is already somewhere
     // rather than fading in from neutral once the camera first reports.
+    // Before the first focus: the framing is a per-scene value the director
+    // blends, so it has to be in place before the opening climate is published
+    // or the first frame is composed at the authored zoom and then corrects.
+    this.fitSceneFraming(height);
+
     this.scenes.focusOn(this.entryFocus().x);
   }
 
@@ -416,6 +467,9 @@ export class CoastChapter implements ChapterWorld {
     this.weather.resize(width, height);
     this.atmosphere.resize(height, this.ground.topY);
 
+    // After the sky, whose pixel grid the solve divides by.
+    this.fitSceneFraming(height);
+
     this.lockHorizon();
   }
 
@@ -480,6 +534,38 @@ export class CoastChapter implements ChapterWorld {
    * most of the right-hand sky, which is the correct trade when the
    * alternative is a sun nobody can see.
    */
+  /**
+   * Solve every scene's zoom from how tall the thing standing in it is.
+   *
+   * See `SUBJECT_FRAME`. One line of arithmetic and a clamp: the zoom that
+   * puts the subject at the target fraction of *this* viewport, held inside
+   * the band the composition allows, and handed to the director, which blends
+   * it across the walk like every other per-scene value.
+   *
+   * The camera quantises whatever it is given, so this is a request rather
+   * than a setting — which is exactly why it is expressed as the framing we
+   * want and not as a number somebody eyeballed once.
+   */
+  private fitSceneFraming(height: number): void {
+    const pixelScale = this.sky.pixelScale;
+    if (height <= 0 || pixelScale <= 0) return;
+
+    for (const scene of this.layout.scenes) {
+      const art = this.subjects.get(scene.id);
+      if (!art) continue;
+
+      const wanted = (SUBJECT_FRAME * height) / (art * pixelScale);
+      // Ask for a value the camera can actually render. It rounds
+      // `pixelScale * zoom` to a whole number of screen pixels per art pixel,
+      // so requesting anything between two steps is requesting one of them
+      // with extra decimal places — and the blend across a walk reads better
+      // when the endpoints are the steps themselves.
+      const steps = Math.max(1, Math.round(pixelScale * wanted));
+      const zoom = Math.min(MAX_SUBJECT_ZOOM, steps / pixelScale);
+      this.scenes.setFraming(scene.id, zoom);
+    }
+  }
+
   private fitCelestialField(width: number): void {
     const clear = width > 0 ? (width - PLAQUE_CLEARANCE) / width : 1;
     const right = Math.max(SKY_LEFT + SKY_MIN_WIDTH, Math.min(1, clear));

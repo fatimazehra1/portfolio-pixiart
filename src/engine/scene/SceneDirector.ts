@@ -113,6 +113,20 @@ export class SceneDirector {
    * near its own bench and loses a few metres away.
    */
   private readonly climates: readonly ClimateSource[];
+  /**
+   * Zoom worked out from the viewport, by scene id, overriding the authored one.
+   *
+   * A scene's `camera.zoom` is a number somebody typed while looking at one
+   * screen, and what it actually frames depends on the pixel grid the viewport
+   * earns — the same 2 fills half the frame on one laptop and three quarters
+   * on another. So the framing is computed instead, from how tall the thing
+   * standing there is, and pushed in here. See `CoastChapter.fitSceneFraming`.
+   *
+   * Scenes with nothing to frame — the open dock — never appear in this map
+   * and keep the authored value, which is the right answer for a stretch of
+   * shore with no subject in it.
+   */
+  private readonly framing = new Map<string, number>();
 
   private current: SceneState | null = null;
 
@@ -196,6 +210,18 @@ export class SceneDirector {
     this.current = state;
     for (const listener of this.listeners) listener(state);
     return state;
+  }
+
+  /**
+   * Set the zoom a scene should be framed at, overriding the authored one.
+   *
+   * Re-publishes if the camera has already reported, so a resize reframes the
+   * scene you are standing in rather than the next one you walk to.
+   */
+  setFraming(sceneId: string, zoom: number): void {
+    if (this.framing.get(sceneId) === zoom) return;
+    this.framing.set(sceneId, zoom);
+    if (this.current) this.focusOn(this.current.focusX);
   }
 
   /** Listen for changes. Called immediately if there is already a state. */
@@ -332,7 +358,7 @@ export class SceneDirector {
     for (const source of this.climates) {
       const w = weights.get(source.id);
       if (!w) continue;
-      zoom += source.camera.zoom * w;
+      zoom += (this.framing.get(source.scene.id) ?? source.camera.zoom) * w;
       offsetX += source.camera.offsetX * w;
       total += w;
     }

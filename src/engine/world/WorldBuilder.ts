@@ -48,6 +48,15 @@ const LEFT_RESERVE = 280;
 const OVERVIEW_MAX_ZOOM = 3;
 
 /**
+ * How far back a chapter world may stand off its own subject.
+ *
+ * Two thirds, which at the usual pixel grid of 3 is the step below 1 — the
+ * first one that gets the 168-pixel Planet01 tower under two thirds of the
+ * frame. See the note at `openChapter`.
+ */
+const CHAPTER_MIN_ZOOM = 2 / 3;
+
+/**
  * When one world stops being a mark on a map and starts being a place.
  *
  * `EXPLORE_ZOOM` is how close you have to be at all; `EXPLORE_COVERAGE` is
@@ -223,6 +232,20 @@ export class World {
     // for a fifth of a second first.
     if (this.lighting.state) this.overview.applyLighting(this.lighting.state);
 
+    // The map's sky is the same `SkySystem` a chapter world runs, so it is
+    // driven the same way: both endpoints of the cycle and a blend, straight
+    // from the one clock. Wired here for the same reason the light is — the map
+    // does not get to know where the hour comes from — and caught up
+    // immediately, because the cycle published before the map existed to hear
+    // it.
+    this.unbind.push(
+      this.dayNight.subscribe((state) => {
+        this.overview.setSkyPalette(state.from.sky, state.to.sky, state.blend);
+      })
+    );
+    const cycle = this.dayNight.state;
+    if (cycle) this.overview.setSkyPalette(cycle.from.sky, cycle.to.sky, cycle.blend);
+
     // Two spaces, two mounts. The void is screen space and goes behind the
     // camera; the worlds are somewhere and go inside it.
     engine.app.stage.removeChildren();
@@ -342,6 +365,11 @@ export class World {
       y: this.cameraCentreY(),
       zoom: this.camera.zoom,
     };
+
+    // The door opens before the camera moves, not with it. A door that started
+    // opening halfway through the flight would be a door reacting to the
+    // camera; this one is the reason the camera is going.
+    this.overview.setApproaching(chapter.id);
 
     this.camera.panTo(chapter.overview.x, chapter.overview.y);
     this.camera.zoomTo(chapter.camera.approachZoom);
@@ -600,9 +628,16 @@ export class World {
     const entry = world.entryFocus();
     this.engine.camera.setAnchorY(world.zoomAnchorY);
     this.camera.setBounds(world.bounds);
-    // A world is never shown smaller than it was composed to be seen. The map's
-    // floor is below 1 so eight worlds fit on screen at once; a shore's is not.
-    this.camera.setZoomRange(1, 3);
+    // The floor used to be 1, on the argument that a world is never shown
+    // smaller than it was composed to be seen. That held while every scene
+    // carried a hand-typed zoom; it stopped holding once the framing became a
+    // fraction of the frame the subject should fill (`SUBJECT_FRAME`). The
+    // three tall buildings — Planet01's tower, the BBIT spire, NatureTech's
+    // frame — are over 150 art pixels, and at the usual pixel grid there is no
+    // zoom at or above 1 that puts them inside the band with sky over the roof.
+    // So the floor is where those need it, and no lower. Nothing reaches it by
+    // hand: the wheel pans inside a world and never zooms.
+    this.camera.setZoomRange(CHAPTER_MIN_ZOOM, 3);
     this.camera.setWheelMode("pan");
     this.camera.zoomTo(chapter.camera.zoom);
     this.camera.snapTo(entry.x, entry.y);
@@ -620,6 +655,8 @@ export class World {
   private closeChapter(): void {
     this.chapters.close();
 
+    // Nothing is being entered any more, so every door on the map shuts.
+    this.overview.setApproaching(null);
     this.engine.camera.setAnchorY(null);
     this.showOverview(false);
     // Zoom before the snap, because `snapTo` takes the target zoom as read and

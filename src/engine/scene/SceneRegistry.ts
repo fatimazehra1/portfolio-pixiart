@@ -45,8 +45,8 @@ export const SCENES: readonly SceneConfig[] = [
     chapterId: "aptech",
     // The campus stands a little west of its plot's middle so the road runs
     // open past its gate; without the matching offset the frame is centred on
-    // the road instead of on the building. 62 art pixels at 2x fills ~50% of
-    // the frame height.
+    // the road instead of on the building. The zoom is not stated here any
+    // more — see `SUBJECT_FRAME`.
     camera: { offsetX: -28 },
     note: "Where the training happened. Finished, and finished well.",
   },
@@ -59,7 +59,7 @@ export const SCENES: readonly SceneConfig[] = [
     rendererId: "cottage",
     chapterId: "freelance",
     // Matches the cottage's own plotPosition, so the house — not the mailbox
-    // path east of it — sits in the middle of the frame. ~50% of frame height.
+    // path east of it — sits in the middle of the frame.
     camera: { offsetX: -26 },
     note: "Where the freelance years happened. Finished, and behind you.",
   },
@@ -79,10 +79,10 @@ export const SCENES: readonly SceneConfig[] = [
       weather: [{ kind: "haze", intensity: 0.12 }],
       reason: "Skyline landmark: haze at the status default would soften the silhouette the composition depends on.",
     },
-    // 504 world pixels of tower. At the default 2x it fills 137% of the frame
-    // and loses its rooftop classroom off the top — which is the one part of
-    // the building that says what it was for. Seen whole at 1x it fills 68%.
-    camera: { zoom: 1, offsetX: 11 },
+    // 168 art pixels of tower — the tallest thing on the shore, and the one
+    // that used to lose its rooftop classroom off the top of the frame. The
+    // zoom that fits it is solved per viewport now; see `SUBJECT_FRAME`.
+    camera: { offsetX: 11 },
     note: "Four floors of projects and a rooftop classroom.",
   },
   {
@@ -93,9 +93,8 @@ export const SCENES: readonly SceneConfig[] = [
     status: "past",
     rendererId: "vaultsys",
     chapterId: "vaulsys",
-    // Already centred on its plot, and 88 art pixels at 2x fills ~72% of the
-    // frame — the top of the band, which suits the one building on the shore
-    // that is meant to feel immovable.
+    // Already centred on its plot, so it asks for nothing: no offset, and the
+    // framing solved from its 88 art pixels like every other scene.
     note: "Disciplined, quiet, and deliberately the least animated place on the shore.",
   },
   {
@@ -117,10 +116,10 @@ export const SCENES: readonly SceneConfig[] = [
       ],
       reason: "Active construction: dust and welding sparks are the work, not weather. Layered over the active climate rather than replacing it.",
     },
-    // Same reason as Planet01: 456 pixels tall, and at 2x the crane and the
-    // unfinished top floors go off the top of the frame. Those floors *are* the
-    // building's argument.
-    camera: { zoom: 1, offsetX: -32 },
+    // The crane and the unfinished top floors *are* this building's argument,
+    // so the framing has to include them; see `SUBJECT_FRAME`. The offset
+    // centres the building rather than the site spread east of it.
+    camera: { offsetX: -32 },
     planting: { scale: 0.55 },
     note: "Current company. Half office, half construction site.",
   },
@@ -132,11 +131,8 @@ export const SCENES: readonly SceneConfig[] = [
     status: "active",
     rendererId: "bbit",
     chapterId: "bbit",
-    // The same reason Planet01 and NatureTech step back to 1x: 474 world
-    // pixels of tower at the default 2x loses the parapet, the clock and the
-    // crest off the top of the frame — and the whole argument of this building
-    // is the lit window *near the top* of it.
-    camera: { zoom: 1 },
+    // The whole argument of this building is the lit window *near the top* of
+    // it, so the parapet, the clock and the crest have to be in frame.
     note: "Still studying, still building. Upright; a spire among the low roofs.",
   },
   {
@@ -163,8 +159,8 @@ export const SCENES: readonly SceneConfig[] = [
         weather: [{ kind: "clear", intensity: 1 }],
       },
     ],
-    // 68 art pixels at 2x fills ~55% of the frame, and the offset centres the
-    // shed rather than the ground its lit corner overhangs.
+    // The offset centres the shed rather than the ground its lit corner
+    // overhangs.
     camera: { offsetX: -22 },
     note: "Side projects. Mostly quiet, with one bench still in use.",
   },
@@ -189,7 +185,7 @@ export const SCENES: readonly SceneConfig[] = [
       reason: "Ideas striking, not neglect: intermittent flashes over the active climate.",
     },
     // The tent's poles sit west of its plot's middle; the guy-ropes reach
-    // further east than west. 76 art pixels at 2x fills ~62% of the frame.
+    // further east than west.
     camera: { offsetX: -11 },
     planting: { scale: 1.35 },
     note: "Where things arrive unannounced. Overgrown because it is left open, not because it is left.",
@@ -210,12 +206,10 @@ export const SCENES: readonly SceneConfig[] = [
       palette: { localLight: 1.6, exposure: 1.08 },
       reason: "Always lit: the fixed point the coast is read against, at every hour and under every status.",
     },
-    // 112 art pixels of tower. At the default 2x it fills ~91% of the frame and
-    // loses its lamp room off the top — which is the only part of a lighthouse
-    // that matters. Seen whole at 1x it fills ~46%: under the band the other
-    // scenes sit in, but a lighthouse with its light cropped off is worse than
-    // a lighthouse that is a little small.
-    camera: { zoom: 1 },
+    // 112 art pixels of tower, and the lamp room at the top of them is the
+    // only part of a lighthouse that matters — it is never cropped. Its height
+    // is restated in `CoastChapter` because the lighthouse is not a Building
+    // and the framing pass cannot measure it.
     note: "The end of the journey, and the one thing visible from all of it.",
   },
 ];
