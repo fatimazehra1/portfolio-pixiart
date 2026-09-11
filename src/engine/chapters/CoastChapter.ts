@@ -6,6 +6,7 @@ import { Environment } from "../environment";
 import { Foreground } from "../foreground";
 import { Atmosphere } from "../atmosphere";
 import { Lighthouse } from "../lighthouse";
+import { AmbientLife } from "../life";
 import {
   AptechBuilding,
   BbitBuilding,
@@ -167,6 +168,7 @@ export class CoastChapter implements ChapterWorld {
   private readonly foreground: Foreground;
   private readonly atmosphere: Atmosphere;
   private readonly lighthouse: Lighthouse | null;
+  private readonly life: AmbientLife;
   private readonly buildings: BuildingManager;
   private readonly weather: WeatherSystem;
   private readonly dayNight: DayNightManager;
@@ -322,6 +324,19 @@ export class CoastChapter implements ChapterWorld {
       }
     }
 
+    /**
+     * Somebody walking the promenade, now and then. In the props layer, so
+     * they pass in front of the planting and behind the buildings, which is
+     * where a footpath is.
+     */
+    this.life = new AmbientLife({
+      worldWidth: this.worldWidth,
+      pixelScale,
+      anchors,
+      motionScale,
+    });
+    engine.layer("props").addChild(this.life.container);
+
     const structures = engine.layer("structures");
     if (this.lighthouse) structures.addChild(this.lighthouse.container);
     structures.addChild(this.buildings.container);
@@ -368,6 +383,7 @@ export class CoastChapter implements ChapterWorld {
     this.unbind.push(
       this.stars.bindTime(context.time),
       this.environment.bindLighting(grade),
+      grade.subscribe((state) => this.life.applyLighting(state)),
       this.buildings.bindLighting(grade),
       this.foreground.bindLighting(grade),
       this.weather.bindLighting(grade),
@@ -483,6 +499,7 @@ export class CoastChapter implements ChapterWorld {
     // it is now rather than to where it was a moment ago.
     const anchors = this.shoreAnchors();
     this.environment.resize(width, height, anchors);
+    this.life.resize(this.worldWidth, anchors, this.sky.pixelScale);
     this.lighthouse?.resize(width, height, anchors);
     this.buildings.resize(width, height, anchors);
     this.foreground.resize(width, height);
@@ -509,6 +526,7 @@ export class CoastChapter implements ChapterWorld {
     this.ocean.update(delta);
     this.ground.update(delta);
     this.environment.update(delta);
+    this.life.update(delta);
     this.lighthouse?.update(delta);
     this.buildings.update(delta);
     this.weather.update(delta);
@@ -534,6 +552,7 @@ export class CoastChapter implements ChapterWorld {
     this.environment.destroy();
     this.ground.destroy();
     this.ocean.destroy();
+    this.life.destroy();
     this.sky.destroy();
   }
 
