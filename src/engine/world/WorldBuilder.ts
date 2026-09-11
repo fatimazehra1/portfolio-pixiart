@@ -57,6 +57,19 @@ const OVERVIEW_MAX_ZOOM = 3;
 const CHAPTER_MIN_ZOOM = 2 / 3;
 
 /**
+ * The island a phone opens on, and how much of the screen it fills.
+ *
+ * NatureTech because it is the current chapter — the one a visitor who reads
+ * one thing should read — and the largest island on the map, so it is the one
+ * that survives being looked at on a five-inch screen.
+ */
+const MOBILE_HOME = "naturetech";
+const MOBILE_ISLAND_COVERAGE = 0.78;
+/** Room kept clear for the top bar and the bottom sheet, in CSS pixels. */
+const MOBILE_TOP_RESERVE = 56;
+const MOBILE_BOTTOM_RESERVE = 96;
+
+/**
  * When one world stops being a mark on a map and starts being a place.
  *
  * `EXPLORE_ZOOM` is how close you have to be at all; `EXPLORE_COVERAGE` is
@@ -99,6 +112,15 @@ export interface WorldOptions {
   onCat?: (event: CatEvent) => void;
   /** Asked, on every world build, which cats are already found. */
   catsFound?: () => readonly string[];
+  /**
+   * Build and frame for a phone.
+   *
+   * Two separate things behind one flag: a lighter scene (see
+   * `ChapterContext.mobile`) and a different map camera — one island readable
+   * and the rest reached by dragging, rather than all nine fitted to a screen
+   * where nine of anything is nine smudges. See `showOverview`.
+   */
+  mobile?: boolean;
   /** Which world to open on, if any. Defaults to the overview. */
   openChapter?: string;
   /**
@@ -183,6 +205,9 @@ export class World {
 
   /** Where on the map the camera sat before it flew into a world. */
   private overviewReturn = { x: 0, y: 0, zoom: 1 };
+
+  /** Whether the phone profile is on. Live, so a resize across 768 re-frames. */
+  private mobileValue = false;
 
   private constructor(engine: Engine, options: WorldOptions) {
     this.engine = engine;
@@ -275,6 +300,7 @@ export class World {
       onHotspot: (event) => this.options.onHotspot?.(event),
       onCat: (event) => this.options.onCat?.(event),
       catsFound: () => this.options.catsFound?.() ?? [],
+      mobile: () => this.mobileValue,
     });
 
     // --- The camera ----------------------------------------------------------
@@ -288,6 +314,7 @@ export class World {
       onMove: () => this.publishCamera(),
     });
 
+    this.mobileValue = options.mobile ?? false;
     this.camera.resize(width, height);
     this.showOverview(true);
 
@@ -503,6 +530,81 @@ export class World {
     return this.engine.camera.worldToScreen({ x, y });
   }
 
+  /**
+   * The map, on a phone: one island you can read, and eight to drag to.
+   *
+   * Fitting nine islands to a 375-pixel screen produces nine smudges and a map
+   * nobody can tell apart — the composition was drawn for a wide shot and a
+   * phone does not have one. So the opening frame is a *place* instead: the
+   * current chapter, at a zoom where its island and roughly one neighbour are
+   * legible, with the rest of the archipelago off the edges and reachable by
+   * dragging.
+   *
+   * Zoom is then locked to that one level. There is no pinch and no wheel
+   * zoom on a phone here by design — the two states are the map and an island,
+   * and a third, continuous one in between is a gesture to learn for no gain.
+   * The camera's own bounds are the archipelago, so the drag can reach every
+   * island and cannot lose them off the screen.
+   */
+  private showOverviewMobile(opening: boolean): void {
+    const bounds = universeBounds();
+    const home = chapterById(MOBILE_HOME) ?? this.universe.all[0];
+    const { width, height } = this.engine.viewport;
+
+    // Wide enough that the island and a slice of its neighbour are on screen,
+    // and never so close that the ground under the building leaves the frame.
+    const wanted = home
+      ? (width * MOBILE_ISLAND_COVERAGE) / (home.overview.radius * 2)
+      : this.fitZoom(bounds);
+    const zoom = Math.min(
+      OVERVIEW_MAX_ZOOM,
+      Math.max(this.gridZoom(this.fitZoom(bounds)), this.gridZoom(wanted))
+    );
+
+    // The reserves are the top bar and the sheet, not a sidebar. Expressed in
+    // world units at this zoom, like every other reserve here.
+    this.camera.setBounds({
+      x: bounds.x,
+      y: bounds.y - MOBILE_TOP_RESERVE / zoom,
+      width: bounds.width,
+      height: bounds.height + (MOBILE_TOP_RESERVE + MOBILE_BOTTOM_RESERVE) / zoom,
+    });
+    this.camera.setZoomRange(zoom, zoom);
+    this.camera.setWheelMode("pan");
+    this.overview.setPresence(1);
+    this.zoomedByHand = false;
+    this.framedZoomInputs = this.camera.zoomInputs;
+
+    if (opening && home) {
+      this.camera.zoomTo(zoom);
+      this.framedZoomInputs = this.camera.zoomInputs;
+      // The island sits a little below the middle, because the top bar is the
+      // only furniture that overlaps the map and it is at the top.
+      this.camera.snapTo(
+        home.overview.x,
+        home.overview.y + (MOBILE_TOP_RESERVE - MOBILE_BOTTOM_RESERVE) / (2 * zoom)
+      );
+      this.publishCamera();
+    }
+
+    void height;
+  }
+
+  /**
+   * Turn the phone profile on or off at runtime.
+   *
+   * Live rather than fixed at construction because the shell around this
+   * switches at 768px and the camera has to agree with it. A world already
+   * built keeps the sprite counts it was built with — a real phone never
+   * crosses that line, and a desktop browser being dragged narrower is a
+   * developer, not a visitor.
+   */
+  setMobile(mobile: boolean): void {
+    if (mobile === this.mobileValue) return;
+    this.mobileValue = mobile;
+    if (!this.chapters.isOpen) this.showOverview(true);
+  }
+
   /** Re-fit everything to a new viewport, in CSS pixels. */
   resize(size: Size): void {
     if (this.destroyed) return;
@@ -697,6 +799,11 @@ export class World {
 
   /** Put the camera and the map back into overview mode. */
   private showOverview(opening: boolean): void {
+    if (this.mobileValue) {
+      this.showOverviewMobile(opening);
+      return;
+    }
+
     const bounds = universeBounds();
     const zoom = this.fitZoom(bounds);
 

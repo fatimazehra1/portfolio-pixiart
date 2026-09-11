@@ -37,6 +37,7 @@ export default function CatBucket() {
   const caught = useWorldStore((s) => s.caught);
   const clearCaught = useWorldStore((s) => s.clearCaught);
   const restoreCats = useWorldStore((s) => s.restoreCats);
+  const isMobile = useWorldStore((s) => s.isMobile);
 
   const bucket = useRef<HTMLButtonElement | null>(null);
 
@@ -79,15 +80,20 @@ export default function CatBucket() {
     <>
       <FlyingCat caught={caught} target={bucket} />
 
-      <button
+      <motion.button
         ref={bucket}
         type="button"
         onClick={() => setOpen(!open)}
+        // The wiggle when one lands. Keyed on the catch, so it replays for the
+        // second cat as well as the first, and it is the only feedback the
+        // bucket gives that is not the fill rising.
+        key="bucket"
+        animate={caught ? { rotate: [0, -7, 6, -4, 0] } : { rotate: 0 }}
+        transition={{ duration: 0.45, ease: "easeOut" }}
         // The only words this feature says unprompted, and only on hover.
         title="There are cats around here."
         aria-label="There are cats around here."
         aria-expanded={open}
-        // `motion` on the wrapper so the bucket can wiggle when one lands.
         className="ui-panel ui-button relative flex h-[2.625rem] w-[2.625rem] cursor-pointer items-end justify-center overflow-hidden p-0 transition-colors"
       >
         {/* The fill: a flat band rising from the bottom, no gradient. It is
@@ -100,10 +106,12 @@ export default function CatBucket() {
         <span className="relative mb-[0.35rem]" style={{ color: "var(--ui-text)" }}>
           <BucketMark filled={found.length > 0} />
         </span>
-      </button>
+      </motion.button>
 
       <AnimatePresence>
-        {open && <CatPanel found={found} onClose={() => setOpen(false)} />}
+        {open && (
+          <CatPanel found={found} below={isMobile} onClose={() => setOpen(false)} />
+        )}
       </AnimatePresence>
     </>
   );
@@ -118,17 +126,28 @@ export default function CatBucket() {
  * and the moment it has one, a visitor who does not want to play it is being
  * shown something unfinished.
  */
-function CatPanel({ found, onClose }: { found: readonly string[]; onClose: () => void }) {
+function CatPanel({
+  found,
+  below,
+  onClose,
+}: {
+  found: readonly string[];
+  /** Open downward: the bucket is in the top bar on a phone, not the corner. */
+  below: boolean;
+  onClose: () => void;
+}) {
   const word = found.length === 1 ? "cat" : "cats";
 
   return (
     <motion.div
       key="cats"
-      initial={{ opacity: 0, y: 8 }}
+      initial={{ opacity: 0, y: below ? -8 : 8 }}
       animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, y: 8 }}
+      exit={{ opacity: 0, y: below ? -8 : 8 }}
       transition={{ duration: 0.2, ease: "easeOut" }}
-      className="ui-panel ui-scroll absolute right-0 bottom-[3.25rem] max-h-[60dvh] w-[17rem] overflow-y-auto p-3 font-sans"
+      className={`ui-panel ui-scroll absolute right-0 max-h-[60dvh] w-[15rem] max-w-[calc(100vw-1.5rem)] overflow-y-auto p-3 font-sans ${
+        below ? "top-[3.25rem]" : "bottom-[3.25rem]"
+      }`}
       role="dialog"
       aria-label="Cats"
     >

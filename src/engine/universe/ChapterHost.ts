@@ -27,6 +27,8 @@ export interface ChapterHostOptions {
   onCat?: (event: CatEvent) => void;
   /** Asked on every build which cats are already found. */
   catsFound?: () => readonly string[];
+  /** Asked on every build whether to build for a phone. */
+  mobile?: () => boolean;
 }
 
 /**
@@ -58,6 +60,7 @@ export class ChapterHost {
   private readonly onHotspot: ((event: HotspotEvent) => void) | undefined;
   private readonly onCat: ((event: CatEvent) => void) | undefined;
   private readonly catsFound: (() => readonly string[]) | undefined;
+  private readonly mobile: (() => boolean) | undefined;
   private readonly timeOfDay: TimeOfDay | undefined;
   private readonly builders: Readonly<Record<InteriorKind, ChapterBuilder>>;
 
@@ -72,6 +75,7 @@ export class ChapterHost {
     this.onHotspot = options.onHotspot;
     this.onCat = options.onCat;
     this.catsFound = options.catsFound;
+    this.mobile = options.mobile;
     this.timeOfDay = options.timeOfDay;
     this.builders = options.builders;
   }
@@ -120,6 +124,7 @@ export class ChapterHost {
       // Read at build time rather than captured once: a visitor who finds a
       // cat, leaves and comes back must not be offered it again.
       catsFound: this.catsFound?.(),
+      mobile: this.mobile?.() ?? false,
     });
 
     this.world = world;

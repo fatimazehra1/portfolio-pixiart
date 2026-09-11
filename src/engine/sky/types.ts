@@ -148,4 +148,13 @@ export interface SkySystemOptions {
    * drift stops and time-of-day changes become instant, the sky stays beautiful.
    */
   motionScale?: number;
+  /**
+   * How many shapes each cloud band is built from, as a multiplier.
+   *
+   * 1 is the composed sky. Below 1 is the same sky with fewer puffs in it,
+   * which is what a phone gets: clouds are the most numerous sprite on screen
+   * and the cheapest thing to have less of without the picture changing
+   * character. Never below one shape a band, or a band stops existing.
+   */
+  cloudDetail?: number;
 }

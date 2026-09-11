@@ -57,6 +57,10 @@ export default function PixiCanvas() {
         onHotspot: setHotspot,
         onCat: (event) => findCat(event.id, event.name, event.x, event.y),
         catsFound: () => useWorldStore.getState().catsFound,
+        // The opening frame has to be right on the first frame, so the profile
+        // is passed in rather than set afterwards. `WorldStage` keeps it in
+        // step from there.
+        mobile: useWorldStore.getState().isMobile,
         onProgress: setLoadProgress,
       });
 
@@ -75,6 +79,9 @@ export default function PixiCanvas() {
       // skipped at runtime.
       if (process.env.NODE_ENV !== "production") {
         (window as unknown as Record<string, unknown>).__world = instance;
+        // The store too, so the narrow shell can be driven without a narrow
+        // window — see the note in `WorldStage` about testing it.
+        (window as unknown as Record<string, unknown>).__store = useWorldStore;
       }
       host.appendChild(instance.canvas);
       setViewport(instance.viewport);

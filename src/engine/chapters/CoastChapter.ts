@@ -124,6 +124,18 @@ const LIGHTHOUSE_ART_HEIGHT = 112;
 const LIGHTHOUSE_ART_WIDTH = 22;
 
 /**
+ * What a phone gets less of.
+ *
+ * Clouds and weather particles are the two things on screen there are hundreds
+ * of, and they are the two a mid-range Android spends its frame budget on. Half
+ * the puffs and half the drops is the same sky and the same rain with half the
+ * sprites; nothing about the composition changes, which is the test any
+ * performance cap has to pass here.
+ */
+const MOBILE_CLOUD_DETAIL = 0.5;
+const MOBILE_WEATHER_DENSITY = 0.45;
+
+/**
  * A chapter world built as a stretch of coast.
  *
  * # What this is, and what it used to be
@@ -210,7 +222,14 @@ export class CoastChapter implements ChapterWorld {
     // The sky is the one thing outside the camera. It is not a place: it is what
     // you see when you look away from the town, and a sky that slid off screen
     // as you walked would be a painted backdrop on wheels.
-    this.sky = new SkySystem({ width, height, timeOfDay, motionScale });
+    const mobile = context.mobile ?? false;
+    this.sky = new SkySystem({
+      width,
+      height,
+      timeOfDay,
+      motionScale,
+      cloudDetail: mobile ? MOBILE_CLOUD_DETAIL : 1,
+    });
     this.fitCelestialField(width);
     const pixelScale = this.sky.pixelScale;
 
@@ -337,7 +356,10 @@ export class CoastChapter implements ChapterWorld {
       worldWidth: this.worldWidth,
       pixelScale,
       anchors,
-      motionScale,
+      // Nothing crosses on a phone. A walker is the most optional thing in the
+      // world — it exists so a scene is not a diorama, and on a screen this
+      // size the scene is barely on it long enough to read as one either way.
+      motionScale: mobile ? 0 : motionScale,
     });
     engine.layer("props").addChild(this.life.container);
 
@@ -362,7 +384,13 @@ export class CoastChapter implements ChapterWorld {
     structures.addChild(this.buildings.container);
     structures.addChild(this.cats.front);
 
-    this.weather = new WeatherSystem({ width, height, pixelScale, motionScale });
+    this.weather = new WeatherSystem({
+      width,
+      height,
+      pixelScale,
+      motionScale,
+      densityScale: mobile ? MOBILE_WEATHER_DENSITY : 1,
+    });
     engine.layer("weather").addChild(this.weather.container);
 
     this.foreground = new Foreground({

@@ -73,6 +73,15 @@ export interface ChapterContext {
    */
   catsFound?: readonly string[];
   onCat?: (event: CatEvent) => void;
+  /**
+   * Build for a phone: fewer clouds, thinner weather, nothing crossing.
+   *
+   * A quality profile rather than a layout flag. Nothing about *where* things
+   * are changes — a chapter world is the same place at 375px as at 1920 — only
+   * how many sprites it is made of. The layout half of mobile lives entirely
+   * on the React side, which is where layout belongs.
+   */
+  mobile?: boolean;
 }
 
 /** One cat, the moment it is clicked. Coordinates are this world's own pixels. */

@@ -185,6 +185,7 @@ export class SkySystem {
       timeOfDay = DEFAULT_TIME_OF_DAY,
       pixelHeight = DEFAULT_PIXEL_HEIGHT,
       horizon = DEFAULT_HORIZON,
+      cloudDetail = 1,
       seed = DEFAULT_SEED,
       motionScale = 1,
     } = options;
@@ -207,7 +208,16 @@ export class SkySystem {
     this.cloudLayers = CLOUD_LAYERS.map(
       // Offsetting the seed per layer keeps the three bands from generating the
       // same shapes in the same places.
-      (config, i) => new CloudLayer(config, seed + i * 977)
+      (config, i) =>
+        new CloudLayer(
+          // Thinned rather than dropped: three bands with fewer puffs each is
+          // still a sky with depth in it, where two bands would be a sky with
+          // a layer missing. See `cloudDetail`.
+          cloudDetail >= 1
+            ? config
+            : { ...config, shapes: Math.max(1, Math.round(config.shapes * cloudDetail)) },
+          seed + i * 977
+        )
     );
     this.sun = new CelestialBody({ kind: "sun", ...SUN, seed: seed + 1 });
     this.moon = new CelestialBody({ kind: "moon", ...MOON, seed: seed + 2 });

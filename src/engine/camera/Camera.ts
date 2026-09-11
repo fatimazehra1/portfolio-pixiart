@@ -397,9 +397,15 @@ export class Camera {
    * no sudden jumps.
    */
   snapTo(x: number, y: number = this.position.y): void {
+    // The zoom lands *first*, and that ordering is load-bearing. `panTo`
+    // clamps the requested point against how much world is on screen, which is
+    // a function of the zoom — so panning before the zoom arrives clamps
+    // against the zoom being left behind. A caller that zooms in and snaps to
+    // a point near the edge would be clamped as though it were still zoomed
+    // out, and land somewhere short of where it asked for.
+    this.zoom = this.targetZoom;
     this.panTo(x, y);
     this.position = { ...this.target };
-    this.zoom = this.targetZoom;
     this.apply();
   }
 

@@ -117,6 +117,18 @@ export interface WorldState {
    */
   catsFound: readonly string[];
   catsOpen: boolean;
+
+  /**
+   * Whether the narrow shell is on.
+   *
+   * Not a breakpoint that components each re-derive: one media query, one
+   * value, and every piece of interface reads the same answer. The engine is
+   * told separately (`World.setMobile`) because what it changes — the map
+   * camera and the sprite counts — is not layout.
+   */
+  isMobile: boolean;
+  /** Whether the full-screen mobile menu is open. */
+  menuOpen: boolean;
   /**
    * The cat just caught, for the label and the arc toward the bucket.
    *
@@ -147,6 +159,8 @@ export interface WorldState {
   /** Clear the flying cat once its arc has landed. */
   clearCaught: () => void;
   setCatsOpen: (open: boolean) => void;
+  setMobile: (isMobile: boolean) => void;
+  setMenuOpen: (menuOpen: boolean) => void;
 }
 
 export const useWorldStore = create<WorldState>((set) => ({
@@ -175,6 +189,8 @@ export const useWorldStore = create<WorldState>((set) => ({
   catsFound: [],
   catsOpen: false,
   caught: null,
+  isMobile: false,
+  menuOpen: false,
 
   setReady: (isReady) => set({ isReady }),
   setLoadProgress: (loadProgress, loadLabel) => set({ loadProgress, loadLabel }),
@@ -218,6 +234,9 @@ export const useWorldStore = create<WorldState>((set) => ({
     ),
   clearCaught: () => set({ caught: null }),
   setCatsOpen: (catsOpen) => set({ catsOpen }),
+  // Leaving the narrow shell closes anything only the narrow shell can open.
+  setMobile: (isMobile) => set((p) => (p.isMobile === isMobile ? p : { isMobile, menuOpen: false })),
+  setMenuOpen: (menuOpen) => set({ menuOpen }),
   setHotspot: (event) =>
     set((previous) => {
       const at = event.spot ? { label: event.spot.label, section: event.spot.section, x: event.x, y: event.y } : null;

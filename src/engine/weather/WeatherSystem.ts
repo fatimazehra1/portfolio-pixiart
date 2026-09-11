@@ -24,6 +24,14 @@ export interface WeatherSystemOptions {
   seed?: number;
   /** Per-kind profile overrides, for tuning. */
   profiles?: Partial<Record<WeatherKind, Partial<WeatherProfile>>>;
+  /**
+   * Multiplier on every kind's particle count. 1 is the authored weather.
+   *
+   * The one knob a slower device needs: rain, dust and embers are counted from
+   * the field's area, so halving this halves the sprite count in the heaviest
+   * layer on screen without changing what the weather *is*.
+   */
+  densityScale?: number;
 }
 
 export const DEFAULT_SEED = 0x77ea;
@@ -122,9 +130,15 @@ export class WeatherSystem {
       "Weather"
     );
 
+    const densityScale = Math.max(0, options.densityScale ?? 1);
+
     WEATHER_ORDER.forEach((kind, index) => {
+      const authored = { ...WEATHER_PROFILES[kind], ...options.profiles?.[kind] };
       const layer = new WeatherLayer({
-        profile: { ...WEATHER_PROFILES[kind], ...options.profiles?.[kind] },
+        profile:
+          densityScale === 1
+            ? authored
+            : { ...authored, density: authored.density * densityScale },
         texture: this.texture,
         veilTexture: this.veilTexture,
         // Offset per kind, so fog and dust don't sit on identical lattices.
