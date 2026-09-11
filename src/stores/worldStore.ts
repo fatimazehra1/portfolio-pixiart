@@ -81,6 +81,20 @@ export interface WorldState {
   /** How far into a world we are, 0 on the map and 1 inside. */
   approach: number;
 
+  /**
+   * Which detail section of the plaque is open, by title. Null is all closed.
+   *
+   * In the store rather than in `InfoCard`'s own state because two things open
+   * it: the visitor clicking a heading, and the visitor clicking a hotspot on
+   * the building itself. A hotspot is drawn by the engine and reaches React
+   * through here, which is the same route every other engine event takes.
+   *
+   * Keyed by the section's title because that is what both ends already have —
+   * the data has no ids, and inventing a pair of them so a click could be
+   * routed would be two more things to keep in agreement.
+   */
+  openSection: string | null;
+
   setReady: (value: boolean) => void;
   setLoadProgress: (progress: number, label: string) => void;
   setViewport: (size: Size) => void;
@@ -91,6 +105,8 @@ export interface WorldState {
   setTimeSnapshot: (snapshot: TimeSnapshot) => void;
   /** Mirror the universe state into the store. Driven by UniverseDirector. */
   setUniverse: (state: UniverseState) => void;
+  /** Open one detail section, or pass null to close whatever is open. */
+  setOpenSection: (title: string | null) => void;
 }
 
 export const useWorldStore = create<WorldState>((set) => ({
@@ -114,6 +130,7 @@ export const useWorldStore = create<WorldState>((set) => ({
   chapterId: null,
   hoveredChapterId: null,
   approach: 0,
+  openSection: null,
 
   setReady: (isReady) => set({ isReady }),
   setLoadProgress: (loadProgress, loadLabel) => set({ loadProgress, loadLabel }),
@@ -131,10 +148,16 @@ export const useWorldStore = create<WorldState>((set) => ({
       timePaused: snapshot.paused,
     }),
   setUniverse: (state) =>
-    set({
+    set((previous) => ({
       view: state.mode,
       chapterId: state.chapter?.id ?? null,
       hoveredChapterId: state.hovered?.id ?? null,
       approach: state.approach,
-    }),
+      // A different world is a different plaque, so whatever was open on the
+      // last one closes with it. Carrying it over would open a section by
+      // title on a chapter that merely reuses the word.
+      openSection:
+        (state.chapter?.id ?? null) === previous.chapterId ? previous.openSection : null,
+    })),
+  setOpenSection: (openSection) => set({ openSection }),
 }));
