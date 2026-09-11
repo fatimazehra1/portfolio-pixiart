@@ -24,22 +24,44 @@
   --foreground: var(--ink);
 
   /*
-   * Interface tokens (DESIGN.md §UI Style — Interface rules).
+   * Interface tokens.
    *
-   * Deliberately separate from the world palette above. Those colours are
-   * materials being lit by a time of day; these are surfaces in an interface
-   * that has no time of day and must stay legible over every one of them. The
-   * interface sits above pixel art of every brightness, so its panels carry
-   * their own dark ground rather than borrowing the world's.
+   * Drawn *from* the world palette rather than beside it. The interface used
+   * to be a translucent blurred sheet with rounded corners — a modern web card
+   * sitting on a pixel world and belonging to neither. These are the colours of
+   * the night sky and the brass on the lighthouse, at full opacity: a panel
+   * here is a painted board, not a pane of frosted glass.
+   *
+   * Opacity is the one thing that went up across the board. Every text tone is
+   * now a solid colour rather than white at a third strength, because a hard
+   * edge and a flat ground only read as deliberate if what is inside them is
+   * legible at a glance.
    */
-  --ui-panel: rgb(14 18 26 / 0.72);
-  --ui-panel-strong: rgb(14 18 26 / 0.9);
-  --ui-border: rgb(255 255 255 / 0.1);
-  --ui-border-strong: rgb(255 255 255 / 0.18);
-  --ui-text: rgb(238 241 246 / 0.96);
-  --ui-muted: rgb(238 241 246 / 0.58);
-  --ui-faint: rgb(238 241 246 / 0.34);
-  --ui-connector: rgb(255 255 255 / 0.28);
+  --ui-panel: #101a2b;
+  --ui-panel-strong: #0a1220;
+  /** The hard outer edge every panel is cut with. */
+  --ui-edge: #06090f;
+  --ui-border: #35506f;
+  --ui-border-strong: var(--accent);
+  --ui-text: #f2ead8;
+  --ui-muted: #bfcbdb;
+  --ui-faint: #8ea0ba;
+  --ui-connector: rgb(224 164 88 / 0.6);
+
+  /*
+   * The plaque: parchment, brass and ink.
+   *
+   * The one surface in the interface that is an object in the world rather
+   * than a layer over it — see `.ui-plaque`. It gets its own three tones
+   * because ink on parchment is the inverse of everything above and reusing
+   * `--ui-text` there would put pale grey on cream.
+   */
+  --plaque-paper: #efe2c4;
+  --plaque-ink: #241c12;
+  --plaque-muted: #5d4c33;
+  --plaque-line: #a98a58;
+  --plaque-frame: #7a5a30;
+  --plaque-brass: #c9913f;
 
   /* Status accents. One per ChapterStatus. */
   --ui-current: #7ddc9a;
@@ -98,14 +120,121 @@ canvas {
   pointer-events: auto;
 }
 
-/* A panel, per DESIGN.md §UI Style — Interface rules. */
+/*
+ * A panel: a hard-edged board in the world's own palette.
+ *
+ * Three rules, and they are the whole of the pixel look — square corners, a
+ * two-colour hard border (a lit inner line inside a near-black outer cut, the
+ * way a sprite is outlined), and an offset shadow with no blur in it. Nothing
+ * here is translucent and nothing is filtered: a blur is a modern-interface
+ * effect that no amount of border styling can survive sitting next to.
+ */
 .ui-panel {
   background: var(--ui-panel);
-  border: 1px solid var(--ui-border);
-  border-radius: 0.75rem;
-  backdrop-filter: blur(12px);
-  box-shadow: 0 8px 28px rgb(0 0 0 / 0.32);
+  border: 2px solid var(--ui-border);
+  border-radius: 0;
+  box-shadow:
+    0 0 0 2px var(--ui-edge),
+    6px 6px 0 0 rgb(6 9 15 / 0.45);
   color: var(--ui-text);
+}
+
+/** A panel you can act on. The hover state is a colour, never a glow. */
+.ui-button:hover {
+  background: #182640;
+  border-color: var(--ui-border-strong);
+}
+
+/**
+ * A world's name label, while the pointer is on that world.
+ *
+ * The same brightening the button gives itself on hover, applied from the
+ * outside: the island, its label and its card are one target, so pointing at
+ * the *island* has to light the label as surely as pointing at the label does.
+ * Written by the overlay's placement loop rather than by React, because that
+ * loop already owns everything else about where a label is and how present it
+ * is (see `ChapterOverlay`).
+ */
+.ui-label-on {
+  background: #182640;
+  border-color: var(--ui-border-strong);
+}
+
+/**
+ * The plaque — the scene panel, presented as a thing in the world.
+ *
+ * A visitor standing inside one of these places is looking at pixel art of a
+ * workshop or a lighthouse, and what the place *is* should be written on
+ * something that could plausibly be nailed to its wall: brass header, paper
+ * body, a dark frame round the outside. It is the same information the old
+ * floating card carried and none of the same furniture.
+ */
+.ui-plaque {
+  background: var(--plaque-paper);
+  border: 2px solid var(--plaque-frame);
+  border-radius: 0;
+  box-shadow:
+    0 0 0 2px var(--ui-edge),
+    inset 0 0 0 1px #fdf6e3,
+    6px 6px 0 0 rgb(6 9 15 / 0.45);
+  color: var(--plaque-ink);
+}
+
+/** The plaque's brass header band. Carries the title and the dates. */
+.ui-plaque-head {
+  background: var(--plaque-brass);
+  border-bottom: 2px solid var(--plaque-frame);
+  color: #241a10;
+}
+
+/**
+ * A marker, in place of a bullet or a status dot.
+ *
+ * Eight pixels square with a two-pixel wall, filled when it is the thing you
+ * are on. Colour comes from `currentColor`, so a caller sets one property and
+ * the marker, its fill and anything beside it stay in agreement.
+ */
+.pixel-mark {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  flex: none;
+  box-shadow: inset 0 0 0 2px currentColor;
+}
+
+.pixel-mark-on {
+  background: currentColor;
+}
+
+/** A small square bullet, for a list of facts. */
+.pixel-dot {
+  display: inline-block;
+  width: 4px;
+  height: 4px;
+  flex: none;
+  background: currentColor;
+}
+
+/*
+ * Square scrollbars. A rounded translucent thumb inside a hard-edged board is
+ * the one piece of the old interface a border cannot cover.
+ */
+.ui-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: var(--ui-border) transparent;
+}
+
+.ui-scroll::-webkit-scrollbar {
+  width: 8px;
+}
+
+.ui-scroll::-webkit-scrollbar-thumb {
+  background: var(--ui-border);
+  border-radius: 0;
+}
+
+.ui-scroll::-webkit-scrollbar-track {
+  background: transparent;
 }
 
 /*
