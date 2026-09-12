@@ -246,3 +246,6 @@ canvas {
   image-rendering: auto;
 }
 
+.nl-badge{
+  display: none !important;
+}
