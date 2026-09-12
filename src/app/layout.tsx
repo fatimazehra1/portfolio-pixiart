@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Inter, Pixelify_Sans } from "next/font/google";
 import "./globals.css";
 import { PROFILE, SITE } from "@/data/chapters";
+import RemoveNetlifyBadge from "@/components/RemoveNetlifyBadge";
 
 // DESIGN.md §Fonts — Pixelify Sans for titles/dialogue, Inter for descriptions.
 const pixelify = Pixelify_Sans({
@@ -80,7 +81,10 @@ export default function RootLayout({
       lang="en"
       className={`${pixelify.variable} ${inter.variable} h-full antialiased`}
     >
-      <body className="min-h-full">{children}</body>
+      <body className="min-h-full">
+  <RemoveNetlifyBadge />
+  {children}
+</body>
     </html>
   );
 }
