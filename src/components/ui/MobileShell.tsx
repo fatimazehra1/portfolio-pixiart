@@ -12,6 +12,7 @@ import { useWorldStore } from "@/stores/worldStore";
 import CatBucket from "./CatBucket";
 import RecruiterPath from "./RecruiterPath";
 import SkyControls from "./SkyControls";
+import GuestbookButton from "./GuestbookButton";
 
 /**
  * The whole interface, on a phone. Designed for the phone first, not the
@@ -95,6 +96,7 @@ function TopBar({ onMenu, menuOpen }: { onMenu: () => void; menuOpen: boolean })
 
       <div className="flex items-center gap-1.5">
         <SkyControls placement="down" />
+        <GuestbookButton placement="down" />
         <div className="relative flex">
           <CatBucket />
         </div>

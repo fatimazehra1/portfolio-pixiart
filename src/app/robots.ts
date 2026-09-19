@@ -10,7 +10,8 @@ import { SITE } from "@/data/chapters";
  */
 export default function robots(): MetadataRoute.Robots {
   return {
-    rules: [{ userAgent: "*", allow: "/" }],
+    // The guestbook admin is private; the API is not a page.
+    rules: [{ userAgent: "*", allow: "/", disallow: ["/guestbook/", "/api/"] }],
     sitemap: `${SITE.url}/sitemap.xml`,
     host: SITE.url,
   };

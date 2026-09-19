@@ -10,6 +10,7 @@ import { HotspotCallout } from "@/components/ui/BuildingSpots";
 import MobileSheet from "@/components/ui/MobileSheet";
 import MobileShell from "@/components/ui/MobileShell";
 import ContactButton from "@/components/ui/ContactButton";
+import GuestbookButton from "@/components/ui/GuestbookButton";
 import ResumeLink from "@/components/ui/ResumeLink";
 import SkyControls from "@/components/ui/SkyControls";
 import SoundToggle from "@/components/ui/SoundToggle";
@@ -102,6 +103,7 @@ export default function WorldStage() {
               </div>
               <SoundToggle />
               <SkyControls placement="up" />
+              <GuestbookButton placement="up" />
               <ContactButton />
               <ResumeLink />
             </div>

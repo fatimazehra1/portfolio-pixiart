@@ -9,6 +9,7 @@ import { panelFor } from "@/data/panelContent";
 import ScreenshotGallery from "./ScreenshotGallery";
 import { PanelBody } from "./contentBlocks";
 import { SpotChips } from "./BuildingSpots";
+import Guestbook from "./Guestbook";
 
 /**
  * One scene's information: what it was, when, in what, and what came out of
@@ -273,6 +274,14 @@ export default function InfoCard({
               </li>
             ))}
           </ul>
+        )}
+
+        {/* The lighthouse keeps the guestbook: the place visitors end up is
+            the place to leave a mark. The same one the corner button opens. */}
+        {isContact && (
+          <div className="mt-4 border-t-2 pt-3" style={{ borderColor: "var(--plaque-line)" }}>
+            <Guestbook tone="paper" />
+          </div>
         )}
       </div>
       )}
