@@ -8,6 +8,7 @@ import { WRITTEN_PAGES } from "@/data/pages";
 import { SECRET_CAT } from "@/engine/cats";
 import { getWorld } from "@/components/world/worldHandle";
 import { useWorldStore } from "@/stores/worldStore";
+import { RECRUITER } from "@/data/recruiter";
 
 /**
  * The hub's own panel: who this is, the shape of the career in three numbers,
@@ -37,11 +38,29 @@ const STATUS_COLOR: Record<string, string> = {
   ongoing: "var(--ui-ongoing)",
 };
 
+/**
+ * The islands, without the lighthouse. Contact has its own button in the
+ * bottom-right corner on every screen, and a list of places reads cleaner
+ * without one that is not a chapter.
+ */
+const ISLANDS = CHAPTER_TIMELINE.filter((content) => content.id !== "lighthouse");
+
+/** One word per stat, so the three labels sit on one line and the numbers align. */
+const STAT_LABEL: Record<string, string> = {
+  Years: "Years",
+  "Projects shipped": "Shipped",
+  "Client tenants": "Tenants",
+};
+
+/** Resume is its own button in the corner; the footer keeps the rest. */
+const FOOTER_PAGES = WRITTEN_PAGES.filter((page) => page.href !== "/resume");
+
 export default function Sidebar() {
   const isReady = useWorldStore((s) => s.isReady);
   const view = useWorldStore((s) => s.view);
   const chapterId = useWorldStore((s) => s.chapterId);
   const findCat = useWorldStore((s) => s.findCat);
+  const setTimelineOpen = useWorldStore((s) => s.setTimelineOpen);
 
   /**
    * The secret cat: five presses on the name.
@@ -70,8 +89,7 @@ export default function Sidebar() {
   const go = (id: string) => {
     const world = getWorld();
     if (!world) return;
-    if (world.state.mode === "inside") world.leaveChapter();
-    world.enterChapter(id);
+    world.goToChapter(id);
   };
 
   return (
@@ -83,10 +101,11 @@ export default function Sidebar() {
           animate={{ opacity: 1, x: 0 }}
           exit={{ opacity: 0, x: -16 }}
           transition={{ duration: 0.3, ease: "easeOut" }}
-          className="ui-panel ui-scroll absolute top-5 bottom-5 left-5 flex w-64 flex-col gap-4 overflow-y-auto p-4 font-sans"
+          className="ui-panel ui-scroll absolute top-5 left-5 flex max-h-[calc(100dvh-2.5rem)] w-64 flex-col gap-3.5 overflow-y-auto p-4 font-sans"
           aria-label="Career overview"
         >
-          <div>
+          {/* Who. Three short lines and nothing that wraps. */}
+          <header>
             {/*
               The name is the closest thing this site has to a logo, which is
               why the one cat that belongs to no world is behind it. Pressing
@@ -102,51 +121,47 @@ export default function Sidebar() {
             >
               {PROFILE.name}
             </p>
-            <p className="mt-2 text-[0.8125rem] leading-snug" style={{ color: "var(--ui-muted)" }}>
-              {PROFILE.tagline}
+            <p className="mt-2 text-[0.75rem] leading-none" style={{ color: "var(--accent)" }}>
+              {PROFILE.jobTitle}
             </p>
-            {/* What to do with the map you are looking at. The tagline is the
-                positioning; this is the instruction. */}
-            <p className="mt-1.5 text-[0.75rem] leading-snug" style={{ color: "var(--ui-faint)" }}>
-              {PROFILE.subline}
+            <p className="mt-1.5 text-[0.75rem] leading-none" style={{ color: "var(--ui-faint)" }}>
+              {RECRUITER.nowShort}
             </p>
-          </div>
+          </header>
 
+          {/* The numbers, as one even row: value over a one word label. */}
           <dl
-            className="grid grid-cols-3 gap-2 border-y-2 py-3"
+            className="grid grid-cols-3 border-y-2 py-2.5"
             style={{ borderColor: "var(--ui-border)" }}
           >
-            {stats.map((stat) => (
-              <div key={stat.label}>
-                <dt
-                  className="text-[0.625rem] tracking-wider uppercase"
-                  style={{ color: "var(--ui-faint)" }}
-                >
-                  {stat.label}
-                </dt>
+            {stats.map((stat, index) => (
+              <div
+                key={stat.label}
+                className={`flex flex-col items-center ${index > 0 ? "border-l-2" : ""}`}
+                style={{ borderColor: "var(--ui-border)" }}
+              >
+                {/* Figures stay in the text face. Pixelify's 5 and its S are a
+                    stroke apart at this size. */}
                 <dd
-                  // Figures stay in the text face. Pixelify's 5 and its S are a
-                  // stroke apart at this size, and "3.5+ years" is a claim that has
-                  // to be read correctly the first time.
-                  className="mt-0.5 text-[1.0625rem] leading-tight font-semibold tabular-nums"
-                  style={{ color: "var(--accent)" }}
+                  className="order-1 text-[1rem] leading-none font-semibold tabular-nums"
+                  style={{ color: "var(--ui-text)" }}
                 >
                   {stat.value}
                 </dd>
+                <dt
+                  className="order-2 mt-1 text-[0.625rem] leading-none tracking-wider uppercase"
+                  style={{ color: "var(--ui-faint)" }}
+                >
+                  {STAT_LABEL[stat.label] ?? stat.label}
+                </dt>
               </div>
             ))}
           </dl>
 
-          <div>
-            <p
-              className="font-display mb-1.5 text-[0.8125rem] tracking-wider uppercase"
-              style={{ color: "var(--ui-faint)" }}
-            >
-              Scenes
-            </p>
-
-            <ol className="flex flex-col">
-              {CHAPTER_TIMELINE.map((content) => {
+          {/* The sidebar's real job: the way around the map. */}
+          <nav aria-label="Islands">
+            <ol className="-mx-1 flex flex-col">
+              {ISLANDS.map((content) => {
                 const active = chapterId === content.id;
                 const color = STATUS_COLOR[content.status] ?? "var(--ui-faint)";
                 return (
@@ -156,12 +171,9 @@ export default function Sidebar() {
                       onClick={() => go(content.id)}
                       onPointerEnter={() => getWorld()?.universe.hover(content.id)}
                       onPointerLeave={() => getWorld()?.universe.hover(null)}
-                      className="flex w-full cursor-pointer items-center gap-2.5 border-2 border-transparent px-2 py-1.5 text-left transition-colors hover:border-[var(--ui-border)] hover:bg-[#182640]"
+                      className="flex h-8 w-full cursor-pointer items-center gap-2.5 border-2 border-transparent px-2 text-left transition-colors hover:border-[var(--ui-border)] hover:bg-[#182640]"
                       aria-current={active ? "true" : undefined}
                     >
-                      {/* Square, hollow, and filled for wherever you are:
-                          one shape doing the job the dot and the highlight
-                          used to split between them. */}
                       <span
                         className={`pixel-mark${active ? " pixel-mark-on" : ""}`}
                         style={{ color }}
@@ -177,46 +189,40 @@ export default function Sidebar() {
                         className="shrink-0 text-[0.6875rem] leading-none tabular-nums"
                         style={{ color: "var(--ui-faint)" }}
                       >
-                        {content.startYear < 2100 ? content.startYear : "—"}
+                        {content.startYear}
                       </span>
                     </button>
                   </li>
                 );
               })}
             </ol>
-          </div>
+          </nav>
 
-          {/* The written pages.
-              The map is a canvas, and a canvas is unreadable to a crawler and
-              slow for a visitor who did not come here to explore. These are the
-              same career as text, and they are real links so that both of them
-              can find it. */}
-          <nav aria-label="Written pages">
-            <p
-              className="font-display mb-1.5 text-[0.8125rem] tracking-wider uppercase"
-              style={{ color: "var(--ui-faint)" }}
+          {/* The same career as text. A tidy two by two, never a ragged wrap. */}
+          <nav
+            aria-label="Read"
+            className="grid grid-cols-2 gap-x-3 gap-y-1.5 border-t-2 pt-3 text-[0.75rem] leading-none"
+            style={{ borderColor: "var(--ui-border)" }}
+          >
+            <button
+              type="button"
+              onClick={() => setTimelineOpen(true)}
+              className="cursor-pointer text-left underline-offset-2 hover:underline"
+              style={{ color: "var(--accent)" }}
             >
-              Read
-            </p>
-            <ul className="flex flex-col">
-              {WRITTEN_PAGES.map((page) => (
-                <li key={page.href}>
-                  <Link
-                    href={page.href}
-                    prefetch
-                    className="flex w-full items-center gap-2.5 border-2 border-transparent px-2 py-1.5 text-left transition-colors hover:border-[var(--ui-border)] hover:bg-[#182640]"
-                  >
-                    <span className="pixel-mark" style={{ color: "var(--accent)" }} aria-hidden />
-                    <span
-                      className="flex-1 truncate text-[0.8125rem] leading-none"
-                      style={{ color: "var(--ui-muted)" }}
-                    >
-                      {page.label}
-                    </span>
-                  </Link>
-                </li>
-              ))}
-            </ul>
+              Timeline
+            </button>
+            {FOOTER_PAGES.map((page) => (
+              <Link
+                key={page.href}
+                href={page.href}
+                prefetch
+                className="underline-offset-2 hover:underline"
+                style={{ color: "var(--ui-muted)" }}
+              >
+                {page.label}
+              </Link>
+            ))}
           </nav>
         </motion.aside>
       )}

@@ -59,7 +59,7 @@ export const metadata: Metadata = {
         height: 630,
         // The preview is the hub itself, so the alt text describes what a
         // reader would see if the image loaded — not the page it links to.
-        alt: `The interactive career map of ${PROFILE.name}: pixel-art islands, one per role, from Aptech through Planet01, Vaultsys and NatureTech.`,
+        alt: `The interactive career map of ${PROFILE.name}: pixel-art islands, one per role, from Aptech through Planet01, Vaulsys and NatureTech.`,
       },
     ],
   },

@@ -116,7 +116,7 @@ export const STATUS_CLIMATE: Record<SceneStatus, StatusClimate> = {
  *
  * # What it actually frames
  * Measured against the four built landmarks at a 738px viewport: Aptech fills
- * 50% of the frame height, Vaultsys 72%, NatureTech 124%, Planet01 137%. The
+ * 50% of the frame height, Vaulsys 72%, NatureTech 124%, Planet01 137%. The
  * two tall ones overflow the top, which is a deliberate consequence rather than
  * an accident — Planet01 is 504 world pixels of tower and the shore band it
  * stands on is only about 160, so a zoom that fits it in frame would be a zoom

@@ -101,7 +101,7 @@ export const RESUME = {
     },
     {
       title: "Software Engineer",
-      company: "Vaultsys",
+      company: "Vaulsys",
       location: "Karachi",
       period: "2025 to 2026",
       start: "2025",

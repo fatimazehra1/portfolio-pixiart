@@ -270,7 +270,7 @@ const INTRO_FADE = 0.14;
  * This is the hard constraint, not a fallback — the island is what exists
  * first, and nothing standing on it may be wider than it is. A previous pass
  * had this backwards: a generous cap meant to protect wide buildings instead
- * let Vaultsys and Aptech render at up to 2x their own island's width, which
+ * let Vaulsys and Aptech render at up to 2x their own island's width, which
  * reads as a building floating beside its island rather than standing on it.
  * `heightFactor` in `IsoTheme` is the aspiration; this is the ceiling it
  * always has to fit under first.
@@ -1802,7 +1802,14 @@ export class OverviewLayer {
 
   private release(): void {
     for (const marker of this.markers.values()) {
-      for (const view of marker.propViews) this.props.release(view);
+      // Detached before the island is destroyed below. A pooled view is kept
+      // for the next build, and destroying its old parent with `children:
+      // true` destroyed it too, so the rebuild after a resize wrote into dead
+      // sprites and threw.
+      for (const view of marker.propViews) {
+        view.container.removeFromParent();
+        this.props.release(view);
+      }
       marker.building?.destroy();
       marker.container.removeAllListeners();
       marker.container.destroy({ children: true });

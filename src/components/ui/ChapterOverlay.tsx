@@ -113,9 +113,10 @@ export default function ChapterOverlay() {
         // already accounts for the building or landmark, not just the
         // island's own (much shorter) silhouette, so a five-storey tower
         // doesn't leave the label sitting across its own facade.
-        label.style.transform = `translate3d(${Math.round(at.x)}px, ${Math.round(
-          at.topY - 10
-        )}px, 0) translate(-50%, -100%)`;
+        // Never above the window: the tallest spire would otherwise hang its
+        // name off the top edge.
+        const labelTop = Math.max(at.topY - 10, label.offsetHeight + 8);
+        label.style.transform = `translate3d(${Math.round(at.x)}px, ${Math.round(labelTop)}px, 0) translate(-50%, -100%)`;
         // The hovered world's label stays and brightens rather than stepping
         // aside: the island lifting, the label lighting and the door opening
         // are one gesture, and removing the label mid-gesture takes a third of

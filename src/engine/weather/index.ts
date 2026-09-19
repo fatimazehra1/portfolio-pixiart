@@ -9,3 +9,5 @@ export {
   FIELD_MARGIN,
 } from "./WeatherProfiles";
 export type { WeatherProfile } from "./WeatherProfiles";
+export { WEATHER_MODES, WEATHER_MODE_MIX, weatherMix } from "./WeatherModes";
+export type { WeatherMode } from "./WeatherModes";

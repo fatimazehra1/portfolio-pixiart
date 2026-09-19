@@ -161,6 +161,26 @@ export const WEATHER_PROFILES: Record<WeatherKind, WeatherProfile> = {
     emissive: false,
   },
 
+  /**
+   * Proper rain. Not assigned to any scene — nothing on the shore is sad
+   * enough to be rained on by default — it is what the visitor asks for from
+   * the sky controls. Long, fast, slanted streaks and a darker wash than
+   * drizzle, so it reads as weather arriving rather than a filter.
+   */
+  rain: {
+    density: 150,
+    size: [1, 1],
+    streak: 7,
+    color: 0xbcd3e4,
+    alpha: [0.3, 0.6],
+    vx: [-48, -30],
+    vy: [260, 340],
+    sway: { amount: [0, 1], rate: [0.4, 0.9] },
+    band: [0, 1],
+    veil: { color: 0x51677c, alpha: 0.34 },
+    emissive: false,
+  },
+
   /** Construction dust: warm, heavy, drifting sideways more than falling. */
   dust: {
     density: 26,
@@ -220,6 +240,7 @@ export const WEATHER_ORDER: readonly WeatherKind[] = [
   "haze",
   "fog",
   "drizzle",
+  "rain",
   "dust",
   "embers",
   "lightning",

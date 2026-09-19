@@ -17,7 +17,7 @@ import { BuildingRenderer, type LayerMaterial } from "../BuildingRenderer";
  *
  * # Slim, not big
  * Narrow, tall, plain stone, with a stepped parapet, a small clock face and a
- * crest below it. Aptech is wide, Planet01 is a slab, Vaultsys is a block; this
+ * crest below it. Aptech is wide, Planet01 is a slab, Vaulsys is a block; this
  * is the only vertical, and it is vertical by proportion rather than by height
  * — it is not the tallest thing on the shore and should not try to be.
  *
@@ -195,7 +195,7 @@ export class BbitRenderer extends BuildingRenderer {
       {
         id: "crest",
         section: "Highlights",
-        label: "BBIT",
+        label: "VU",
         x: CREST.cx - CREST.halfWidth - 2,
         y: CREST.top - 2,
         width: CREST.halfWidth * 2 + 5,
@@ -476,7 +476,7 @@ export class BbitRenderer extends BuildingRenderer {
    * Two things move: the clock, and whoever is behind the lit window.
    *
    * The tower is otherwise completely still — the quietest building on the
-   * shore after Vaultsys, and quiet for a different reason: nothing is
+   * shore after Vaulsys, and quiet for a different reason: nothing is
    * happening here except one person working late.
    */
   tick(elapsed: number): void {

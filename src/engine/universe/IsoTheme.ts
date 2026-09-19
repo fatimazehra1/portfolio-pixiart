@@ -97,7 +97,7 @@ export interface IsoThemeEntry {
   /**
    * Extra ambient boost applied only to this chapter's building/landmark, on
    * top of the hub's own flat lighting. For the two that read as near-black
-   * under plain daylight — Vaultsys's stone is deliberately cool and dark,
+   * under plain daylight — Vaulsys's stone is deliberately cool and dark,
    * and Lighthouse leans hard on its `#` shadow tone.
    */
   lightBoost?: number;
@@ -380,7 +380,7 @@ export const ISO_THEME: Readonly<Record<string, IsoThemeEntry>> = {
     // and the one thing about this island worth reading; a full yard of hedges
     // and walls around it turned into a dark ring competing with it. A path, a
     // bench at the door, three hedges. That is the whole campus.
-    // Stone paving, older and softer than Vaultsys's, and a good deal more of
+    // Stone paving, older and softer than Vaulsys's, and a good deal more of
     // it left alone.
     ground: {
       patches: 0.08,

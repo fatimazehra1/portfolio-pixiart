@@ -87,6 +87,7 @@ export type {
   CatEvent,
   ChapterWorld,
   HotspotEvent,
+  HotspotInfo,
   ResolvedChapter,
   UniverseState,
   ViewMode,
@@ -99,7 +100,8 @@ export { CHAPTER_BUILDERS, CoastChapter } from "./chapters";
 export { GradeManager, gradeLighting, gradeColor, desaturate } from "./grade";
 
 // Weather — one emitter, N profiles.
-export { WeatherSystem, WEATHER_PROFILES } from "./weather";
+export { WeatherSystem, WEATHER_PROFILES, WEATHER_MODES } from "./weather";
+export type { WeatherMode } from "./weather";
 export type { WeatherProfile } from "./weather";
 
 // The near foreground.

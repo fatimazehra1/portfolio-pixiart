@@ -28,7 +28,7 @@ const VAULTSYS_ICON: readonly string[] = [
  */
 export const VAULTSYS: BuildingDefinition = {
   id: "vaultsys",
-  name: "Vaultsys Financial Center",
+  name: "Vaulsys Financial Center",
   plot: "vaultsys",
   plotPosition: 0.5,
   interactionRadius: 330,
@@ -36,7 +36,7 @@ export const VAULTSYS: BuildingDefinition = {
 };
 
 /**
- * Vaultsys Financial Center — where the work started reaching real people's
+ * Vaulsys Financial Center — where the work started reaching real people's
  * money.
  *
  * Broad, symmetrical and quiet: a bank headquarters, not a startup floor. The

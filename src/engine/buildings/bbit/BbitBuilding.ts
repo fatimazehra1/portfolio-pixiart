@@ -21,7 +21,7 @@ const BBIT_ICON: readonly string[] = [
  */
 export const BBIT: BuildingDefinition = {
   id: "bbit",
-  name: "BBIT Spire",
+  name: "VU Spire",
   plot: "bbit",
   plotPosition: 0.5,
   icon: BBIT_ICON,

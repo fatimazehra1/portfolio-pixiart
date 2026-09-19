@@ -5,7 +5,10 @@ import { AnimatePresence, motion } from "framer-motion";
 import { PROFILE, isRealContact } from "@/data/chapters";
 import type { ChapterContent, ChapterSection } from "@/data/chapters";
 import { useWorldStore } from "@/stores/worldStore";
+import { panelFor } from "@/data/panelContent";
 import ScreenshotGallery from "./ScreenshotGallery";
+import { PanelBody } from "./contentBlocks";
+import { SpotChips } from "./BuildingSpots";
 
 /**
  * One scene's information: what it was, when, in what, and what came out of
@@ -52,7 +55,14 @@ const HIGHLIGHTS = "Highlights";
 /** And what the shots are filed under, for the chapters that have any. */
 const SCREENSHOTS = "Screenshots";
 
-export default function InfoCard({ content }: { content: ChapterContent }) {
+export default function InfoCard({
+  content,
+  bare = false,
+}: {
+  content: ChapterContent;
+  /** Leave out the brass header, for a container that draws its own (the phone panel). */
+  bare?: boolean;
+}) {
   const isContact = content.id === "lighthouse";
   const external = content.href?.startsWith("http") ?? false;
 
@@ -69,8 +79,40 @@ export default function InfoCard({ content }: { content: ChapterContent }) {
       ? [{ title: HIGHLIGHTS, descriptor: "", bullets: content.bullets }]
       : []);
 
+  // An island with a composed panel (`data/panelContent/`) reads that instead
+  // of the fields below. The lighthouse has none and keeps the contact plaque.
+  const panel = panelFor(content.id);
+
+  // The third layer: a page with a URL, where there is one. Never folded, it
+  // is the way out of the panel and into the long form.
+  const deeper = content.href && (
+    <p className="mt-3 border-t-2 pt-3" style={{ borderColor: "var(--plaque-line)" }}>
+      {external ? (
+        <a
+          href={content.href}
+          target="_blank"
+          rel="noreferrer"
+          className="text-[0.8125rem] font-semibold underline underline-offset-2 hover:opacity-70"
+          style={{ color: "var(--plaque-ink)" }}
+        >
+          {content.href.replace(/^https?:\/\//, "")} ↗
+        </a>
+      ) : (
+        <Link
+          href={content.href}
+          prefetch
+          className="text-[0.8125rem] font-semibold underline underline-offset-2 hover:opacity-70"
+          style={{ color: "var(--plaque-ink)" }}
+        >
+          Explore project →
+        </Link>
+      )}
+    </p>
+  );
+
   return (
     <div className="font-sans">
+      {!bare && (
       <header className="ui-plaque-head relative px-3.5 py-2.5">
         {/* Two fixings. The cheapest possible cue that this is an object
             hanging on something rather than a rectangle floating over it. */}
@@ -91,7 +133,13 @@ export default function InfoCard({ content }: { content: ChapterContent }) {
           {isContact ? "Get in touch" : content.period}
         </p>
       </header>
+      )}
 
+      {panel ? (
+        <PanelBody panel={panel} eyebrow={content.role} lead={<SpotChips />}>
+          {deeper}
+        </PanelBody>
+      ) : (
       <div className="px-3.5 py-3">
         {!isContact && (
           <p
@@ -195,32 +243,7 @@ export default function InfoCard({ content }: { content: ChapterContent }) {
           </div>
         )}
 
-        {/* The third layer: a page with a URL, where there is one. Never
-            folded — it is the way out of the panel and into the long form. */}
-        {content.href && (
-          <p className="mt-3 border-t-2 pt-3" style={{ borderColor: "var(--plaque-line)" }}>
-            {external ? (
-              <a
-                href={content.href}
-                target="_blank"
-                rel="noreferrer"
-                className="text-[0.8125rem] font-semibold underline underline-offset-2 hover:opacity-70"
-                style={{ color: "var(--plaque-ink)" }}
-              >
-                Explore project ↗
-              </a>
-            ) : (
-              <Link
-                href={content.href}
-                prefetch
-                className="text-[0.8125rem] font-semibold underline underline-offset-2 hover:opacity-70"
-                style={{ color: "var(--plaque-ink)" }}
-              >
-                Explore project →
-              </Link>
-            )}
-          </p>
-        )}
+        {deeper}
 
         {/* The one chapter that is a destination rather than a record. Open,
             always: a visitor who reached the lighthouse came for these. */}
@@ -252,6 +275,7 @@ export default function InfoCard({ content }: { content: ChapterContent }) {
           </ul>
         )}
       </div>
+      )}
     </div>
   );
 }

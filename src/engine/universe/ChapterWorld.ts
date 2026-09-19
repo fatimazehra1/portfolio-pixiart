@@ -1,6 +1,6 @@
 import type { Engine } from "../core/Engine";
 import type { GradeManager } from "../grade";
-import type { SceneDirector } from "../scene";
+import type { SceneDirector, WeatherKind } from "../scene";
 import type { TimeSnapshot } from "../time";
 import type { CameraView } from "../camera/Camera";
 import type { TimeOfDay } from "../sky";
@@ -112,6 +112,17 @@ export interface HotspotEvent {
   y: number;
 }
 
+/** One hotspot, listed rather than hovered. See `ChapterWorld.hotspots`. */
+export interface HotspotInfo {
+  id: string;
+  section: string;
+  label: string;
+  buildingId: string;
+  /** Middle of the hotspot's top edge, in this world's own pixels. */
+  x: number;
+  y: number;
+}
+
 /**
  * One chapter world, alive.
  *
@@ -187,6 +198,23 @@ export interface ChapterWorld {
 
   /** Frame the named scene inside this world, if it has one. */
   framingFor(sceneId: string): { x: number; zoom: number } | null;
+
+  /**
+   * Replace this world's weather with a fixed mix from the sky controls, or
+   * pass null to give the scenes their own weather back. Optional: a world
+   * with no weather simply ignores it.
+   */
+  setWeatherOverride?(mix: ReadonlyMap<WeatherKind, number> | null): void;
+
+  /**
+   * Every hotspot in this world, with its anchor in world CSS pixels. Lets the
+   * interface list them (a tour, the mobile panel) and point at one without
+   * the pointer having found it first.
+   */
+  hotspots?(): readonly HotspotInfo[];
+
+  /** Light one hotspot's marker as if the pointer were on it, or none. */
+  highlightHotspot?(buildingId: string | null, spotId: string | null): void;
 
   /** Take it all down. */
   destroy(): void;

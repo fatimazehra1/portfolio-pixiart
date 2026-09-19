@@ -36,6 +36,7 @@ export type WeatherKind =
   | "haze"
   | "fog"
   | "drizzle"
+  | "rain"
   | "dust"
   | "embers"
   | "lightning";

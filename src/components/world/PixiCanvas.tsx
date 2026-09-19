@@ -4,6 +4,7 @@ import { useEffect, useRef } from "react";
 import { World } from "@/engine";
 import { useWorldStore } from "@/stores/worldStore";
 import { setWorld } from "./worldHandle";
+import { MOBILE_TOP_BAR, MOBILE_WORLD_HEIGHT } from "@/components/ui/layout";
 
 /**
  * React mount point for the rendering engine.
@@ -22,6 +23,9 @@ export default function PixiCanvas() {
   const hostRef = useRef<HTMLDivElement>(null);
   const setReady = useWorldStore((s) => s.setReady);
   const setViewport = useWorldStore((s) => s.setViewport);
+  const split = useWorldStore(
+    (s) => s.isMobile && (s.view === "inside" || s.view === "entering")
+  );
 
   useEffect(() => {
     const host = hostRef.current;
@@ -107,5 +111,21 @@ export default function PixiCanvas() {
   // aria-hidden on the host: what it holds is a WebGL canvas with no text in
   // it, and the same career is written out for assistive technology and for
   // crawlers by the fallback in app/page.tsx.
-  return <div ref={hostRef} className="absolute inset-0 h-full w-full" aria-hidden />;
+  // On a phone, inside an island, the world gets the top strip and the panel
+  // the rest (see `MobileSheet`). The engine watches this element's size, so
+  // shortening it is all it takes for the island to be framed for the strip
+  // rather than for a screen it only half owns. Shortened as the flight
+  // starts, so the island is built at the size it will be seen at.
+  return (
+    <div
+      ref={hostRef}
+      className="absolute inset-x-0 w-full"
+      style={
+        split
+          ? { top: MOBILE_TOP_BAR, height: `calc(${MOBILE_WORLD_HEIGHT} - ${MOBILE_TOP_BAR})` }
+          : { top: 0, height: "100%" }
+      }
+      aria-hidden
+    />
+  );
 }

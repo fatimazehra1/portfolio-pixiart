@@ -15,7 +15,11 @@ import {
   universeBounds,
   universeCentre,
 } from "../universe";
-import type { CatEvent, HotspotEvent, ResolvedChapter, UniverseState } from "../universe";
+import type { CatEvent, HotspotEvent, HotspotInfo, ResolvedChapter, UniverseState } from "../universe";
+import { WeatherSystem, weatherMix } from "../weather";
+import type { WeatherMode } from "../weather";
+import { PHASE_SPANS } from "../time";
+import type { TimePhase } from "../time";
 import type { CameraView } from "../camera/Camera";
 import type { SceneState } from "../scene";
 import type { TimeOfDay } from "../sky";
@@ -65,9 +69,9 @@ const CHAPTER_MIN_ZOOM = 2 / 3;
  */
 const MOBILE_HOME = "naturetech";
 const MOBILE_ISLAND_COVERAGE = 0.78;
-/** Room kept clear for the top bar and the bottom sheet, in CSS pixels. */
+/** Room kept clear for the top bar and the island dock, in CSS pixels. */
 const MOBILE_TOP_RESERVE = 56;
-const MOBILE_BOTTOM_RESERVE = 96;
+const MOBILE_BOTTOM_RESERVE = 168;
 
 /**
  * When one world stops being a mark on a map and starts being a place.
@@ -188,6 +192,17 @@ export class World {
   readonly chapters: ChapterHost;
 
   private readonly options: WorldOptions;
+
+  /**
+   * Weather over the map itself. The map has no scenes, so this only ever
+   * shows what the visitor asked for from the sky controls. Screen space,
+   * between the islands and the vignette.
+   */
+  private readonly overviewWeather: WeatherSystem;
+  /** A world to enter as soon as the current one has closed. See `goToChapter`. */
+  private pendingEnter: string | null = null;
+  /** What the sky controls last asked for. Applied to every world opened. */
+  private weatherModeValue: WeatherMode = "auto";
   private readonly unbind: (() => void)[] = [];
   private stopUpdate: (() => void) | null = null;
   private destroyed = false;
@@ -286,6 +301,14 @@ export class World {
     // The vignette is the third space: screen again, but in *front* of the
     // camera, so the frame's edges darken the worlds too and not just the sky
     // behind them.
+    this.overviewWeather = new WeatherSystem({
+      width,
+      height,
+      motionScale,
+      densityScale: options.mobile ? 0.45 : 1,
+    });
+    engine.app.stage.addChild(this.overviewWeather.container);
+    this.unbind.push(this.overviewWeather.bindLighting(this.grade));
     engine.app.stage.addChild(this.overview.overlay);
 
     this.chapters = new ChapterHost({
@@ -454,7 +477,24 @@ export class World {
 
   /** Pull back out of the world you are in, onto the map. */
   leaveChapter(): boolean {
+    this.pendingEnter = null;
     return this.universe.leave();
+  }
+
+  /**
+   * Go to a world from wherever you are. On the map this is `enterChapter`;
+   * inside another world it leaves first and enters the moment the map is
+   * back, because entering is refused during the flight out.
+   */
+  goToChapter(id: string): boolean {
+    if (!chapterById(id)) return false;
+    const mode = this.universe.state.mode;
+    if (mode === "overview") return this.enterChapter(id);
+    if (this.universe.state.chapter?.id === id && mode !== "leaving") return true;
+    // Leaving is refused mid-entry; `openChapter` picks the switch up on arrival.
+    if (mode === "inside") this.universe.leave();
+    this.pendingEnter = id;
+    return true;
   }
 
   /**
@@ -578,11 +618,11 @@ export class World {
     if (opening && home) {
       this.camera.zoomTo(zoom);
       this.framedZoomInputs = this.camera.zoomInputs;
-      // The island sits a little below the middle, because the top bar is the
-      // only furniture that overlaps the map and it is at the top.
+      // Centred in the open band between the top bar and the island dock, the
+      // same way `lookAtChapter` centres any island the dock steps to.
       this.camera.snapTo(
         home.overview.x,
-        home.overview.y + (MOBILE_TOP_RESERVE - MOBILE_BOTTOM_RESERVE) / (2 * zoom)
+        home.overview.y + (MOBILE_BOTTOM_RESERVE - MOBILE_TOP_RESERVE) / (2 * zoom)
       );
       this.publishCamera();
     }
@@ -605,6 +645,53 @@ export class World {
     if (!this.chapters.isOpen) this.showOverview(true);
   }
 
+  // --- The sky controls ------------------------------------------------------
+
+  get weatherMode(): WeatherMode {
+    return this.weatherModeValue;
+  }
+
+  /**
+   * Set the weather everywhere: the map, and whichever world is open or opens
+   * next. `auto` hands every scene its own authored weather back.
+   */
+  setWeatherMode(mode: WeatherMode): void {
+    this.weatherModeValue = mode;
+    const mix = weatherMix(mode);
+    this.overviewWeather.setOverride(mix);
+    this.chapters.current?.setWeatherOverride?.(mix);
+  }
+
+  /**
+   * Stop the clock in the settled middle of a phase, so the chosen light holds
+   * rather than starting to hand over to the next one straight away.
+   */
+  holdPhase(phase: TimePhase): void {
+    const clock = this.time.time;
+    const index = PHASE_SPANS.findIndex((span) => span.phase === phase);
+    if (index < 0) return;
+    const start = PHASE_SPANS[index].start;
+    const next = PHASE_SPANS[(index + 1) % PHASE_SPANS.length].start;
+    const length = (next - start + 1) % 1;
+    clock.setTime(start + length * 0.4);
+    clock.setPaused(true);
+  }
+
+  /** Let the day run on its loop again, from wherever it is now. */
+  loopTime(): void {
+    this.time.time.setPaused(false);
+  }
+
+  /** Every hotspot in the open world. Empty on the map. */
+  hotspots(): readonly HotspotInfo[] {
+    return this.chapters.current?.hotspots?.() ?? [];
+  }
+
+  /** Light one hotspot's marker from the interface, or none. */
+  highlightHotspot(buildingId: string | null, spotId: string | null): void {
+    this.chapters.current?.highlightHotspot?.(buildingId, spotId);
+  }
+
   /** Re-fit everything to a new viewport, in CSS pixels. */
   resize(size: Size): void {
     if (this.destroyed) return;
@@ -615,6 +702,7 @@ export class World {
     // settled on. With no world open there is nothing to agree with, so the map
     // takes the same rule a sky would have used.
     this.overview.resize(size, pixelScaleFor(size.height));
+    this.overviewWeather.resize(size.width, size.height);
     if (!this.chapters.isOpen) this.engine.camera.setPixelSize(pixelScaleFor(size.height));
 
     this.camera.resize(size.width, size.height);
@@ -655,6 +743,7 @@ export class World {
     this.chapters.destroy();
     this.universe.destroy();
     this.overview.destroy();
+    this.overviewWeather.destroy();
 
     this.grade.destroy();
     this.lighting.destroy();
@@ -697,6 +786,7 @@ export class World {
     } else {
       this.watchManualZoom();
       this.updateOverview(delta, view);
+      this.overviewWeather.update(delta);
       // The opening can end by running out as easily as by being interrupted,
       // and either way the two window listeners have no further business.
       if (this.stopIntroSkip && !this.overview.introPlaying) this.stopIntroSkip();
@@ -754,6 +844,10 @@ export class World {
     if (!world) return;
 
     this.overview.setPresence(0);
+    // The map's rain belongs to the map. The world has its own weather, and
+    // the visitor's choice is handed to it before its first frame.
+    this.overviewWeather.container.visible = false;
+    world.setWeatherOverride?.(weatherMix(this.weatherModeValue));
 
     const entry = world.entryFocus();
     this.engine.camera.setAnchorY(world.zoomAnchorY);
@@ -779,11 +873,15 @@ export class World {
     }
 
     this.publishCamera();
+
+    // Somewhere else was asked for while this one was still being flown into.
+    if (this.pendingEnter) this.universe.leave();
   }
 
   /** Leave: destroy the world and give the camera the map back. */
   private closeChapter(): void {
     this.chapters.close();
+    this.overviewWeather.container.visible = true;
 
     // Nothing is being entered any more, so every door on the map shuts.
     this.overview.setApproaching(null);
@@ -795,6 +893,12 @@ export class World {
     this.camera.zoomTo(this.overviewReturn.zoom);
     this.camera.snapTo(this.overviewReturn.x, this.overviewReturn.y);
     this.publishCamera();
+
+    // A switch between worlds was asked for on the way out: go on to it now
+    // that the map is back.
+    const next = this.pendingEnter;
+    this.pendingEnter = null;
+    if (next) this.enterChapter(next);
   }
 
   /** Put the camera and the map back into overview mode. */
@@ -946,6 +1050,47 @@ export class World {
     if (runnerUp < best.distance * EXPLORE_MARGIN) return null;
 
     return { id: best.id, x: best.x, y: best.y, radius: best.radius };
+  }
+
+  /**
+   * The world nearest the middle of the open part of the screen, however far
+   * out the map is. Unlike `dominantChapter` this always has an answer on the
+   * map: it is what the phone's island dock names while you drag.
+   */
+  nearestChapter(): string | null {
+    if (this.chapters.isOpen || this.universe.state.mode !== "overview") return null;
+    const { width, height } = this.engine.viewport;
+    const [top, bottom] = this.mobileValue ? [MOBILE_TOP_RESERVE, MOBILE_BOTTOM_RESERVE] : [0, 0];
+    const centreX = this.mobileValue ? width / 2 : (width + LEFT_RESERVE) / 2;
+    const centreY = top + (height - top - bottom) / 2;
+
+    let best: string | null = null;
+    let bestDistance = Infinity;
+    for (const chapter of this.universe.all) {
+      const at = this.chapterScreen(chapter.id);
+      if (!at) continue;
+      const distance = Math.hypot(at.x - centreX, at.y - centreY);
+      if (distance < bestDistance) {
+        best = chapter.id;
+        bestDistance = distance;
+      }
+    }
+    return best;
+  }
+
+  /**
+   * On the map, glide to one world without entering it: the phone's island
+   * dock stepping through the islands. Centred in the part of the screen the
+   * bars leave open.
+   */
+  lookAtChapter(id: string): boolean {
+    if (this.chapters.isOpen || this.universe.state.mode !== "overview") return false;
+    const chapter = chapterById(id);
+    if (!chapter) return false;
+    const zoom = this.camera.zoom || 1;
+    const shift = this.mobileValue ? (MOBILE_BOTTOM_RESERVE - MOBILE_TOP_RESERVE) / 2 / zoom : 0;
+    this.camera.panTo(chapter.overview.x, chapter.overview.y + shift);
+    return true;
   }
 
   /** The world x at the middle of the view. */

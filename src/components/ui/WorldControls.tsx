@@ -70,8 +70,10 @@ export default function WorldControls() {
             exit={{ opacity: 0, y: -8 }}
             transition={{ duration: 0.28, ease: "easeOut" }}
             // Tall content, a short screen: the plaque scrolls inside itself
-            // rather than growing past the viewport it is hanging over.
-            className="ui-plaque ui-scroll absolute top-5 right-5 max-h-[calc(100dvh-2.5rem)] w-[20rem] overflow-y-auto"
+            // rather than growing past the viewport it is hanging over. It stops
+            // above the bottom-right cluster (Contact, Resume) so neither covers
+            // the other.
+            className="ui-plaque ui-scroll absolute top-5 right-5 max-h-[calc(100dvh-6.25rem)] w-[20rem] overflow-y-auto"
           >
             <InfoCard content={content} />
           </motion.div>

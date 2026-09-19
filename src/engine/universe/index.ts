@@ -38,6 +38,7 @@ export type {
   CatEvent,
   ChapterWorld,
   HotspotEvent,
+  HotspotInfo,
 } from "./ChapterWorld";
 export { ChapterHost } from "./ChapterHost";
 export type { ChapterHostOptions } from "./ChapterHost";

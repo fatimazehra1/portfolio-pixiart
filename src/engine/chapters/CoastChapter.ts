@@ -27,7 +27,8 @@ import type { SceneLayout } from "../scene";
 import type { CameraView } from "../camera/Camera";
 import type { PropKind } from "../environment";
 import type { Bounds, Size } from "../types";
-import type { ChapterContext, ChapterWorld } from "../universe";
+import type { ChapterContext, ChapterWorld, HotspotInfo } from "../universe";
+import type { WeatherKind } from "../scene";
 
 /**
  * Which hand-plotted renderer belongs to which scene.
@@ -507,6 +508,28 @@ export class CoastChapter implements ChapterWorld {
    * wants to be looked at, and this is the one thing that reports it. The
    * universe does the moving.
    */
+  setWeatherOverride(mix: ReadonlyMap<WeatherKind, number> | null): void {
+    this.weather.setOverride(mix);
+  }
+
+  hotspots(): readonly HotspotInfo[] {
+    return this.buildings.buildings.flatMap((building) =>
+      building.hotspots.map((spot) => ({
+        id: spot.id,
+        section: spot.section,
+        label: spot.label,
+        buildingId: building.id,
+        ...building.hotspotAnchor(spot),
+      }))
+    );
+  }
+
+  highlightHotspot(buildingId: string | null, spotId: string | null): void {
+    for (const building of this.buildings.buildings) {
+      building.highlightHotspot(building.id === buildingId ? spotId : null);
+    }
+  }
+
   framingFor(sceneId: string): { x: number; zoom: number } | null {
     const scene = this.layout.scenes.find((s) => s.id === sceneId);
     if (!scene) return null;
@@ -727,7 +750,11 @@ export class CoastChapter implements ChapterWorld {
   private lockHorizon(): void {
     const view = this.context.engine.camera.getView();
     const horizon = this.ocean.topY;
-    this.sky.setHorizonShift(view.screenY + view.zoom * horizon - horizon);
+    // Up, never down. Below zoom 1 (a tall subject framed further out) the
+    // horizon drops, and pushing the sky down after it left a bare strip of
+    // page across the top of the frame. The sky is a full-height gradient, so
+    // holding it at the top costs nothing: the sea simply meets it lower.
+    this.sky.setHorizonShift(Math.min(0, view.screenY + view.zoom * horizon - horizon));
   }
 
   /**

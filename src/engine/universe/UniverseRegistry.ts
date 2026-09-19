@@ -150,7 +150,7 @@ export const CHAPTERS: readonly ChapterConfig[] = [
   },
   {
     id: "bbit",
-    name: "BBIT",
+    name: "VU",
     tagline: "Still studying, still building.",
     era: { from: 2025 },
     status: "active",
@@ -294,10 +294,13 @@ function resolveInterior(interior: ChapterInterior): Required<ChapterInterior> {
     /**
      * Open ground either side of the chapter's own scenes.
      *
-     * Narrower than the coast's margin, because a world is not a journey: you
-     * arrive in the middle of it and the margin is breathing room, not a walk.
+     * Wide enough to fill the frame at any framing. A tall subject (the
+     * Planet01 tower) is solved to a low zoom, and at zoom 1 a 1600px window
+     * sees 1600 world pixels: with 360 either side of a 540 scene, the ground
+     * ran out inside the frame and the shore stopped in open sea. 1100 covers
+     * a 2700px-wide window at zoom 1, and the camera still arrives centred.
      */
-    margin: interior.margin ?? 360,
+    margin: interior.margin ?? 1100,
   };
 }
 

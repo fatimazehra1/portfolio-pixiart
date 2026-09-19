@@ -8,7 +8,19 @@ import type {
   TimeSnapshot,
   UniverseState,
   ViewMode,
+  WeatherMode,
 } from "@/engine";
+
+/** One marked part of a building, as the interface holds it. */
+export interface SpotRef {
+  buildingId: string;
+  spotId: string;
+  label: string;
+  section: string;
+  /** Anchor, in the open world's own pixels. */
+  x: number;
+  y: number;
+}
 
 /**
  * World store — the React-facing slice of engine state.
@@ -105,7 +117,15 @@ export interface WorldState {
    * React state would be sixty renders a second behind a canvas already doing
    * the real work.
    */
-  hotspot: { label: string; section: string; x: number; y: number } | null;
+  hotspot: SpotRef | null;
+  /**
+   * The part of a building that was pressed, whose story is showing. Opened by
+   * clicking a marker in the world or a spot chip on the panel; pressing the
+   * same one again closes it.
+   */
+  callout: SpotRef | null;
+  /** What the sky controls last asked for. The world holds the real value. */
+  weatherMode: WeatherMode;
 
   /**
    * Which cats have been found, by id, and whether the collection is open.
@@ -130,6 +150,12 @@ export interface WorldState {
   /** Whether the full-screen mobile menu is open. */
   menuOpen: boolean;
   /**
+   * Whether the chronological timeline is open: the whole career in order,
+   * readable without entering a single island. Opened from the sidebar and
+   * the mobile menu, so it is a store flag rather than either one's state.
+   */
+  timelineOpen: boolean;
+  /**
    * The cat just caught, for the label and the arc toward the bucket.
    *
    * Cleared by whoever drew it once the arc has landed. Carries the world
@@ -152,6 +178,8 @@ export interface WorldState {
   setOpenSection: (title: string | null) => void;
   /** Mirror a hotspot event from the engine. See `hotspot` and `openSection`. */
   setHotspot: (event: HotspotEvent) => void;
+  setCallout: (spot: SpotRef | null) => void;
+  setWeatherMode: (mode: WeatherMode) => void;
   /** Restore the found list, once, from storage. */
   restoreCats: (ids: readonly string[]) => void;
   /** Record one. Ignores a cat already found, so a double click counts once. */
@@ -161,6 +189,7 @@ export interface WorldState {
   setCatsOpen: (open: boolean) => void;
   setMobile: (isMobile: boolean) => void;
   setMenuOpen: (menuOpen: boolean) => void;
+  setTimelineOpen: (open: boolean) => void;
 }
 
 export const useWorldStore = create<WorldState>((set) => ({
@@ -186,11 +215,14 @@ export const useWorldStore = create<WorldState>((set) => ({
   approach: 0,
   openSection: null,
   hotspot: null,
+  callout: null,
+  weatherMode: "auto",
   catsFound: [],
   catsOpen: false,
   caught: null,
   isMobile: false,
   menuOpen: false,
+  timelineOpen: false,
 
   setReady: (isReady) => set({ isReady }),
   setLoadProgress: (loadProgress, loadLabel) => set({ loadProgress, loadLabel }),
@@ -218,6 +250,7 @@ export const useWorldStore = create<WorldState>((set) => ({
       // title on a chapter that merely reuses the word.
       openSection:
         (state.chapter?.id ?? null) === previous.chapterId ? previous.openSection : null,
+      callout: (state.chapter?.id ?? null) === previous.chapterId ? previous.callout : null,
     })),
   setOpenSection: (openSection) => set({ openSection }),
   restoreCats: (ids) => set({ catsFound: [...ids] }),
@@ -237,17 +270,26 @@ export const useWorldStore = create<WorldState>((set) => ({
   // Leaving the narrow shell closes anything only the narrow shell can open.
   setMobile: (isMobile) => set((p) => (p.isMobile === isMobile ? p : { isMobile, menuOpen: false })),
   setMenuOpen: (menuOpen) => set({ menuOpen }),
+  setTimelineOpen: (timelineOpen) => set({ timelineOpen }),
   setHotspot: (event) =>
     set((previous) => {
-      const at = event.spot ? { label: event.spot.label, section: event.spot.section, x: event.x, y: event.y } : null;
-      // A click is a hover that also opens the panel. Clicking the spot whose
-      // section is already open shuts it, so the marker toggles the same way
-      // the heading beside it does.
-      if (!event.selected) return { hotspot: at };
-      const section = event.spot?.section ?? null;
-      return {
-        hotspot: at,
-        openSection: previous.openSection === section ? null : section,
-      };
+      const at: SpotRef | null = event.spot
+        ? {
+            buildingId: event.buildingId,
+            spotId: event.spot.id,
+            label: event.spot.label,
+            section: event.spot.section,
+            x: event.x,
+            y: event.y,
+          }
+        : null;
+      // A click is a hover that also tells that part's story. Clicking the
+      // spot whose story is already showing puts it away again.
+      if (!event.selected || !at) return { hotspot: at };
+      const same =
+        previous.callout?.buildingId === at.buildingId && previous.callout?.spotId === at.spotId;
+      return { hotspot: at, callout: same ? null : at };
     }),
+  setCallout: (callout) => set({ callout }),
+  setWeatherMode: (weatherMode) => set({ weatherMode }),
 }));

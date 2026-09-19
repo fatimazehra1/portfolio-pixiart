@@ -87,7 +87,7 @@ export const SCENES: readonly SceneConfig[] = [
   },
   {
     id: "vaultsys",
-    name: "Vaultsys Financial Center",
+    name: "Vaulsys Financial Center",
     worldX: 4914,
     width: 648,
     status: "past",
@@ -125,7 +125,7 @@ export const SCENES: readonly SceneConfig[] = [
   },
   {
     id: "bbit",
-    name: "BBIT Spire",
+    name: "VU Spire",
     worldX: 7398,
     width: 540,
     status: "active",

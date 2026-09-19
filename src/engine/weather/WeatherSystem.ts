@@ -77,6 +77,12 @@ export class WeatherSystem {
   private target = new Map<WeatherKind, number>();
   /** What is actually on screen, chasing the target. */
   private live = new Map<WeatherKind, number>();
+  /**
+   * What the visitor asked for from the sky controls, if anything. Takes the
+   * place of the scene's target while set; the live values chase it the same
+   * way, so switching the weather fades rather than cuts.
+   */
+  private override: ReadonlyMap<WeatherKind, number> | null = null;
 
   private pixelScaleValue = 1;
   private elapsed = 0;
@@ -191,6 +197,11 @@ export class WeatherSystem {
     };
   }
 
+  /** Replace the scene's weather with a fixed mix, or pass null to hand it back. */
+  setOverride(mix: ReadonlyMap<WeatherKind, number> | null): void {
+    this.override = mix;
+  }
+
   applyLighting(state: LightingState): void {
     for (const layer of this.layers.values()) layer.applyLighting(state);
   }
@@ -225,8 +236,9 @@ export class WeatherSystem {
 
     const chase = 1 - Math.exp(-WEATHER_SMOOTHING * delta);
 
+    const source = this.override ?? this.target;
     for (const [kind, layer] of this.layers) {
-      const want = this.target.get(kind) ?? 0;
+      const want = source.get(kind) ?? 0;
       const have = this.live.get(kind) ?? 0;
 
       // Snap the last sliver, so a layer that is fading out actually reaches

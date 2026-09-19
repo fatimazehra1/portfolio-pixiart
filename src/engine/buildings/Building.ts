@@ -85,6 +85,9 @@ const DEFAULT_RADIUS_RATIO = 0.62;
 const HOTSPOT_TINT = 0xffe4a3;
 const HOTSPOT_REST = 0.6;
 const HOTSPOT_HOVER = 1;
+/** The range a resting marker breathes through. See `update`. */
+const HOTSPOT_PULSE_LOW = 0.35;
+const HOTSPOT_PULSE_HIGH = 0.85;
 
 /**
  * A landmark in the world.
@@ -128,6 +131,8 @@ export abstract class Building {
   private readonly highlight: Sprite;
   /** One marker per hotspot, in the same unscaled grid as the artwork. */
   private readonly marks = new Map<string, Sprite>();
+  /** The marker lit from outside (`highlightHotspot`), if any. */
+  private litSpot: string | null = null;
   /** Which hotspot the pointer is on, if any. Published to whoever asked. */
   private hoveredSpot: Hotspot | null = null;
 
@@ -292,6 +297,24 @@ export abstract class Building {
     return this.hoveredSpot;
   }
 
+  /** Every marked part of this facade, as the renderer declared them. */
+  get hotspots(): readonly Hotspot[] {
+    return this.renderer.hotspots;
+  }
+
+  /**
+   * Light one marker as if the pointer were on it, from outside: a tour step,
+   * or a row in the mobile panel. Every other marker goes back to rest, except
+   * one the pointer is actually on.
+   */
+  highlightHotspot(id: string | null): void {
+    this.litSpot = id;
+    for (const [spotId, mark] of this.marks) {
+      const on = spotId === id || this.hoveredSpot?.id === spotId;
+      mark.alpha = on ? HOTSPOT_HOVER : HOTSPOT_REST;
+    }
+  }
+
   /**
    * Where a hotspot is on screen, in world CSS pixels: the middle of its top
    * edge, which is where a label hangs from.
@@ -431,6 +454,21 @@ export abstract class Building {
 
     this.elapsed += step;
     this.renderer.tick(this.elapsed);
+
+    // The markers breathe at rest, slowly and out of step with each other, so
+    // a visitor can see there is something on the facade to press without a
+    // tooltip saying so. A lit marker (pointed at, or chosen from the panel)
+    // holds steady.
+    let index = 0;
+    for (const [spotId, mark] of this.marks) {
+      const lit = spotId === this.litSpot || spotId === this.hoveredSpot?.id;
+      mark.alpha = lit
+        ? HOTSPOT_HOVER
+        : HOTSPOT_PULSE_LOW +
+          (HOTSPOT_PULSE_HIGH - HOTSPOT_PULSE_LOW) *
+            (0.5 + 0.5 * Math.sin(this.elapsed * 2.2 + index * 1.7));
+      index += 1;
+    }
   }
 
   destroy(): void {

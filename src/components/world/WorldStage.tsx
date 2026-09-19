@@ -6,11 +6,14 @@ import ChapterOverlay from "@/components/ui/ChapterOverlay";
 import Sidebar from "@/components/ui/Sidebar";
 import LoadingScreen from "@/components/ui/LoadingScreen";
 import CatBucket from "@/components/ui/CatBucket";
-import HotspotLabel from "@/components/ui/HotspotLabel";
+import { HotspotCallout } from "@/components/ui/BuildingSpots";
 import MobileSheet from "@/components/ui/MobileSheet";
 import MobileShell from "@/components/ui/MobileShell";
+import ContactButton from "@/components/ui/ContactButton";
 import ResumeLink from "@/components/ui/ResumeLink";
+import SkyControls from "@/components/ui/SkyControls";
 import SoundToggle from "@/components/ui/SoundToggle";
+import TimelineView from "@/components/ui/TimelineView";
 import WorldControls from "@/components/ui/WorldControls";
 import { getWorld, subscribeWorld } from "@/components/world/worldHandle";
 import { useWorldStore } from "@/stores/worldStore";
@@ -75,8 +78,6 @@ export default function WorldStage() {
       <PixiCanvas />
       <LoadingScreen />
       <div className="ui-layer absolute inset-0 z-10">
-        <HotspotLabel />
-
         {isMobile ? (
           <>
             <MobileShell />
@@ -87,6 +88,8 @@ export default function WorldStage() {
             <ChapterOverlay />
             <WorldControls />
             <Sidebar />
+            {/* After the plaque, so a building part's story sits above it. */}
+            <HotspotCallout />
             {/*
               The bottom-right corner: the bucket, the speaker, then the way
               out to the document. One row so they stay a fixed gap apart at
@@ -98,10 +101,15 @@ export default function WorldStage() {
                 <CatBucket />
               </div>
               <SoundToggle />
+              <SkyControls placement="up" />
+              <ContactButton />
               <ResumeLink />
             </div>
           </>
         )}
+
+        {/* The whole career in order, over either shell. */}
+        <TimelineView />
       </div>
     </>
   );

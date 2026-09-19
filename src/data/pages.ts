@@ -78,7 +78,7 @@ export const ABOUT = {
       body: [
         "It started with client sites. Freelance Laravel work through 2022 and 2023, taken from the first conversation to handover with nobody else on the build, while I finished an Advanced Diploma in Software Engineering at Aptech.",
         "Planet01 was the long chapter. I joined as an intern in February 2023 and left in June 2025 as a full stack developer. The main thing there was CTA World, a logistics platform I was the sole developer on: a Laravel superadmin portal and API with three separate Vue.js dashboards on top of it, real-time chat, and Stripe and PayPal for billing. Alongside it were a rider operations dashboard for Domino's, a catering platform end to end, and the frontend for a cryptocurrency trading platform. I also trained two interns.",
-        "Vaultsys was the banking year. Java, Spring Boot, Vaadin and Hibernate against Oracle, on financial infrastructure behind NayaPay, Pakistan's largest payment application, and then on the delivery team for RawBank, the largest bank in the Democratic Republic of Congo. Payment and cash flow modules, KYC workflows, payment gateway integration, and the production debugging that comes with systems where being wrong is expensive.",
+        "Vaulsys was the banking year. Java, Spring Boot, Vaadin and Hibernate against Oracle, on financial infrastructure behind NayaPay, Pakistan's largest payment application, and then on the delivery team for RawBank, the largest bank in the Democratic Republic of Congo. Payment and cash flow modules, KYC workflows, payment gateway integration, and the production debugging that comes with systems where being wrong is expensive.",
         "NatureTech is the ERP. It is the first system I have owned completely, and it is the one that pulled everything before it together: the Laravel from the client years, the correctness habits from the banking year, and the business side of a Bachelor of Business Information Technology I am taking alongside it.",
       ],
     },
@@ -221,9 +221,9 @@ export const PROJECTS = {
       stack: ["Laravel", "SCSS", "MySQL"],
     },
     {
-      slug: "vaultsys",
-      title: "Vaultsys Banking Systems",
-      context: "Vaultsys, 2025 to 2026",
+      slug: "vaulsys",
+      title: "Vaulsys Banking Systems",
+      context: "Vaulsys, 2025 to 2026",
       descriptor:
         "Payment, cash flow and KYC modules in Java and Spring Boot, on production banking infrastructure.",
       body: "Backend work on financial infrastructure behind NayaPay, Pakistan's largest payment application, and then on the delivery team for RawBank, the largest bank in the Democratic Republic of Congo. Java and Spring Boot with Hibernate over Oracle, and Vaadin for the back office screens.",

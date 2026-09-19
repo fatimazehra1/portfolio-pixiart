@@ -2,6 +2,7 @@
 
 import { motion } from "framer-motion";
 import type { ChapterContent, ChapterStatus } from "@/data/chapters";
+import { panelFor } from "@/data/panelContent";
 
 /**
  * One world's card, floating beside it on the map.
@@ -92,7 +93,7 @@ export default function ChapterCard({
         className="mt-1.5 text-[0.8125rem] leading-snug"
         style={{ color: "var(--ui-muted)" }}
       >
-        {content.roleLine}
+        {panelFor(content.id)?.glance ?? content.roleLine}
       </p>
 
       {/* Four tags, not nine. The card is a signpost; the full stack is

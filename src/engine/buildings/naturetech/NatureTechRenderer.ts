@@ -19,7 +19,7 @@ import { createRandom } from "../../shared/random";
  * The difference is entirely in what moves. An abandoned site is still; this one
  * has a crane slewing, a hook swaying, an arc going somewhere on the third
  * floor, floodlights on the unfinished floors and dust drifting through them.
- * It is the busiest building in the world, which is the point — Vaultsys went
+ * It is the busiest building in the world, which is the point — Vaulsys went
  * quiet at night and this one does not.
  *
  * TODO(assets): plotted in code because `public/assets/buildings/` is empty.
@@ -278,7 +278,7 @@ export class NatureTechRenderer extends BuildingRenderer {
       {
         id: "platform",
         section: "Platform",
-        label: "Permissions and migrations",
+        label: "Permissions and versions",
         x: BLOCK.x,
         y: FRAME_TOP.top,
         width: BLOCK.width,

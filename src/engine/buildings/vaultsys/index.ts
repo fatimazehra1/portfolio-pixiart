@@ -1,5 +1,5 @@
 /**
- * Vaultsys Financial Center — enterprise fintech, and the quietest building on
+ * Vaulsys Financial Center — enterprise fintech, and the quietest building on
  * the shore.
  *
  * Import from "@/engine/buildings/vaultsys".

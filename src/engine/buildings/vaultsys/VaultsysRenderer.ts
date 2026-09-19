@@ -2,7 +2,7 @@ import { BuildingRenderer, Pixels, type LayerMaterial } from "../BuildingRendere
 import { createRandom } from "../../shared/random";
 
 /**
- * Vaultsys Financial Center, in pixels.
+ * Vaulsys Financial Center, in pixels.
  *
  * # How it argues with Planet01
  * Everything here is the opposite decision, on purpose. Planet01 is tall,
@@ -241,7 +241,7 @@ export class VaultsysRenderer extends BuildingRenderer {
       {
         id: "payments",
         section: "Payments and cash flow",
-        label: "Payments and cash flow",
+        label: "Change requests",
         x: VAULT.cx - VAULT.radius - 2,
         y: VAULT.cy - VAULT.radius - 2,
         width: VAULT.radius * 2 + 5,
@@ -250,7 +250,7 @@ export class VaultsysRenderer extends BuildingRenderer {
       {
         id: "onboarding",
         section: "Customer onboarding and KYC",
-        label: "Onboarding and KYC",
+        label: "Oracle SQL",
         x: ENTRANCE.x,
         y: GROUND.top,
         width: ENTRANCE.width,

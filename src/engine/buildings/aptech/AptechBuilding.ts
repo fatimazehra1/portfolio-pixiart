@@ -44,7 +44,7 @@ export const APTECH: BuildingDefinition = {
  * artwork comes from `AptechRenderer`. What is left is a definition and one
  * method saying what happens when you press the key.
  *
- * Every landmark still to come — Planet01, Vaultsys, NatureTech, BBIT, the
+ * Every landmark still to come — Planet01, Vaulsys, NatureTech, BBIT, the
  * Workshop, the Ideas Tent, the Freelance Cottage — is this file with a
  * different definition and a different renderer. None of them will need to
  * change anything in `src/engine/buildings/`.
