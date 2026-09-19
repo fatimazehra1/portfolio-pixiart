@@ -15,6 +15,7 @@ import ResumeLink from "@/components/ui/ResumeLink";
 import SkyControls from "@/components/ui/SkyControls";
 import SoundToggle from "@/components/ui/SoundToggle";
 import TimelineView from "@/components/ui/TimelineView";
+import VisitorCounter from "@/components/ui/VisitorCounter";
 import WorldControls from "@/components/ui/WorldControls";
 import { getWorld, subscribeWorld } from "@/components/world/worldHandle";
 import { useWorldStore } from "@/stores/worldStore";
@@ -97,6 +98,10 @@ export default function WorldStage() {
               every viewport, and so the fast path — land, read, click Resume —
               is never further than the same corner it was on the last screen.
             */}
+            {/* The visitor counter: bottom-left, clear of the sidebar above it. */}
+            <div className="absolute bottom-5 left-5">
+              <VisitorCounter />
+            </div>
             <div className="absolute right-5 bottom-5 flex items-stretch gap-2">
               <div className="relative flex">
                 <CatBucket />

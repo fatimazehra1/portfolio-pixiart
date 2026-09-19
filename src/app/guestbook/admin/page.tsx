@@ -27,6 +27,7 @@ export default function GuestbookAdmin() {
   const [draft, setDraft] = useState("");
   const [notes, setNotes] = useState<AdminNote[] | null>(null);
   const [totals, setTotals] = useState<FeedbackState | null>(null);
+  const [visitors, setVisitors] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [confirm, setConfirm] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
@@ -49,6 +50,8 @@ export default function GuestbookAdmin() {
     setNotes((await response.json()).notes);
     const publicState = await fetch("/api/feedback", { cache: "no-store" });
     if (publicState.ok) setTotals(await publicState.json());
+    const visits = await fetch("/api/visits", { cache: "no-store" });
+    if (visits.ok) setVisitors((await visits.json()).total);
     return true;
   }, []);
 
@@ -142,6 +145,9 @@ export default function GuestbookAdmin() {
               So far
             </h2>
             <div className="mt-2 flex flex-wrap gap-x-5 gap-y-1 text-[0.875rem]">
+              <span>
+                Visitors <strong>{visitors ?? "…"}</strong>
+              </span>
               <span>
                 Rating{" "}
                 <strong>{totals.rating?.count ? totals.rating.average.toFixed(1) : "none yet"}</strong>

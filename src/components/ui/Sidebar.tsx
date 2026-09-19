@@ -101,7 +101,7 @@ export default function Sidebar() {
           animate={{ opacity: 1, x: 0 }}
           exit={{ opacity: 0, x: -16 }}
           transition={{ duration: 0.3, ease: "easeOut" }}
-          className="ui-panel ui-scroll absolute top-5 left-5 flex max-h-[calc(100dvh-2.5rem)] w-64 flex-col gap-3.5 overflow-y-auto p-4 font-sans"
+          className="ui-panel ui-scroll absolute top-5 left-5 flex max-h-[calc(100dvh-7.5rem)] w-64 flex-col gap-3.5 overflow-y-auto p-4 font-sans"
           aria-label="Career overview"
         >
           {/* Who. Three short lines and nothing that wraps. */}

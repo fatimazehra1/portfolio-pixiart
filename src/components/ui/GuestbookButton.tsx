@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { useFeedbackStore } from "@/stores/feedbackStore";
 import Guestbook from "./Guestbook";
+import PhoneSheet from "./PhoneSheet";
 
 /**
  * The guestbook, from the corner.
@@ -130,7 +131,7 @@ export default function GuestbookButton({ placement }: { placement: "up" | "down
             exit={{ opacity: 0, scale: 0.9 }}
             transition={{ type: "spring", stiffness: 380, damping: 22 }}
             className={`absolute z-40 w-[12.5rem] border-2 font-sans text-[0.75rem] leading-snug ${
-              compact ? "top-full right-0 mt-2.5" : "right-0 bottom-full mb-2.5"
+              compact ? "fixed top-[3.625rem] right-3" : "right-0 bottom-full mb-2.5"
             }`}
             style={{ borderColor: "#06090f", background: "#fff7e8", color: "#241c12" }}
             role="status"
@@ -147,29 +148,33 @@ export default function GuestbookButton({ placement }: { placement: "up" | "down
             >
               ×
             </button>
-            <span
-              aria-hidden
-              className={`absolute right-5 h-2.5 w-2.5 rotate-45 border-2 ${
-                compact ? "-top-[7px] border-r-0 border-b-0" : "-bottom-[7px] border-t-0 border-l-0"
-              }`}
-              style={{ borderColor: "#06090f", background: "#fff7e8" }}
-            />
+            {/* The pointer, on a desktop only: on a phone the bubble is pinned to
+                the screen edge rather than to the button, so it points at nothing. */}
+            {!compact && (
+              <span
+                aria-hidden
+                className="absolute right-5 -bottom-[7px] h-2.5 w-2.5 rotate-45 border-2 border-t-0 border-l-0"
+                style={{ borderColor: "#06090f", background: "#fff7e8" }}
+              />
+            )}
           </motion.div>
         )}
       </AnimatePresence>
 
       <AnimatePresence>
-        {open && (
+        {open && compact && (
+          <PhoneSheet key="sheet" title="Feedback" onClose={() => setOpen(false)}>
+            <Guestbook />
+          </PhoneSheet>
+        )}
+        {open && !compact && (
           <motion.div
-            initial={{ opacity: 0, y: compact ? -8 : 8 }}
+            key="popover"
+            initial={{ opacity: 0, y: 8 }}
             animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: compact ? -8 : 8 }}
+            exit={{ opacity: 0, y: 8 }}
             transition={{ duration: 0.16, ease: "easeOut" }}
-            className={`ui-panel ui-scroll absolute z-40 overflow-y-auto p-3.5 ${
-              compact
-                ? "top-full right-0 mt-2 max-h-[calc(100dvh-4.5rem)] w-[min(20rem,calc(100vw-1.5rem))]"
-                : "right-0 bottom-full mb-2 max-h-[calc(100dvh-6rem)] w-[20rem]"
-            }`}
+            className="ui-panel ui-scroll absolute right-0 bottom-full z-40 mb-2 max-h-[calc(100dvh-6rem)] w-[20rem] overflow-y-auto p-3.5"
             role="dialog"
             aria-label="Guestbook"
           >

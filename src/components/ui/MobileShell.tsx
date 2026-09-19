@@ -13,6 +13,7 @@ import CatBucket from "./CatBucket";
 import RecruiterPath from "./RecruiterPath";
 import SkyControls from "./SkyControls";
 import GuestbookButton from "./GuestbookButton";
+import VisitorCounter from "./VisitorCounter";
 
 /**
  * The whole interface, on a phone. Designed for the phone first, not the
@@ -48,6 +49,15 @@ export default function MobileShell() {
   return (
     <>
       <TopBar onMenu={() => setMenuOpen(!menuOpen)} menuOpen={menuOpen} />
+
+      {/* The visitor counter, on the map only: inside an island this corner
+          belongs to the building. Kept mounted so it does not recount. */}
+      <div
+        className="absolute top-[3.625rem] left-3 z-10 transition-opacity duration-300"
+        style={{ opacity: view === "overview" ? 1 : 0, pointerEvents: view === "overview" ? "auto" : "none" }}
+      >
+        <VisitorCounter size="sm" />
+      </div>
 
       <AnimatePresence>{view === "overview" && <IslandDock key="dock" />}</AnimatePresence>
 

@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import type { TimePhase, WeatherMode } from "@/engine";
 import { getWorld } from "@/components/world/worldHandle";
+import PhoneSheet from "./PhoneSheet";
 import { useWorldStore } from "@/stores/worldStore";
 
 /**
@@ -61,6 +62,49 @@ export default function SkyControls({ placement }: { placement: "up" | "down" })
 
   const night = phase === "night" || phase === "dusk";
 
+  // One panel, two frames: a popover over the corner on a desktop, a sheet
+  // from the bottom on a phone (where a popover ran off the screen).
+  const panel = (
+    <>
+      <Heading>Time of day</Heading>
+      <div className="mt-1.5 grid grid-cols-4 gap-1">
+        <Choice
+          active={!paused}
+          onClick={() => getWorld()?.loopTime()}
+          wide
+        >
+          ↻ Loop
+        </Choice>
+        {PHASES.map((item) => (
+          <Choice
+            key={item.id}
+            active={paused && phase === item.id}
+            onClick={() => getWorld()?.holdPhase(item.id)}
+          >
+            {item.label}
+          </Choice>
+        ))}
+      </div>
+      <p className="mt-1 text-[0.6875rem]" style={{ color: "var(--ui-faint)" }}>
+        {paused ? "Held. Loop lets the day run again." : "The day runs on a three minute loop."}
+      </p>
+
+      <Heading className="mt-3">Weather</Heading>
+      <div className="mt-1.5 grid grid-cols-5 gap-1">
+        {WEATHER.map((item) => (
+          <Choice key={item.id} active={weather === item.id} onClick={() => chooseWeather(item.id)}>
+            {item.label}
+          </Choice>
+        ))}
+      </div>
+      <p className="mt-1 text-[0.6875rem]" style={{ color: "var(--ui-faint)" }}>
+        {weather === "auto"
+          ? "Auto: each island keeps its own weather."
+          : "The same sky everywhere. Auto puts each island's back."}
+      </p>
+    </>
+  );
+
   return (
     <div ref={root} className="relative flex">
       <button
@@ -78,56 +122,23 @@ export default function SkyControls({ placement }: { placement: "up" | "down" })
       </button>
 
       <AnimatePresence>
-        {open && (
+        {open && placement === "down" && (
+          <PhoneSheet key="sheet" title="Sky" onClose={() => setOpen(false)}>
+            {panel}
+          </PhoneSheet>
+        )}
+        {open && placement === "up" && (
           <motion.div
-            initial={{ opacity: 0, y: placement === "up" ? 8 : -8 }}
+            key="popover"
+            initial={{ opacity: 0, y: 8 }}
             animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: placement === "up" ? 8 : -8 }}
+            exit={{ opacity: 0, y: 8 }}
             transition={{ duration: 0.16, ease: "easeOut" }}
-            className={`ui-panel absolute z-40 p-3 font-sans ${
-              placement === "up"
-                ? "right-0 bottom-full mb-2 w-[19rem]"
-                : "top-full right-0 mt-2 w-[min(19rem,calc(100vw-1.5rem))]"
-            }`}
+            className="ui-panel absolute right-0 bottom-full z-40 mb-2 w-[19rem] p-3 font-sans"
             role="dialog"
             aria-label="Time of day and weather"
           >
-            <Heading>Time of day</Heading>
-            <div className="mt-1.5 grid grid-cols-4 gap-1">
-              <Choice
-                active={!paused}
-                onClick={() => getWorld()?.loopTime()}
-                wide
-              >
-                ↻ Loop
-              </Choice>
-              {PHASES.map((item) => (
-                <Choice
-                  key={item.id}
-                  active={paused && phase === item.id}
-                  onClick={() => getWorld()?.holdPhase(item.id)}
-                >
-                  {item.label}
-                </Choice>
-              ))}
-            </div>
-            <p className="mt-1 text-[0.6875rem]" style={{ color: "var(--ui-faint)" }}>
-              {paused ? "Held. Loop lets the day run again." : "The day runs on a three minute loop."}
-            </p>
-
-            <Heading className="mt-3">Weather</Heading>
-            <div className="mt-1.5 grid grid-cols-5 gap-1">
-              {WEATHER.map((item) => (
-                <Choice key={item.id} active={weather === item.id} onClick={() => chooseWeather(item.id)}>
-                  {item.label}
-                </Choice>
-              ))}
-            </div>
-            <p className="mt-1 text-[0.6875rem]" style={{ color: "var(--ui-faint)" }}>
-              {weather === "auto"
-                ? "Auto: each island keeps its own weather."
-                : "The same sky everywhere. Auto puts each island's back."}
-            </p>
+            {panel}
           </motion.div>
         )}
       </AnimatePresence>
